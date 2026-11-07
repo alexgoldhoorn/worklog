@@ -16,6 +16,20 @@ it each feature reports itself as unavailable and the rest keeps working.
 `fetch_ics_events` returns events as dicts with `start`/`end` (aware datetimes or dates
 for all-day), `title`, `calendar` (the name from the URL list) and `uid`.
 
+## The hard-stop nudge and its buttons
+
+`balance.nudge.tick()` runs inside the sync job. When a work block is still running
+`nudge_after_min` (default 30) minutes after `hard_stop`, it sends one Telegram message with
+two buttons, "stop" and "snooze". It sends at most one message, plus one more after a snooze.
+It reads the timer through `WORKLOG_URL` (with `WORKLOG_USER` and `WORKLOG_PASSWORD` when a
+login is set) and needs `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`.
+
+This repository only sends the message. Something on your side must receive the button
+taps (a bot that polls `getUpdates`, or a webhook) and pass the callback data, which looks
+like `balance:2026-01-31:stop`, to `balance.nudge.handle_tap(data, env)`. It returns the
+reply text to show, or `None` for data that is not a nudge tap. Without a receiver the
+message still works as a plain reminder.
+
 ## Scheduling
 
 Any scheduler works. With cron:

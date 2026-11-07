@@ -25,39 +25,84 @@ configuration. Nothing is hardcoded to one household or one server.
 
 ## Quick start
 
+You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
+
 ```sh
+git clone https://github.com/alexgoldhoorn/worklog.git && cd worklog
 uv sync
+mkdir -p data                      # the app does not create the directory itself
 export WORKLOG_DB=./data/worklog.db TZ=Europe/Amsterdam
 uv run uvicorn worklog.web.app:factory --factory --port 8503
 ```
 
-Open <http://127.0.0.1:8503/timer>. The app is created by `factory()` (there is no
-module-level `app`), which reads its settings from the environment through
-`worklog/config.py`.
+Open <http://127.0.0.1:8503/timer>. The database is created and migrated on first start.
+The app is created by `factory()` (there is no module-level `app`), which reads its
+settings from the environment through `worklog/config.py`. `TZ` decides what "today" is;
+without it the server uses UTC.
 
-To require a login, hash a password and set both variables:
-
-```sh
-uv run python -m worklog.auth          # prints a pbkdf2_sha256 hash
-export WORKLOG_AUTH_USER=me WORKLOG_AUTH_PASSWORD_HASH='pbkdf2_sha256:...'
-```
-
-All variables are listed in [docs/configuration.md](docs/configuration.md); a starting
-point is [examples/worklog.env.example](examples/worklog.env.example).
+The server listens on `127.0.0.1` by default. To reach it from other devices add
+`--host 0.0.0.0`, and set a login first (below).
 
 ## Docker
 
 ```sh
 docker build -t worklog .
-docker run --rm -p 8503:8000 -v "$PWD/data:/data" -e WORKLOG_DB=/data/worklog.db -e TZ=Europe/Amsterdam worklog
+mkdir -p data && sudo chown 1000:1000 data     # the container runs as uid 1000
+docker run -d --name worklog -p 8503:8000 -v "$PWD/data:/data" \
+  -e WORKLOG_DB=/data/worklog.db -e TZ=Europe/Amsterdam worklog
 ```
 
-The image runs as uid 1000 and listens on port 8000. Health check: `GET /healthz`. A compose
-file with the optional mounts is in [examples/docker-compose.yml](examples/docker-compose.yml).
+With compose, copy [examples/worklog.env.example](examples/worklog.env.example) to
+`examples/worklog.env`, edit it, then:
+
+```sh
+cd examples && mkdir -p data && docker compose up -d --build
+```
+
+The image listens on port 8000. `GET /healthz` answers `{"ok": true}` and never needs a
+login. The compose file lists the optional mounts for the Day and Week pages, commented out.
 
 Error reporting is optional: set `WORKLOG_SENTRY_DSN` to a Sentry (or Sentry-compatible) DSN
 and unhandled exceptions are reported; expected 4xx errors are not. Unset, `sentry_sdk` is
 never imported.
+
+## Authentication
+
+By default there is no login. To turn one on, hash a password and set both variables:
+
+```sh
+uv run python -m worklog.auth          # asks for a password, prints a pbkdf2_sha256 hash
+export WORKLOG_AUTH_USER=me WORKLOG_AUTH_PASSWORD_HASH='pbkdf2_sha256:...'
+```
+
+Every page and API route then needs HTTP Basic credentials, except `/healthz`. Without them
+the server answers `401 {"error": "login required"}`. If only one of the two variables is
+set, the login stays off. It is plain HTTP Basic, so put the app behind HTTPS (a reverse
+proxy) when it leaves your LAN. Scripts and clients pass the same user and password, for
+example `curl -u me:secret http://127.0.0.1:8503/api/status`.
+
+All variables are listed in [docs/configuration.md](docs/configuration.md). The HTTP API is
+described in [docs/api.md](docs/api.md).
+
+## Upgrading
+
+```sh
+git pull
+uv sync                                  # or: docker compose up -d --build
+```
+
+Restart the server. The timer database upgrades itself on start (a numbered migration list in
+`worklog/db.py`, tracked in SQLite's `user_version`), and the planner store
+(`balance.db`) adds missing tables when opened. Migrations only go forward, so take a copy
+before upgrading:
+
+```sh
+sqlite3 data/worklog.db ".backup data/worklog-$(date +%F).db"
+```
+
+Use `.backup`, not `cp`: the database runs in WAL mode, so a plain copy of the main file can
+miss recent writes. The CSV/XLSX export (`/api/export.xlsx`) is a second, human-readable
+backup.
 
 ## The day planner (optional)
 
@@ -80,7 +125,10 @@ The timer works on its own. The Day and Week pages add three things around it:
    [docs/host-integration.md](docs/host-integration.md).
 
 The container never holds credentials: it only reads the state directory and writes its
-requests to a queue in `balance.db`, which the sync job drains.
+requests (complete a task, create a calendar event, annotate a meeting) to a queue in
+`balance.db`, which the sync job drains. Each job takes `--dry-run` to show what it would
+do. The jobs find their paths through `WORKLOG_STATE_ROOT` and `~/.config/worklog/host.env`;
+see [docs/configuration.md](docs/configuration.md).
 
 ## Tests
 
