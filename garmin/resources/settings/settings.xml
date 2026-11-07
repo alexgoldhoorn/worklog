@@ -1,0 +1,11 @@
+<settings>
+    <setting propertyKey="@Properties.serverUrl" title="@Strings.ServerUrlTitle">
+        <settingConfig type="url" required="true"/>
+    </setting>
+    <setting propertyKey="@Properties.user" title="@Strings.UserTitle">
+        <settingConfig type="alphaNumeric"/>
+    </setting>
+    <setting propertyKey="@Properties.password" title="@Strings.PasswordTitle">
+        <settingConfig type="password"/>
+    </setting>
+</settings>

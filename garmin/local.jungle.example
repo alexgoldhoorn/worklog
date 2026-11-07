@@ -1,0 +1,3 @@
+# Copy to local.jungle (git-ignored) to build with your login baked in as the default settings.
+# Sideloaded apps don't show in the Connect IQ phone app, so this is how the watch gets its login.
+base.resourcePath = resources/strings;resources/drawables;resources/settings;local

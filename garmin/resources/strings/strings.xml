@@ -1,0 +1,6 @@
+<strings>
+    <string id="AppName">worklog</string>
+    <string id="ServerUrlTitle">Server URL (https://)</string>
+    <string id="UserTitle">User</string>
+    <string id="PasswordTitle">Password</string>
+</strings>

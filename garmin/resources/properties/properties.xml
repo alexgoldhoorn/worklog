@@ -1,0 +1,5 @@
+<properties>
+    <property id="serverUrl" type="string"></property>
+    <property id="user" type="string"></property>
+    <property id="password" type="string"></property>
+</properties>

@@ -1,0 +1,75 @@
+{
+  "duties": [
+    {
+      "name": "School drop-off",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "at": "08:45",
+      "travel_min": 10,
+      "leave_before_min": 15,
+      "default_owner": "Robin",
+      "owner_by_weekday": {
+        "3": "Sam"
+      }
+    },
+    {
+      "name": "School pick-up",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "at": "16:15",
+      "travel_min": 10,
+      "leave_before_min": 15,
+      "default_owner": "Robin",
+      "owner_by_weekday": {
+        "3": "Sam"
+      }
+    }
+  ],
+  "me": "Sam",
+  "family_patterns": {
+    "partner": [],
+    "child": [
+      "Kim",
+      "school"
+    ],
+    "family": []
+  },
+  "slots": {
+    "step_min": 15,
+    "day_start": "06:30",
+    "day_end": "21:30",
+    "work_start": "08:30",
+    "travel_margin_min": 15,
+    "work_share_tolerance_h": 0.5
+  },
+  "household": {
+    "me": "Sam",
+    "me_aliases": [
+      "you",
+      "me"
+    ],
+    "partner": "Robin",
+    "child": "Kim",
+    "calendars": {
+      "personal": "Personal",
+      "family": "Family",
+      "child": "Kim",
+      "agent": "Agent"
+    },
+    "timezone": "Europe/Amsterdam",
+    "people": {
+      "robin@example.com": "Robin",
+      "sam@example.com": "Sam"
+    }
+  }
+}

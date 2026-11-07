@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="find-root" class="day find">
+  <div class="notices" id="notices"></div>
+  <div class="day-head">
+    <div>
+      <div class="day-title">Find a date</div>
+      <div class="hint">Dentist, gym, a run, a call: say what, it finds when</div>
+    </div>
+    <div class="toolbar"><a class="small btn" href="/">Back to the day</a></div>
+  </div>
+  <div class="day-cols">
+    <section class="card" style="flex: 1 1 320px; min-width: 0;">
+      <form id="find-form" class="find-form">
+        <label>What<input type="text" id="f-what" maxlength="200" placeholder="Dentist check-up" required></label>
+        <div class="chips" data-group="minutes">
+          <span class="hint">Length</span>
+          <button type="button" class="chip" data-v="30">30 min</button>
+          <button type="button" class="chip on" data-v="45">45</button>
+          <button type="button" class="chip" data-v="60">60</button>
+          <button type="button" class="chip" data-v="90">90</button>
+          <button type="button" class="chip" data-v="120">120</button>
+        </div>
+        <div class="chips" data-group="travel">
+          <span class="hint">Travel each way</span>
+          <button type="button" class="chip on" data-v="0">none</button>
+          <button type="button" class="chip" data-v="15">15</button>
+          <button type="button" class="chip" data-v="25">25</button>
+          <button type="button" class="chip" data-v="45">45</button>
+        </div>
+        <div class="chips" data-group="when">
+          <span class="hint">When</span>
+          <button type="button" class="chip" data-v="7">this week</button>
+          <button type="button" class="chip on" data-v="14">next 2 weeks</button>
+          <button type="button" class="chip" data-v="21">3 weeks</button>
+        </div>
+        <div class="chips multi" data-group="prefer">
+          <span class="hint">Prefer</span>
+          <button type="button" class="chip" data-v="morning">mornings</button>
+          <button type="button" class="chip" data-v="afternoon">afternoons</button>
+          <button type="button" class="chip" data-v="evening">evenings</button>
+          <button type="button" class="chip on" data-v="not_school_runs">not school-run times</button>
+        </div>
+        <div class="chips" data-group="target">
+          <span class="hint">Goes in</span>
+          <button type="button" class="chip on" data-v="personal">Personal calendar</button>
+          <button type="button" class="chip" data-v="family">Family calendar</button>
+          <button type="button" class="chip" data-v="work">Work calendar</button>
+          <button type="button" class="chip" data-v="training">Training block</button>
+          <button type="button" class="chip" data-v="todoist">Todoist task</button>
+        </div>
+        <div id="todoist-fields" class="find-grid" hidden>
+          <label>Project<input type="text" id="f-project" value="Personal"></label>
+          <label>Priority<select id="f-priority"><option value="4">P1</option><option value="3">P2</option><option value="2" selected>P3</option><option value="1">P4</option></select></label>
+        </div>
+        <div class="row-wrap" style="justify-content: flex-end;"><button class="small primary" type="submit">Find</button></div>
+      </form>
+    </section>
+    <section class="card" style="flex: 1 1 360px; min-width: 0;">
+      <div class="card-head"><h3>Best options</h3><span class="hint">ranked by what they cost you: nothing moved, run kept, child care covered, hours band kept</span></div>
+      <div class="list" id="options"><p class="hint">Fill in the left and press Find.</p></div>
+      <div id="put" hidden>
+        <p class="hint" id="put-line"></p>
+        <div class="row-wrap" style="justify-content: flex-end;"><button class="small primary" id="put-btn" type="button">Put it in</button></div>
+        <pre class="card paste" id="put-paste" hidden></pre>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

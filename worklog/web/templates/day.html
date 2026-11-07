@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="day-root" class="day">
+  <div class="notices" id="notices"></div>
+  <div class="day-head">
+    <div>
+      <div class="day-title" id="day-title"></div>
+      <div class="hint" id="day-sub"></div>
+    </div>
+    <div class="toolbar">
+      <button id="day-prev" class="small ghost arrow" type="button" aria-label="Previous day">‹</button>
+      <button id="day-today" class="small ghost" type="button">Today</button>
+      <button id="day-next" class="small ghost arrow" type="button" aria-label="Next day">›</button>
+      <button id="day-refresh" class="small ghost" type="button" title="Ask the host sync to refresh the snapshots">Refresh</button>
+      <a id="day-find" class="small btn" href="/find">Find a date</a>
+    </div>
+  </div>
+  <div class="capacity" id="capacity" hidden></div>
+  <div class="day-cols">
+    <section class="card day-timeline">
+      <div class="card-head">
+        <h3>Timeline</h3>
+        <span class="legend lanes-toggle">
+          <label><input type="checkbox" id="lane-work" checked><span class="lg work">Work</span></label>
+          <label><input type="checkbox" id="lane-personal" checked><span class="lg personal">Personal</span></label>
+          <label><input type="checkbox" id="lane-family" checked><span class="lg family">Family</span></label>
+          <label><input type="checkbox" id="lane-child" checked><span class="lg duty" id="lane-child-name">Child</span></label>
+          <label title="Runs and hard stops the gate proposed and you approved"><input type="checkbox" id="lane-blocks" checked><span class="lg blocks">Blocks</span></label>
+        </span>
+      </div>
+      <p class="hint" id="mirror-note" hidden></p>
+      <div class="tl" id="timeline"></div>
+    </section>
+    <div class="day-side">
+      <section class="card" id="first-things">
+        <div class="card-head"><h3>First things</h3></div>
+        <div class="list" id="first-list"></div>
+      </section>
+      <section class="card" id="training">
+        <div class="card-head"><h3>Training</h3><span class="pill" id="training-pill" hidden></span></div>
+        <div id="training-body"></div>
+      </section>
+      <section class="card" id="work">
+        <div class="card-head"><h3>Work today</h3><span class="hint" id="week-line"></span></div>
+        <div class="timer-row">
+          <span class="dot" id="timer-dot"></span>
+          <span id="timer-line" class="grow"></span>
+          <button id="day-start" class="small" type="button">Start</button>
+          <button id="day-pause" class="small" type="button">Pause</button>
+          <button id="day-stop" class="small" type="button">Stop</button>
+        </div>
+        <div class="chips" id="day-chips" aria-label="Types"></div>
+        <div class="bar-bg"><div class="bar-fg" id="hours-bar"></div></div>
+        <p class="hint" id="hours-line"></p>
+        <h4>Top 3</h4>
+        <div class="list" id="top3"></div>
+        <h4>Milestones</h4>
+        <div class="list" id="milestones"></div>
+      </section>
+      <section class="card" id="mirror-card">
+        <div class="card-head"><h3><a href="/workcal">Work calendar</a></h3><span class="hint" id="mirror-cov"></span></div>
+        <p class="hint" id="mirror-line"></p>
+        <div class="row-wrap">
+          <label class="small btn file-btn">Upload Outlook PDF<input type="file" id="pdf-file" accept="application/pdf,.pdf" hidden></label>
+          <a class="small btn" href="/workcal">Catch up: paste, cancel, notes</a>
+        </div>
+      </section>
+      <section class="card" id="queue-card" hidden>
+        <div class="card-head"><h3>Pending writes</h3></div>
+        <div class="list" id="queue"></div>
+      </section>
+    </div>
+  </div>
+  <div class="day-foot">
+    <span id="counts"></span>
+    <a href="/week">Week view</a>
+  </div>
+</div>
+{% endblock %}

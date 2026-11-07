@@ -1,0 +1,7 @@
+#!/bin/sh
+# Blocks data files and personal strings, then runs the tests.
+set -e
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+uv run python scripts/precommit.py
+uv run pytest -q

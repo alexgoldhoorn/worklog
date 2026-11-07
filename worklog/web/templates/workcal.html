@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="workcal-root" class="day workcal">
+  <div class="notices" id="notices"></div>
+  <div class="day-head">
+    <div>
+      <div class="day-title">Work calendar</div>
+      <div class="hint">Mirror of Outlook. Outlook stays the truth; this catches up between exports.</div>
+    </div>
+    <div class="toolbar">
+      <button id="wc-prev" class="small ghost arrow" type="button" aria-label="Previous week">‹</button>
+      <button id="wc-today" class="small ghost" type="button">This week</button>
+      <button id="wc-next" class="small ghost arrow" type="button" aria-label="Next week">›</button>
+      <a class="small btn" href="/">Back to the day</a>
+    </div>
+  </div>
+  <div class="capacity amber" id="wc-banner" hidden></div>
+  <div class="day-cols">
+    <section class="card" style="flex: 2 1 420px; min-width: 0;">
+      <div class="card-head"><h3 id="wc-week-title">This week</h3><span class="hint">source: PDF · you · PA · cancelled struck through</span></div>
+      <div class="list" id="wc-week"></div>
+    </section>
+    <div class="day-side" style="flex: 1 1 340px;">
+      <section class="card">
+        <div class="card-head"><h3>Add or change</h3></div>
+        <p class="hint">Paste one or more lines from Outlook, or type them. It reads <code>Thu 6 Nov 14:00-14:45 Title</code>, <code>06/11/2026 14:00 - 14:45 Title</code>, or Outlook's two-line copy (Subject / When: …). Nothing is guessed.</p>
+        <textarea id="wc-paste" class="in" rows="4" placeholder="Fri 6 Nov 14:00-14:45 Go/no-go prep with release manager"></textarea>
+        <div class="row-wrap" style="justify-content: space-between;">
+          <button id="wc-read" class="small ghost" type="button">Read</button>
+          <button id="wc-add" class="small primary" type="button" disabled>Add</button>
+        </div>
+        <div class="list" id="wc-preview"></div>
+        <div class="row-wrap" style="margin-top: 8px;">
+          <label class="small btn file-btn">Upload Outlook PDF<input type="file" id="pdf-file" accept="application/pdf,.pdf" hidden></label>
+          <span class="hint">Outlook › Print › Calendar as PDF. Imported within 15 minutes; this is what makes a week "known".</span>
+        </div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Family title rules</h3><span class="hint">"always for this title" taps; delete a wrong one</span></div>
+        <div class="list" id="wc-rules"></div>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Prep notes for tomorrow</h3></div>
+        <div class="list" id="wc-prep"></div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

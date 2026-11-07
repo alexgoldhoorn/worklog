@@ -1,0 +1,209 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Controls.Material
+import QtQuick.Layouts
+
+// Create or edit one block. open with editBlock(block) or newBlock(date).
+Dialog {
+    id: dlg
+    property var block: null      // null while creating
+    property string date: ""
+    property var typeSuggestions: []
+    property var blocks: []        // the day's blocks, to offer moving a neighbour's edge along
+    property string error: ""
+    signal offer(string text, var action)
+
+    // After moving an edge, offer to drag the neighbour's matching edge along (the timeline is contiguous).
+    function neighbourOffer(b, field, oldV, newV) {
+        if (!/^\d\d:\d\d$/.test(newV) || oldV === newV)
+            return
+        const sorted = blocks.slice().sort((x, y) => x.start.localeCompare(y.start))
+        const i = sorted.findIndex(x => x.id === b.id)
+        if (field === "end") {
+            const next = sorted[i + 1]
+            if (next && next.start === oldV)
+                offer(qsTr("Next block (%1) still starts at %2").arg(next.type).arg(oldV),
+                      () => Api.request("PUT", "/api/blocks/" + next.id, { start: newV }, null, null))
+        } else {
+            const prev = sorted[i - 1]
+            if (prev && prev.end === oldV)
+                offer(qsTr("Previous block (%1) still ends at %2").arg(prev.type).arg(oldV),
+                      () => Api.request("PUT", "/api/blocks/" + prev.id, { end: newV }, null, null))
+        }
+    }
+
+    // "09:5" style input normalised like the server does
+    function norm(v) {
+        const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(v.trim())
+        return m ? Api.pad(Number(m[1])) + ":" + m[2] : v
+    }
+
+    readonly property bool valid: startField.acceptableInput
+                                  && (endField.text === "" || endField.acceptableInput)
+                                  && typeField.editText.trim() !== ""
+
+    modal: true
+    anchors.centerIn: Overlay.overlay
+    width: Math.min(420, parent ? parent.width - 32 : 420)
+    title: block ? qsTr("Edit block") : qsTr("New block")
+
+    function editBlock(b) {
+        block = b
+        date = b.date
+        startField.text = b.start
+        endField.text = b.end || ""
+        typeField.editText = b.type
+        projectField.text = b.project || ""
+        clientField.text = b.client || ""
+        billableBox.checked = !!b.billable
+        error = ""
+        open()
+    }
+
+    // a new row starts where the day's last block ended and runs to now (or for half an hour)
+    function newBlock(d) {
+        block = null
+        date = d
+        const lastEnd = blocks.map(b => b.end).filter(e => !!e).sort().pop()
+        const now = Api.nowHHMM()
+        const start = lastEnd || now
+        let end = ""
+        if (d === Api.isoDate(new Date()) && now > start) {
+            end = now
+        } else {
+            const p = start.split(":").map(Number)
+            const t = Math.min(p[0] * 60 + p[1] + 30, 23 * 60 + 59)
+            end = Api.pad(Math.floor(t / 60)) + ":" + Api.pad(t % 60)
+        }
+        startField.text = start
+        endField.text = end
+        typeField.editText = ""
+        projectField.text = ""
+        clientField.text = ""
+        billableBox.checked = false
+        error = ""
+        open()
+    }
+
+    onAccepted: {
+        const body = {
+            date: dlg.date,
+            start: startField.text,
+            end: endField.text === "" ? null : endField.text,
+            type: typeField.editText,
+            project: projectField.text,
+        }
+        if (dlg.block) {
+            const b = dlg.block
+            body.client = clientField.text
+            body.billable = billableBox.checked
+            Api.request("PUT", "/api/blocks/" + b.id, body, function () {
+                dlg.neighbourOffer(b, "start", b.start, dlg.norm(startField.text))
+                if (b.end)
+                    dlg.neighbourOffer(b, "end", b.end, dlg.norm(endField.text))
+            }, fail)
+        } else {
+            if (clientField.text !== "")
+                body.client = clientField.text  // left out, the server applies the default client
+            Api.request("POST", "/api/blocks", body, null, fail)
+        }
+    }
+
+    function fail(msg) {
+        error = msg
+        open()  // keep the user's input on screen
+    }
+
+    footer: DialogButtonBox {
+        Button {
+            visible: dlg.block !== null
+            text: qsTr("Delete")
+            flat: true
+            Material.foreground: Api.errorColor
+            DialogButtonBox.buttonRole: DialogButtonBox.DestructiveRole
+            onClicked: confirmDelete.open()
+        }
+        Button {
+            text: qsTr("Cancel")
+            flat: true
+            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+        }
+        Button {
+            text: qsTr("Save")
+            enabled: dlg.valid
+            highlighted: true
+            DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+        }
+    }
+
+    ColumnLayout {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        spacing: 8
+
+        Caption {
+            text: Api.parseDate(dlg.date || Api.isoDate(new Date())).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
+        }
+
+        RowLayout {
+            spacing: 12
+            Layout.fillWidth: true
+            TextField {
+                id: startField
+                placeholderText: qsTr("Start (HH:MM)")
+                validator: RegularExpressionValidator { regularExpression: /^([01]?\d|2[0-3]):[0-5]\d$/ }
+                inputMethodHints: Qt.ImhPreferNumbers
+                Layout.fillWidth: true
+            }
+            TextField {
+                id: endField
+                placeholderText: qsTr("End (empty = running)")
+                validator: RegularExpressionValidator { regularExpression: /^(([01]?\d|2[0-3]):[0-5]\d)?$/ }
+                inputMethodHints: Qt.ImhPreferNumbers
+                Layout.fillWidth: true
+            }
+        }
+
+        ComboBox {
+            id: typeField
+            editable: true
+            model: dlg.typeSuggestions
+            Layout.fillWidth: true
+        }
+        Caption { text: qsTr("Type"); Layout.topMargin: -6 }
+
+        TextField { id: projectField; placeholderText: qsTr("Project"); Layout.fillWidth: true }
+        TextField { id: clientField; placeholderText: qsTr("Client (empty = default)"); Layout.fillWidth: true }
+
+        CheckBox {
+            id: billableBox
+            visible: dlg.block !== null  // new blocks take the client's billable default
+            text: qsTr("Billable")
+        }
+
+        NoticeBanner {
+            visible: dlg.error !== ""
+            text: dlg.error
+            level: "error"
+            Layout.leftMargin: 0
+            Layout.rightMargin: 0
+        }
+    }
+
+    Dialog {
+        id: confirmDelete
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: qsTr("Delete this block?")
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            text: dlg.block ? dlg.block.start + "–" + (dlg.block.end || "…") + "  " + dlg.block.type : ""
+        }
+        onAccepted: {
+            const id = dlg.block.id
+            dlg.close()
+            Api.request("DELETE", "/api/blocks/" + id, undefined, null, dlg.fail)
+        }
+    }
+}

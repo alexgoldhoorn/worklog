@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#15803d"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- stopwatch: crown, ring, the part of the hour spent on a break, hands -->
+  <rect x="222" y="74" width="68" height="44" rx="14" fill="#ffffff"/>
+  <rect x="244" y="108" width="24" height="34" fill="#ffffff"/>
+  <circle cx="256" cy="282" r="142" fill="none" stroke="#ffffff" stroke-width="38"/>
+  <path d="M 256 140 A 142 142 0 0 1 379 211" fill="none" stroke="#fbbf24" stroke-width="38" stroke-linecap="round"/>
+  <line x1="256" y1="282" x2="256" y2="192" stroke="#ffffff" stroke-width="30" stroke-linecap="round"/>
+  <line x1="256" y1="282" x2="320" y2="318" stroke="#ffffff" stroke-width="30" stroke-linecap="round"/>
+  <circle cx="256" cy="282" r="22" fill="#ffffff"/>
+</svg>

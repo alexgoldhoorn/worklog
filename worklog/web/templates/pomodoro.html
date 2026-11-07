@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<section id="pomo" class="hero pomo stopped" aria-live="polite">
+  <div class="hero-label" id="pomo-phase">Ready</div>
+  <div class="hero-clock" id="pomo-clock">25:00</div>
+  <div class="bar" id="pomo-bar" aria-hidden="true"><span></span></div>
+  <div class="actions four">
+    <button id="pomo-start" class="act start" type="button">Start</button>
+    <button id="pomo-pause" class="act pause" type="button">Pause</button>
+    <button id="pomo-plus" class="act plus" type="button">+5 min</button>
+    <button id="pomo-reset" class="act stop" type="button">Reset</button>
+  </div>
+</section>
+<div id="pomo-notices" class="notices"></div>
+<div id="pomo-card" class="card pomo-card" hidden></div>
+<p id="pomo-log" class="pomo-log muted">Log: …</p>
+
+<section class="card pomo-settings" aria-label="Lengths">
+  <span class="lbl">Presets</span>
+  <div id="pomo-presets" class="chips" aria-label="Presets"></div>
+  <div class="grid">
+    <label>Work min <input id="pomo-work" type="number" inputmode="numeric" min="1" step="1"></label>
+    <label>Break min <input id="pomo-break" type="number" inputmode="numeric" min="1" step="1"></label>
+    <label>Long break min <input id="pomo-long" type="number" inputmode="numeric" min="1" step="1"></label>
+    <label>Rounds before long <input id="pomo-rounds" type="number" inputmode="numeric" min="0" step="1"></label>
+  </div>
+  <label class="beep"><input id="pomo-beep" type="checkbox"> <span id="pomo-beep-label">Sound</span></label>
+  <p class="hint">Changes apply from the next interval.</p>
+</section>
+{% endblock %}

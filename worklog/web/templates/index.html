@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<section id="state" class="hero stopped" aria-live="polite">
+  <div class="hero-main">
+    <div class="hero-block">
+      <div class="hero-label" id="state-label">Loading…</div>
+      <div class="hero-clock" id="state-clock"></div>
+    </div>
+    <div class="hero-today">
+      <div class="hero-label" id="today-label">Today</div>
+      <div class="hero-clock today" id="today-clock"></div>
+    </div>
+  </div>
+  <div class="hero-sub" id="state-sub"></div>
+  <div class="hero-counters" id="state-counters" aria-label="Running totals"></div>
+  <div class="actions">
+    <button id="btn-start" class="act start" type="button">Start</button>
+    <button id="btn-pause" class="act pause" type="button">Pause</button>
+    <button id="btn-stop" class="act stop" type="button">Stop</button>
+  </div>
+  <p class="kbd-hint" id="kbd-hint"><kbd>S</kbd> start · <kbd>P</kbd> pause · <kbd>X</kbd> stop · <kbd>1</kbd>–<kbd>6</kbd> type · <kbd>/</kbd> project</p>
+</section>
+<div id="notices" class="notices"></div>
+
+<section class="card next" aria-label="Next block">
+  <span class="lbl">Type</span>
+  <div id="chips-types" class="chips" aria-label="Types"></div>
+  <span class="lbl">Project</span>
+  <div class="proj">
+    <input id="project" type="text" placeholder="Project note (optional)" autocomplete="off" aria-label="Project">
+    <div id="chips-projects" class="chips" aria-label="Projects"></div>
+  </div>
+  <span class="lbl">Break</span>
+  <div id="chips-breaks" class="chips" aria-label="Break types"></div>
+</section>
+
+<div id="totals" class="totals"></div>
+
+<section>
+  <div class="row-head">
+    <div class="daynav">
+      <button id="day-prev" class="small ghost arrow" type="button" aria-label="Previous day">‹</button>
+      <span class="title" id="day-title"></span>
+      <button id="day-next" class="small ghost arrow" type="button" aria-label="Next day">›</button>
+      <input type="date" id="day" aria-label="Pick a day">
+    </div>
+    <div class="toolbar">
+      <button id="day-today" class="small ghost" type="button">Today</button>
+      <button id="add-row" class="small" type="button">+ Row</button>
+    </div>
+  </div>
+  <div class="scroll">
+    <table id="blocks" class="grid"></table>
+  </div>
+  <div id="dayfoot" class="dayfoot"></div>
+  <div id="proposals-sec">
+    <h2>Calendar proposals <small>· meetings without a block</small></h2>
+    <ul id="proposals" class="proposals"></ul>
+  </div>
+</section>
+{% endblock %}

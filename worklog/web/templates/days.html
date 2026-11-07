@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="day-head">
+  <div>
+    <div class="day-title">Expected hours</div>
+    <div class="hint">Defaults greyed, overrides marked, holidays from the cache</div>
+  </div>
+  <div class="filters" style="margin:0">
+    <label>From <input type="date" id="days-start"></label>
+    <label>To <input type="date" id="days-end"></label>
+  </div>
+</div>
+<div class="scroll">
+  <table id="days" class="grid"></table>
+</div>
+<div id="days-msg" class="notices"></div>
+{% endblock %}

@@ -1,0 +1,23 @@
+.venv/
+data/
+__pycache__/
+*.db*
+.superpowers/
+
+# Qt app for desktop and Android (qt/)
+qt/build/
+.qtcreator/
+*.user
+
+# Garmin Connect IQ widget (garmin/)
+garmin/bin/
+*.prg
+*.prg.debug.xml
+developer_key*
+garmin/local/
+garmin/local.jungle
+
+# local config
+.env
+*.env
+!examples/*.env.example

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="notices" id="notices"></div>
+<div class="day-head">
+  <div>
+    <div class="day-title">Week</div>
+    <div class="hint" id="week-label"></div>
+  </div>
+  <div class="toolbar weeknav">
+    <button id="prev" class="small ghost arrow" type="button" aria-label="Previous week">‹</button>
+    <button id="today" class="small ghost" type="button">Today</button>
+    <button id="next" class="small ghost arrow" type="button" aria-label="Next week">›</button>
+  </div>
+</div>
+<div class="legend">
+  <span class="lg work">Work</span><span class="lg personal">Personal</span>
+  <span class="lg proposed">Proposed</span><span class="lg approved">Approved</span>
+  <span class="lg stop">Hard stop</span>
+</div>
+<section class="card week" id="week"></section>
+<div class="actions">
+  <button id="propose" type="button">Propose blocks for this week</button>
+  <button id="outlook" type="button">Outlook list</button>
+  <button id="add" type="button">Add a block</button>
+</div>
+<pre class="card paste" id="paste" hidden></pre>
+<form class="card addform" id="addform" hidden>
+  <h3>Add a block</h3>
+  <label>Date <input type="date" name="date" required></label>
+  <label>From <input type="time" name="start" required></label>
+  <label>To <input type="time" name="end" required></label>
+  <label>Kind <select name="kind"><option>family</option><option>run</option><option>stop</option><option>other</option></select></label>
+  <label class="wide">Title <input type="text" name="title" required maxlength="120"></label>
+  <button type="submit">Save as approved</button>
+</form>
+<h2>Load gate <small>daily at 07:22, from work hours, body signals and runs kept</small></h2>
+<section class="card gate" id="gate"></section>
+<h2>Work goals <small id="goals-meta"></small></h2>
+<section class="card goals" id="goals"></section>
+<h2>Gate history <small>one square per day, last 28 days: green / amber / red, number = day of month</small></h2>
+<section class="card history" id="history"></section>
+<details class="card settings-wrap" id="settings-wrap">
+  <summary>Balance settings <small class="hint">hard stop, run slot, hours band, calendar, Todoist project · stored in balance.db</small></summary>
+  <form class="settings" id="settings"></form>
+</details>
+{% endblock %}

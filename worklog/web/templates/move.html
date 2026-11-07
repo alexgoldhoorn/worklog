@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="move-root" class="day move">
+  <div class="notices" id="notices"></div>
+  <div class="day-head">
+    <div>
+      <div class="day-title" id="move-title">Move</div>
+      <div class="hint" id="move-sub"></div>
+    </div>
+    <div class="toolbar"><a class="small btn" id="move-back" href="/">Back to the day</a></div>
+  </div>
+  <div class="day-cols">
+    <section class="card day-side-main" style="flex: 2 1 420px; min-width: 0;">
+      <div class="card-head"><h3>Where it fits</h3><span class="hint">checked against work meetings, personal and family calendars, the child, blocks, hours left and the gate</span></div>
+      <div class="list" id="slots"></div>
+    </section>
+    <div class="day-side" style="flex: 1 1 320px;">
+      <section class="card" id="confirm-card" hidden>
+        <div class="card-head"><h3>On confirm, this updates</h3></div>
+        <div class="list" id="writes"></div>
+        <p class="hint" id="confirm-line"></p>
+        <div class="row-wrap" style="justify-content: flex-end;">
+          <button class="small ghost" id="cancel" type="button">Cancel</button>
+          <button class="small primary" id="confirm" type="button">Move</button>
+        </div>
+        <pre class="card paste" id="paste" hidden></pre>
+      </section>
+      <section class="card">
+        <div class="card-head"><h3>Day with the move</h3></div>
+        <div class="tl" id="preview"></div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}

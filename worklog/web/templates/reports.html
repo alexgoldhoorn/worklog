@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="day-head">
+  <div>
+    <div class="day-title">Reports</div>
+    <div class="hint">Hours against expected per period, balance, invoice and export</div>
+  </div>
+</div>
+<div class="row-head">
+  <h2>Summary</h2>
+  <div class="toolbar">
+    <a id="export-csv" class="btn-link" href="/api/export.csv">CSV</a>
+    <a id="export-xlsx" class="btn-link" href="/api/export.xlsx">XLSX</a>
+  </div>
+</div>
+<div class="filters">
+  <label>Group
+    <div class="seg" id="group-seg" role="group" aria-label="Group by">
+      <button type="button" data-v="week" class="on">Week</button>
+      <button type="button" data-v="month">Month</button>
+      <button type="button" data-v="quarter">Quarter</button>
+      <button type="button" data-v="year">Year</button>
+    </div>
+    <select id="group" hidden aria-hidden="true">
+      <option value="week">week</option>
+      <option value="month">month</option>
+      <option value="quarter">quarter</option>
+      <option value="year">year</option>
+    </select>
+  </label>
+  <label>From <input type="date" id="start"></label>
+  <label>To <input type="date" id="end"></label>
+  <label class="rate">Rate
+    <span class="rate-in">
+      <input type="number" id="rate" min="0" step="1" inputmode="decimal" placeholder="–" aria-label="Rate">
+      <select id="rate-unit" aria-label="Rate unit"><option value="h">€/h</option><option value="day">€/day</option></select>
+    </span>
+    <small id="rate-hint" class="muted"></small>
+  </label>
+  <label class="basis">Week
+    <span class="rate-in">
+      <span class="seg" id="basis-seg" role="group" aria-label="Week basis">
+        <button type="button" data-v="35">35 h</button>
+        <button type="button" data-v="40">40 h</button>
+      </span>
+      <input type="number" id="basis" min="1" max="80" step="0.5" inputmode="decimal" aria-label="Hours per week">
+    </span>
+    <small id="basis-hint" class="muted"></small>
+  </label>
+</div>
+<div id="charts" class="charts" aria-label="Charts"></div>
+<div class="scroll"><table id="summary" class="grid"></table></div>
+<p class="hint phone-note">Expected, the alternative basis and day counts are hidden on a narrow screen: turn the phone sideways to see every column.</p>
+<div id="stats" class="stats"></div>
+
+<div class="row-head">
+  <h2>Invoice</h2>
+  <div class="filters" style="margin:0">
+    <label>Month <input type="month" id="invoice"></label>
+  </div>
+</div>
+<div class="scroll"><table id="invoice-table" class="grid"></table></div>
+
+<details class="card" id="import-details">
+  <summary>Import <small>· XLSX or CSV in the Excel layout</small></summary>
+  <form id="import-form" class="import">
+    <label>File <input type="file" name="file" accept=".xlsx,.csv" required></label>
+    <label>Mode
+      <select name="mode">
+        <option value="merge">merge</option>
+        <option value="replace">replace</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" name="workdays" value="1"> import workdays</label>
+    <button type="submit" class="small">Check (dry run)</button>
+  </form>
+  <div id="import-result" class="notices"></div>
+</details>
+{% endblock %}

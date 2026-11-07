@@ -1,0 +1,15 @@
+services:
+  worklog:
+    build: ..
+    container_name: worklog
+    restart: unless-stopped
+    ports:
+      - "8503:8000"
+    env_file: worklog.env
+    volumes:
+      - ./data:/data
+      # optional, for the Day and Week pages and meeting proposals:
+      # - ~/.local/state/worklog/balance:/state:ro
+      # - ./rules.json:/config/rules.json:ro
+      # - ~/.local/state/worklog/work_calendar.db:/calendar/work_calendar.db:ro
+      # - ~/.local/state/worklog/holidays_cache.json:/calendar/holidays_cache.json:ro
