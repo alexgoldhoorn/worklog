@@ -1,6 +1,6 @@
 """JSON snapshots of two host-side SQLite stores the container never mounts: the work
 calendar mirror (BALANCE_CALENDAR_DB) and the annotation overlay
-(BALANCE_ANNOTATIONS_DB). balance_sync writes them into the state dir."""
+(BALANCE_ANNOTATIONS_DB). the sync job (balance.jobs.sync) writes them into the state dir."""
 import os
 import sqlite3
 from datetime import date, datetime, timedelta

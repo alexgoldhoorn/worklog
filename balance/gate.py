@@ -64,6 +64,8 @@ def _window(rows, today, days, key="date"):
 
 
 def _baseline(rows, today, rules, field_):
+    # Ends `baseline_gap_days` ago so the last weeks being judged do not drag their own baseline.
+    # Fewer than 14 samples = no baseline, so no signal (the gate reports nothing, not a guess).
     """Median of a field over baseline_days ending baseline_gap_days ago."""
     hi = today - timedelta(days=rules["baseline_gap_days"])
     lo = hi - timedelta(days=rules["baseline_days"] - 1)
@@ -72,13 +74,18 @@ def _baseline(rows, today, rules, field_):
 
 
 def evaluate(inp: Inputs, rules: dict, last_spoken: dict | None = None) -> Verdict:
+    """Count the signals that fired (work: hours, hours_trend, evenings; body: rhr, hrv, sleep,
+    stress; plus runs and felt) and map them to a colour: red when a work and a body signal
+    coincide, or 4+ signals, or `felt` with another; amber for 2+; green otherwise. An
+    upcoming race or trip (`pre_event_days`) lowers the bar: one signal is amber, two red.
+    `last_spoken` ({"amber": ISO date}) rate-limits amber messages; red always speaks."""
     last_spoken = last_spoken or {}
     today = inp.today
     signals: list[dict] = []
     gaps = list(inp.gaps)
     numbers: dict = {}
 
-    # ---- work ---- (windows end yesterday: at 07:22 today has no hours yet)
+    # ---- work ---- (windows end yesterday: the gate runs in the morning, so today has no hours yet)
     if inp.work_hours:
         y = today - timedelta(days=1)
         h7 = sum(v for d, v in inp.work_hours.items() if y - timedelta(days=6) <= d <= y)

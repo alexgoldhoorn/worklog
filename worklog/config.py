@@ -1,3 +1,4 @@
+"""Server settings, read once from the environment (see docs/configuration.md)."""
 import os
 from dataclasses import dataclass
 
@@ -20,6 +21,7 @@ class Settings:
 
 
 def from_env() -> Settings:
+    """Empty strings count as unset, so `VAR=` in an env file switches a feature off."""
     return Settings(
         db_path=os.environ.get("WORKLOG_DB", "./data/worklog.db"),
         calendar_db_path=os.environ.get("WORKLOG_CALENDAR_DB") or None,

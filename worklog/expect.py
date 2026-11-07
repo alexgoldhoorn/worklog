@@ -13,6 +13,8 @@ def skip_scopes() -> set[str]:
 
 
 def load_holidays(path: str | None) -> tuple[dict[str, str], str | None]:
+    """({date: name}, warning). A missing or broken file gives no holidays and a warning that
+    the pages show as a notice, rather than an error: the timer works without the cache."""
     if path is None:
         return {}, None
     try:
@@ -37,6 +39,7 @@ def _default(conn, date: str, holidays: dict[str, str]) -> db.DayExpectation:
 
 
 def expected_for(conn, date: str, holidays: dict[str, str]) -> db.DayExpectation:
+    """A stored override wins; else 0 h on a holiday; else the default workday on Mon-Fri."""
     return db.get_expectation(conn, date) or _default(conn, date, holidays)
 
 
@@ -45,6 +48,8 @@ def first_logged_day(conn) -> str | None:
 
 
 def expected_between(conn, start: str, end: str, holidays, first_day: str | None) -> dict[str, db.DayExpectation]:
+    """One entry per calendar day in the range. Days before `first_day` (the first logged
+    block) expect 0 h, so a new install does not start with a huge negative balance."""
     stored = db.expectations_between(conn, start, end)
     out: dict[str, db.DayExpectation] = {}
     d, last = _date.fromisoformat(start), _date.fromisoformat(end)

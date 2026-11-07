@@ -13,7 +13,7 @@ def _shift(hhmm: str, minutes: int) -> str:
 def _owner(duty: dict, d: date, overlay: dict, me: str, aliases: tuple = ("you", "me")) -> tuple[str | None, str]:
     for a in overlay.get("one_off", []):
         if a.get("date") == d.isoformat() and a.get("start") == duty["at"] and a.get("title") == duty["name"] and a.get("owner"):
-            owner = me if a["owner"] in aliases else a["owner"]              # the PA writes "you" for the owner of this dashboard
+            owner = me if a["owner"] in aliases else a["owner"]              # the annotation store writes "you" for the owner of this dashboard
             return owner, "pending" if a.get("pending") else "overlay"
     wd = duty.get("owner_by_weekday", {}).get(str(d.weekday()))
     if wd:

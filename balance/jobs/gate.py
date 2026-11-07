@@ -1,4 +1,4 @@
-"""Capacity gate: one daily verdict over rolling weeks. Run once a day (e.g. 07:20).
+"""Capacity gate: one daily verdict over rolling weeks. Run once a day (early morning, before you plan the day).
 
 Reads worklog hours, wellness, the training plan, activities, the self ratings and the
 balance store; writes <BALANCE_STATE_DIR>/gate.json (the page reads it) and appends

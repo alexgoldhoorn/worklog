@@ -138,6 +138,7 @@ def get_block(conn, block_id: int) -> dict | None:
 
 
 def decide(conn, block_id: int, state: str) -> dict:
+    """Approve or reject a block. The sync job then creates or deletes its calendar event."""
     if state not in ("approved", "rejected"):
         raise ValueError("state must be approved or rejected")
     if get_block(conn, block_id) is None:
@@ -215,7 +216,7 @@ def touch_sync_now(flag_dir: str) -> bool:
         return False
 
 # The container holds no credentials: every Todoist / Google / overlay write is
-# queued here and applied by balance_sync.py on the host (sync.drain).
+# queued here and applied by the sync job (balance.jobs.sync) on the host (sync.drain).
 
 def _qrow(r) -> dict:
     d = dict(r)

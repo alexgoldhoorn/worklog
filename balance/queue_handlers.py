@@ -1,5 +1,5 @@
-"""Handlers for queued writes (balance/db.py `queue`), run on the host by balance_sync.py
-with the credentials from the host environment. Each handler is `(payload, env) -> None` and raises
+"""Handlers for queued writes (balance/db.py `queue`), run on the host by the sync job
+(balance.jobs.sync) with the credentials from the host environment. Each handler is `(payload, env) -> None` and raises
 on failure; sync.drain records the error on the row."""
 import json
 import os
@@ -87,7 +87,8 @@ def gcal_create(payload: dict, env: dict) -> None:
 
 
 def annotate_handler(payload: dict, env: dict) -> None:
-    """UPSERT into the one_off overlay (same statement as personal/annotations.py:set_one_off)."""
+    """UPSERT into the one_off overlay (the table holds duty owners and notes set from the Day page;
+    a host-side calendar overlay may read the same file)."""
     path = env.get("ANNOTATIONS_DB") or ANNOTATIONS_DB
     conn = sqlite3.connect(path)
     try:
@@ -155,7 +156,7 @@ _EMAIL = re.compile(r"\S+@\S+\.\S+")
 
 
 def mirror_add(payload: dict, env: dict) -> None:
-    """One meeting into the work-calendar mirror (same UPSERT as personal/work_calendar.py),
+    """One meeting into the work-calendar mirror (an UPSERT into the `events` table described in docs/configuration.md),
     source 'dashboard'. Refuses email addresses, as every mirror write does."""
     title = (payload.get("title") or "").strip()
     note = (payload.get("note") or "").strip()

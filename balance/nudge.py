@@ -48,6 +48,8 @@ def _hm(minutes: float) -> str:
 
 
 def decide(status: dict, state: dict, now: datetime, rules: dict) -> str | None:
+    """Return "nudge" or None. First nudge once the running work block is `nudge_after_min` past the
+    hard stop; one more after the snooze time, then silence for the evening."""
     if status.get("state") != "working" or status.get("date") != now.date().isoformat():
         return None
     past = status.get("past_stop_min")
@@ -115,6 +117,8 @@ def _send(env: dict, text: str, markup: dict) -> None:
 
 def tick(env: dict, state_dir: str, now: datetime | None = None, fetch=None, sender=None,
          rules: dict | None = None) -> dict:
+    """One pass of the job: fetch the timer status, decide, send. Never raises on an
+    unreachable server (no nudge is the safe outcome). `fetch` and `sender` are test hooks."""
     now = now or datetime.now()
     rules = rules or load_rules()
     today = now.date().isoformat()
@@ -139,6 +143,9 @@ def tick(env: dict, state_dir: str, now: datetime | None = None, fetch=None, sen
 
 def handle_tap(data: str, env: dict, now: datetime | None = None, state_dir: str | None = None,
                stop=None, rules: dict | None = None, fetch=None) -> str | None:
+    """Act on a button callback (`balance:<date>:stop|snooze`) and return the reply text; None
+    if `data` is not ours. A tap from an earlier day does nothing, except a late stop before
+    06:00 for the previous evening (the session may still be running past midnight)."""
     m = _TAP.fullmatch(data or "")
     if not m:
         return None

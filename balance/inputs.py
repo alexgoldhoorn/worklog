@@ -199,7 +199,7 @@ def read_work_calendar(lo: date, hi: date, path: str = WORK_CALENDAR_DB) -> list
     return [dict(r) for r in rows if (r["status"] or "confirmed") != "cancelled"]
 
 
-# ---- snapshots written by balance_sync ----------------------------------------
+# ---- snapshots written by the sync job ----------------------------------------
 
 def read_json(path: str, default):
     try:
@@ -210,7 +210,7 @@ def read_json(path: str, default):
 
 
 def read_mirror(state_dir: str) -> dict:
-    """Work-calendar mirror snapshot written by balance_sync (balance/snapshots.py)."""
+    """Work-calendar mirror snapshot written by the sync job (balance/snapshots.py)."""
     return read_json(os.path.join(state_dir, "mirror.json"),
                      {"events": [], "coverage": {"last_import_end": None, "last_import_at": None, "last_import_source": ""}})
 

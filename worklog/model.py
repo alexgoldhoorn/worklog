@@ -14,6 +14,8 @@ def _mins(hhmm_: str) -> int:
 
 
 def minutes(start: str, end: str | None) -> int | None:
+    """Minutes between two same-day times; None while running. Negative when end < start
+    (a block cannot span midnight: it is closed at the day's end and a new one starts)."""
     if end is None:
         return None
     return _mins(end) - _mins(start)
@@ -34,6 +36,8 @@ def _d(date: str) -> _date:
 
 
 def excel_weekday(date: str) -> int:
+    """Sunday=1 ... Saturday=7, the numbering of Excel's WEEKDAY(), kept so exports and
+    imports line up with spreadsheets this app replaced."""
     return _d(date).isoweekday() % 7 + 1
 
 
@@ -65,6 +69,9 @@ def week_bounds(key: str) -> tuple[str, str]:
 
 
 def flags(blocks: list[Block]) -> dict[int, dict]:
+    """Per block id: `start_gt_end` (bad times) and `overlap` (starts before an earlier block
+    ended). The comparison uses the latest end seen so far, so a short block inside a long one
+    is flagged too."""
     out: dict[int, dict] = {}
     covered: str | None = None  # latest end seen so far, not just the previous block's
     for b in sorted(blocks, key=lambda x: x.start):

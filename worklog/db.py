@@ -1,8 +1,16 @@
+"""The timer's SQLite store: schema, migrations and plain row accessors.
+
+Times are local `HH:MM` strings and dates are `YYYY-MM-DD` strings, with no timezone stored.
+The server decides what "now" is (`TZ`), so moving the database between zones does not
+rewrite history. A block with `end` NULL is the running one; there is at most one.
+"""
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
+# A block whose type is in this list (table `break_types`) counts as a break, not work.
 BREAK_TYPES = "shop eat sport out house other travel fam family child rest sick run gym admin pomo".split()
+# Seeded into `settings` on first start; `default_client`/the ACME client are placeholders.
 DEFAULT_SETTINGS = {
     "default_type": "dev",
     "default_client": "ACME",
@@ -81,6 +89,8 @@ MIGRATIONS = [(1, _V1, _seed_v1), (2, "", _seed_v2), (3, _V3, _seed_noop), (4, "
 
 
 def migrate(conn: sqlite3.Connection) -> None:
+    """Apply MIGRATIONS newer than PRAGMA user_version, one transaction each. Forward only:
+    to change the schema, append a new (version, sql, seed) entry; never edit an old one."""
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     for version, sql, seed in MIGRATIONS:
         if version <= current:
@@ -93,6 +103,8 @@ def migrate(conn: sqlite3.Connection) -> None:
 
 
 def connect(path: str, check_same_thread: bool = True) -> sqlite3.Connection:
+    """Open (and migrate) the store. WAL mode so the web server and host jobs can read while
+    the timer writes. The directory of `path` must exist; the file is created."""
     conn = sqlite3.connect(path, check_same_thread=check_same_thread)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -156,6 +168,8 @@ _BLOCK_FIELDS = {"date", "start", "end", "project", "type", "client", "billable"
 
 
 def update_block(conn: sqlite3.Connection, block_id: int, **fields) -> Block:
+    """Change the named fields. Setting `end` clears `auto_closed` unless the caller sets it,
+    so a block the user fixed no longer shows up as needing review."""
     unknown = set(fields) - _BLOCK_FIELDS
     if unknown:
         raise ValueError(f"unknown block fields: {sorted(unknown)}")
@@ -200,6 +214,7 @@ def auto_closed_between(conn: sqlite3.Connection, start: str, end: str) -> list[
 
 
 def open_block(conn: sqlite3.Connection) -> Block | None:
+    """The running block (no `end`), newest first if data ever holds more than one."""
     row = conn.execute(
         "SELECT * FROM blocks WHERE end IS NULL ORDER BY date DESC, start DESC, id DESC LIMIT 1"
     ).fetchone()
@@ -215,6 +230,7 @@ def clients(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
 
 
 def setting(conn: sqlite3.Connection, key: str) -> str:
+    """A stored setting; raises if the key was never seeded (all keys are, by migration)."""
     return conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()["value"]
 
 

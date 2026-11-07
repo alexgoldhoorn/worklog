@@ -16,6 +16,9 @@ def _unavailable(reason):
 
 
 def proposals(cal_db_path, date, blocks):
+    """(proposals, warning) for one day: calendar meetings not yet covered by a block.
+    The database is opened read-only. Any problem returns ([], reason) so the timer page
+    shows a notice and keeps working."""
     if not cal_db_path:
         return _unavailable("not configured")
     if not os.path.isfile(cal_db_path):

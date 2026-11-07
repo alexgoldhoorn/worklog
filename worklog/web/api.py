@@ -21,6 +21,7 @@ _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 class ApiError(Exception):
+    """Raised for bad input; the app turns it into `{"error": message}` with this status."""
     def __init__(self, message: str, status: int = 400):
         self.message, self.status = message, status
 
@@ -49,6 +50,8 @@ class Ctx:
             self.notices.append(f"holidays cache has no entries for {self.now.year}")
 
     def auto_close(self):
+        """Close forgotten blocks before reading. Routes call this first so every client sees
+        the same corrected data, whichever endpoint it hits first in the morning."""
         timer.auto_close(self.conn, self.now)
         return self
 

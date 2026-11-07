@@ -63,7 +63,7 @@ def load(ctx: Context) -> dict:
 def host_context(d: date, *, state_dir: str | None = None, db_path: str | None = None, plan_path: str | None = None,
                  holidays_cache: str | None = None, worklog_status: dict | None = None, now: datetime | None = None,
                  rules_path: str | None = None) -> Context:
-    """The Context the PA tools build on the host (credentials there, real paths by default).
+    """The Context an outside tool (an assistant, a script) builds on the host (credentials there, real paths by default).
     The caller closes `balance_conn`."""
     from balance import config as bconf
     from . import holidays as _hol, rules as _rules

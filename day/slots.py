@@ -2,7 +2,7 @@
 on a set of days, scored against everything the day model knows, with reasons in plain words.
 
 Pure: `find(item, days, settings, rules, today)` takes the per-date dicts from
-`day.model.build_days` and returns ranked `Slot`s. The page, the PA tool and the tests all
+`day.model.build_days` and returns ranked `Slot`s. The page, an optional host tool and the tests all
 call this one function, so they rank alike."""
 from dataclasses import asdict, dataclass, field
 from datetime import date as _date, timedelta

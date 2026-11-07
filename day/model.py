@@ -249,6 +249,9 @@ def _work(ctx, src, timeline, tasks, unknown: bool, is_today: bool) -> dict:
 
 
 def build_day(ctx: sources.Context) -> dict:
+    """The Day page payload for ctx.date: timeline, capacity (the gate line), first things,
+    tasks, training, work summary, queue. Missing snapshots give empty sections, and
+    `mirror.unknown` says when the work calendar cannot be trusted for the day."""
     src = sources.load(ctx)
     timeline = _timeline(ctx, src)
     tasks = _tasks(src)

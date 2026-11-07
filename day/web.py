@@ -264,7 +264,7 @@ def post_owner(request: Request, body: dict = Body(...)):
     h = rules.household(rules.load())
     if owner not in owners and owner not in h["me_aliases"]:
         raise ApiError(f"owner must be one of {', '.join(owners)}")
-    stored = "you" if owner == h["me"] or owner in h["me_aliases"] else owner   # the overlay convention (PA): "you" = me
+    stored = "you" if owner == h["me"] or owner in h["me_aliases"] else owner   # the annotation store writes "you" for the dashboard's owner
     conn = _bconn(request)
     try:
         row = bdb.enqueue(conn, "annotate", {"date": d, "start": start, "title": title, "owner": stored},
@@ -339,7 +339,7 @@ def post_workcal_annotate(request: Request, body: dict = Body(...)):
 def post_classify(request: Request, body: dict = Body(...)):
     """Whose is this Family-calendar event: mine | family | partner | child. Stored per occurrence
     in balance.db (read at once by the model and the engine); `always` adds a per-title rule;
-    `partner` also tells the PA's overlay (tier context) through the queue."""
+    `partner` also queues an `annotate` write that marks the event as context (not yours to act on)."""
     d, start, title = _event_fields(body)
     cls = body.get("cls")
     if cls not in bdb.CLASSES:
@@ -348,7 +348,7 @@ def post_classify(request: Request, body: dict = Body(...)):
     try:
         row = bdb.set_event_class(conn, d, start, title, cls)
         rule = bdb.add_family_rule(conn, title, cls) if body.get("always") else None
-        # the PA's overlay follows: context for the partner's own events, cleared for everything else
+        # the annotation overlay follows: context for the partner's own events, cleared for everything else
         tier = "context" if cls == "partner" else ""
         queued = bdb.enqueue(conn, "annotate", {"date": d, "start": start, "title": title, "tier": tier},
                              f"{title} {d}: {'context (partner\'s)' if tier else 'needs me'}", flag_dir=_flag_dir(request))

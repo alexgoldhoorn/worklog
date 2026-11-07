@@ -30,6 +30,8 @@ def auto_close(conn, now: datetime) -> list[Block]:
 
 
 def close_open(conn, now: datetime) -> Block | None:
+    """Close the open block at the current minute. A block from an earlier day is closed at
+    23:59 and flagged auto_closed; a block that would last zero minutes is deleted instead."""
     ob = db.open_block(conn)
     if ob is None:
         return None
@@ -44,6 +46,9 @@ def close_open(conn, now: datetime) -> Block | None:
 
 def start(conn, now: datetime, type_: str | None = None, project: str | None = None,
           client: str | None = None) -> Block:
+    """Begin work. Idempotent: if the same work (type and project) is already running today,
+    return it. Otherwise close whatever runs and open a new block. Billable comes from the
+    client's flag; an unknown client leaves it NULL."""
     today, hhmm = now_parts(now)
     auto_close(conn, now)
     type_ = _norm(type_) or db.setting(conn, "default_type")
@@ -63,6 +68,7 @@ def start(conn, now: datetime, type_: str | None = None, project: str | None = N
 
 
 def pause(conn, now: datetime, type_: str | None = None) -> Block:
+    """Begin a break of `type_` (default `default_break_type`); idempotent like `start`."""
     today, hhmm = now_parts(now)
     auto_close(conn, now)
     type_ = _norm(type_) or db.setting(conn, "default_break_type")
@@ -78,11 +84,16 @@ def pause(conn, now: datetime, type_: str | None = None) -> Block:
 
 
 def stop(conn, now: datetime) -> Block | None:
+    """Close the open block. Returns the closed block, or the last one auto-closed if that is
+    all there was; None when nothing ran (or the block was zero minutes and was deleted)."""
     closed = auto_close(conn, now)
     return close_open(conn, now) or (closed[-1] if closed else None)
 
 
 def status(conn, now: datetime) -> dict:
+    """State (`working`, `break`, `stopped`) plus elapsed time. Runs auto_close first, so a
+    block forgotten overnight is closed by whoever looks next, and reported in `auto_closed`.
+    `elapsed_min` is minute-granular (matches the stored times); `elapsed_s` feeds the ticker."""
     today, hhmm = now_parts(now)
     closed = auto_close(conn, now)
     bt = db.break_types(conn)
