@@ -9,10 +9,10 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+from .config import TZ as DEFAULT_TZ
 from .inputs import ANNOTATIONS_DB, WORK_CALENDAR_DB
 
 TODOIST = "https://api.todoist.com/api/v1"
-DEFAULT_TZ = os.environ.get("TZ") or "UTC"
 
 _ANN_SCHEMA = """
 CREATE TABLE IF NOT EXISTS one_off (

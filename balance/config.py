@@ -10,7 +10,29 @@ DB_PATH = os.path.expanduser(os.environ.get("BALANCE_DB", os.path.join(STATE_ROO
 # Optional directory with host integrations (credentials loader, Google OAuth, ICS fetcher,
 # Telegram sender, school calendar). Unset: those features are off. See docs/host-integration.md.
 HOST_LIB = os.path.expanduser(os.environ.get("WORKLOG_HOST_LIB", "")) or None
-TZ = os.environ.get("TZ") or "UTC"
+
+
+def _local_tz() -> str:
+    """TZ, else the host's zone (/etc/timezone or the /etc/localtime link), else UTC."""
+    if os.environ.get("TZ"):
+        return os.environ["TZ"].lstrip(":")
+    try:
+        with open("/etc/timezone") as f:
+            name = f.read().strip()
+        if name:
+            return name
+    except OSError:
+        pass
+    try:
+        link = os.path.realpath("/etc/localtime")
+        if "/zoneinfo/" in link:
+            return link.split("/zoneinfo/", 1)[1]
+    except OSError:
+        pass
+    return "UTC"
+
+
+TZ = _local_tz()
 
 DEFAULT_RULES = {
     "week_hours_max": 35.0,       # top of the 30-35 h band

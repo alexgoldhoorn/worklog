@@ -26,6 +26,11 @@ everything else is optional and switches a feature on.
 The jobs in `balance/jobs/` run on the host, not in the container. Paths default to files
 under `WORKLOG_STATE_ROOT` (`~/.local/state/worklog`).
 
+Host processes rarely share one environment (a scheduler, a tool server, a shell), so the
+`balance` and `day` packages also read `~/.config/worklog/host.env` (or `$WORKLOG_ENV_FILE`)
+when imported: `KEY=value` lines, `~/` expanded, a variable already in the environment wins.
+`TZ` on the host defaults to the system zone (`/etc/timezone` or `/etc/localtime`).
+
 | Variable | Default under the root | Contents |
 |---|---|---|
 | `BALANCE_STATE_DIR` | `balance/` | Snapshots and `config.json` (gate thresholds, see `DEFAULT_RULES`). |

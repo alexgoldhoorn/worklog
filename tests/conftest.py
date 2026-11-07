@@ -1,3 +1,7 @@
+import os
+
+os.environ["WORKLOG_ENV_FILE"] = os.devnull   # never the developer's real host settings
+
 from datetime import datetime
 
 import pytest
