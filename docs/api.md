@@ -7,7 +7,12 @@ Conventions:
 
 - Dates are `YYYY-MM-DD`, times are `HH:MM` in the server's `TZ`.
 - Errors are `{"error": "..."}` with a 4xx status (400 invalid input, 404 not found,
-  409 conflict).
+  409 conflict, 503 when the balance store is not configured). Wrongly typed JSON (a number
+  where a string is expected, a list where an object is) is a 400, never a 500.
+- Dates must be exactly `YYYY-MM-DD`; forms like `20261109` or `2026-W45-1` are refused.
+- Cross-site writes are refused with 403: a non-GET request whose `Sec-Fetch-Site` is not
+  `same-origin` or `none`, or (without that header) whose `Origin` names another host. Clients
+  that are not browsers send neither header and are unaffected.
 - Writes to the timer are serialised by a lock in the server.
 - `?brief=true` on the timer routes returns a small payload for tiny clients.
 
