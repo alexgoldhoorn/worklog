@@ -36,6 +36,11 @@ def _init_sentry(dsn: str) -> None:
 
 
 def create_app(settings: Settings) -> FastAPI:
+    # Half a login must never mean "no login": refuse to start rather than serve open.
+    if bool(settings.auth_user) != bool(settings.auth_password_hash):
+        missing = "WORKLOG_AUTH_PASSWORD_HASH" if settings.auth_user else "WORKLOG_AUTH_USER"
+        raise ValueError(f"authentication is half configured: {missing} is not set "
+                         "(set both WORKLOG_AUTH_USER and WORKLOG_AUTH_PASSWORD_HASH, or neither)")
     if settings.sentry_dsn:
         _init_sentry(settings.sentry_dsn)
     app = FastAPI(title="worklog")
@@ -76,6 +81,9 @@ def create_app(settings: Settings) -> FastAPI:
         return response
     if settings.auth_user and settings.auth_password_hash:
         app.add_middleware(BasicAuth, user=settings.auth_user, password_hash=settings.auth_password_hash)
+    else:
+        logging.getLogger(__name__).warning(
+            "authentication is off: set WORKLOG_AUTH_USER and WORKLOG_AUTH_PASSWORD_HASH to require a login")
     return app
 
 

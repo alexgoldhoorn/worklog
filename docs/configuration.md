@@ -9,7 +9,7 @@ everything else is optional and switches a feature on.
 |---|---|---|
 | `WORKLOG_DB` | `./data/worklog.db` | The timer's SQLite store. The file is created on first start; its directory must already exist. |
 | `TZ` | `UTC` | Local time for "today", reports and calendar conversion. |
-| `WORKLOG_AUTH_USER`, `WORKLOG_AUTH_PASSWORD_HASH` | unset | Both set: HTTP Basic on everything but `/healthz`. Hash with `python -m worklog.auth`. |
+| `WORKLOG_AUTH_USER`, `WORKLOG_AUTH_PASSWORD_HASH` | unset | Both set: HTTP Basic on everything but `/healthz`. Hash with `python -m worklog.auth`. Only one set: the server refuses to start; neither: no login, WARNING logged. |
 | `WORKLOG_CALENDAR_DB` | unset | Read-only work-calendar database for meeting proposals (schema below). |
 | `WORKLOG_HOLIDAYS` | unset | Holidays cache JSON (format below); holidays get 0 expected hours. |
 | `WORKLOG_HOLIDAY_SKIP_SCOPES` | empty | Comma-separated holiday scopes that are *not* days off for work (e.g. `town` when your client follows the city's calendar). |

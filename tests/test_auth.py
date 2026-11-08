@@ -48,3 +48,29 @@ def test_healthz_stays_open(secured):
 
 def test_no_auth_configured_is_open(client):
     assert client.get("/api/status").status_code == 200
+
+
+def _settings(tmp_path, **kw):
+    return Settings(db_path=str(tmp_path / "t.db"), **kw)
+
+
+def test_only_user_set_refuses_to_start(tmp_path):
+    with pytest.raises(ValueError, match="WORKLOG_AUTH_PASSWORD_HASH"):
+        create_app(_settings(tmp_path, auth_user="sam"))
+
+
+def test_only_hash_set_refuses_to_start(tmp_path):
+    with pytest.raises(ValueError, match="WORKLOG_AUTH_USER"):
+        create_app(_settings(tmp_path, auth_password_hash=hash_password("x", iterations=1000)))
+
+
+def test_auth_off_logs_a_warning(tmp_path, caplog):
+    with caplog.at_level("WARNING"):
+        create_app(_settings(tmp_path))
+    assert any("authentication is off" in r.message for r in caplog.records)
+
+
+def test_auth_on_logs_no_auth_warning(tmp_path, caplog):
+    with caplog.at_level("WARNING"):
+        create_app(_settings(tmp_path, auth_user="sam", auth_password_hash=hash_password("x", iterations=1000)))
+    assert not any("authentication is off" in r.message for r in caplog.records)

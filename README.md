@@ -89,7 +89,7 @@ export WORKLOG_AUTH_USER=me WORKLOG_AUTH_PASSWORD_HASH='pbkdf2_sha256:...'
 
 Every page and API route then needs HTTP Basic credentials, except `/healthz`. Without them
 the server answers `401 {"error": "login required"}`. If only one of the two variables is
-set, the login stays off. It is plain HTTP Basic, so put the app behind HTTPS (a reverse
+set, the server refuses to start; with neither it starts open and logs a warning. It is plain HTTP Basic, so put the app behind HTTPS (a reverse
 proxy) when it leaves your LAN. Scripts and clients pass the same user and password, for
 example `curl -u me:secret http://127.0.0.1:8503/api/status`.
 

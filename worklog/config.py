@@ -9,7 +9,7 @@ class Settings:
     calendar_db_path: str | None = None
     holidays_path: str | None = None
     tz: str = "UTC"
-    # both set: HTTP Basic auth on everything but /healthz (worklog/auth.py); either unset: no login
+    # both set: HTTP Basic auth on everything but /healthz (worklog/auth.py); neither set: no login (warned at startup); exactly one set: refuses to start
     auth_user: str | None = None
     auth_password_hash: str | None = None
     # balance (gate, blocks, snapshots) and the Day page; all optional
