@@ -10,6 +10,8 @@ it would write.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import sys
@@ -60,10 +62,35 @@ def _nudge(env: dict, state_dir: str) -> None:
         print(f"WARN balance.jobs.sync nudge: {e}", file=sys.stderr)
 
 
+@contextlib.contextmanager
+def single_instance(path: str):
+    """Hold an exclusive non-blocking flock on `path`; yields False when another run holds it."""
+    f = open(path, "a")
+    try:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        yield True
+    finally:
+        f.close()   # closing releases the lock
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dry-run", action="store_true", help="snapshots to a temp dir, no Google push")
     args = ap.parse_args()
+    if not args.dry_run:
+        with single_instance(os.path.join(os.path.dirname(DB_PATH), "sync.lock")) as got:
+            if not got:
+                print("balance.jobs.sync: another run is in progress, skipping", file=sys.stderr)
+                return 0
+            return _run(args)
+    return _run(args)
+
+
+def _run(args) -> int:
     state_dir = STATE_DIR
     if args.dry_run:
         import tempfile

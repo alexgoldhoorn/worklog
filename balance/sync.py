@@ -288,20 +288,23 @@ def _school_calendar():
 
 def drain(conn, env: dict, handlers: dict | None = None) -> dict:
     """Apply every pending queue row through its handler; one failure never stops the others.
-    A failed row stays failed (visible, retried only by hand)."""
+    A failed row stays failed (visible, retried only by hand). Rows are claimed before they
+    are applied, so overlapping runs never apply one twice."""
     from .queue_handlers import HANDLERS
     handlers = HANDLERS if handlers is None else handlers
     st = {"done": 0, "failed": 0, "errors": []}
     for row in bdb.queue_pending(conn):
+        if not bdb.queue_claim(conn, row["id"]):
+            continue   # another run has it (or it was dismissed since the listing)
         fn = handlers.get(row["kind"])
         try:
             if fn is None:
                 raise LookupError(f"no handler: {row['kind']}")
             fn(row["payload"], env)
-            bdb.queue_mark(conn, row["id"], "done")
+            bdb.queue_mark(conn, row["id"], "done", only_if_pending=True)
             st["done"] += 1
         except Exception as e:  # noqa: BLE001 - recorded on the row
-            bdb.queue_mark(conn, row["id"], "failed", str(e))
+            bdb.queue_mark(conn, row["id"], "failed", str(e), only_if_pending=True)
             st["failed"] += 1
             st["errors"].append(f"{row['line']}: {e}")
     return st

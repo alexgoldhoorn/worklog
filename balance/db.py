@@ -276,9 +276,25 @@ def queue_recent(conn, days: int = 7) -> list[dict]:
     return [_qrow(r) for r in conn.execute("SELECT * FROM queue WHERE created_at >= ? ORDER BY id DESC", (since,))]
 
 
-def queue_mark(conn, qid: int, status: str, error: str = "") -> dict:
+CLAIM_STALE_S = 1800   # a claim older than this was left by a run that died mid-apply
+
+
+def queue_claim(conn, qid: int, stale_s: int = CLAIM_STALE_S) -> bool:
+    """Take a pending row for applying: True for exactly one caller. The claim is `applied_at`
+    set on a still-pending row (the status CHECK has no 'running'); a claim older than `stale_s`
+    belongs to a dead run and can be taken again."""
+    cutoff = (datetime.now() - timedelta(seconds=stale_s)).strftime("%Y-%m-%d %H:%M:%S")
+    cur = conn.execute("UPDATE queue SET applied_at=? WHERE id=? AND status='pending'"
+                       " AND (applied_at IS NULL OR applied_at < ?)", (_now(), qid, cutoff))
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def queue_mark(conn, qid: int, status: str, error: str = "", only_if_pending: bool = False) -> dict:
+    """only_if_pending: leave the row alone when someone (a Dismiss) changed it meanwhile."""
     applied = _now() if status in ("done", "failed") else None
-    conn.execute("UPDATE queue SET status=?, error=?, applied_at=COALESCE(?, applied_at) WHERE id=?",
+    conn.execute("UPDATE queue SET status=?, error=?, applied_at=COALESCE(?, applied_at) WHERE id=?"
+                 + (" AND status='pending'" if only_if_pending else ""),
                  (status, error[:500], applied, qid))
     conn.commit()
     return _qrow(conn.execute("SELECT * FROM queue WHERE id=?", (qid,)).fetchone())

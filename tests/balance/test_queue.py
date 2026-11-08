@@ -196,3 +196,40 @@ def test_mirror_add_keeps_the_existing_source_of_a_known_row(tmp_path):
     qh.mirror_add({"date": "2026-11-06", "start": "14:00", "end": "14:45", "title": "Go/no-go prep"}, env)   # already there from the PDF
     c = sqlite3.connect(env["WORK_CALENDAR_DB"])
     assert c.execute("SELECT source FROM events").fetchone() == ("outlook.pdf",)
+
+
+def test_overlapping_drains_apply_a_row_once(tmp_path):
+    path = str(tmp_path / "b.db")
+    a, b = bdb.connect(path), bdb.connect(path)
+    bdb.enqueue(a, "mirror_bulk_add", {}, "paste")
+    calls = []
+
+    def slow(payload, env):
+        calls.append(1)
+        sync.drain(b, {}, {"mirror_bulk_add": lambda p, e: calls.append("second")})   # a second run starts meanwhile
+    st = sync.drain(a, {}, {"mirror_bulk_add": slow})
+    assert calls == [1] and st["done"] == 1
+    a.close(); b.close()
+
+
+def test_dismiss_during_apply_is_not_overwritten(conn):
+    q = bdb.enqueue(conn, "todoist_complete", {}, "x")
+    sync.drain(conn, {}, {"todoist_complete": lambda p, e: bdb.queue_mark(conn, q["id"], "dismissed")})
+    assert bdb.queue_recent(conn)[0]["status"] == "dismissed"
+
+
+def test_a_stale_claim_from_a_dead_run_is_taken_again(conn):
+    q = bdb.enqueue(conn, "todoist_complete", {}, "x")
+    assert bdb.queue_claim(conn, q["id"]) is True
+    assert bdb.queue_claim(conn, q["id"]) is False
+    conn.execute("UPDATE queue SET applied_at='2000-01-01 00:00:00' WHERE id=?", (q["id"],))
+    assert bdb.queue_claim(conn, q["id"]) is True
+
+
+def test_retry_makes_a_failed_row_claimable_again(conn):
+    q = bdb.enqueue(conn, "gcal_create", {}, "x")
+    sync.drain(conn, {}, {"gcal_create": lambda p, e: 1 / 0})
+    bdb.queue_retry(conn, q["id"])
+    calls = []
+    sync.drain(conn, {}, {"gcal_create": lambda p, e: calls.append(1)})
+    assert calls == [1]
