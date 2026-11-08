@@ -120,7 +120,7 @@ backup.
 
 The timer works on its own. The Day and Week pages add three things around it:
 
-1. **Household rules**: copy [day/rules.example.json](day/rules.example.json), edit the
+1. **Household rules**: copy [day/rules.example.json](day/rules.example.json) (keep your copy outside the repo), edit the
    people, calendar names, care duties and timezone, and point `DAY_RULES` at it.
 2. **Inputs**: JSON snapshots and data files in a state directory (calendar events, Todoist
    goals, a training plan, wellness). Formats are in [docs/configuration.md](docs/configuration.md).

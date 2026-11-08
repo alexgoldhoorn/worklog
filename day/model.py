@@ -42,7 +42,7 @@ def classify_family(title: str, calendar: str, annotations: dict, patterns: dict
     """mine | family | partner | child | unclassified, for one personal event (partner = the
     partner's own, child = the child's; the values are the spec's names, the people come from the
     household). Precedence: overlay context annotation for this occurrence → the stored
-    per-occurrence class → an "always for this title" rule → rules.json patterns → unclassified."""
+    per-occurrence class → an "always for this title" rule → household rules patterns → unclassified."""
     cals = (household or _rules.household({}))["calendars"]
     if calendar != cals["family"]:
         return "mine"

@@ -41,3 +41,26 @@ def test_another_household_renames_every_lane_and_owner(tmp_path):
     ov = {"one_off": [{"date": "2026-11-03", "start": "08:45", "title": "School drop-off", "owner": "you", "tier": None, "note": None}]}
     d3 = duties.for_day(ctx.date.replace(day=3), rules.load(str(p)), {}, ov)
     assert d3[0]["owner"] == "Bo"                                              # "you" means me, whoever me is
+
+
+def test_without_any_rules_file_the_neutral_defaults_apply(monkeypatch, tmp_path):
+    monkeypatch.delenv("DAY_RULES")
+    monkeypatch.setattr(rules, "DEFAULT_PATH", str(tmp_path / "absent.json"))
+    r = rules.load()
+    assert r["duties"] == [] and rules.household(r)["me"] == "me" and r["slots"]["step_min"] == 15
+    r["duties"].append("x")
+    assert rules.load()["duties"] == []          # a fresh copy each time
+
+
+def test_a_local_rules_file_beside_the_module_is_still_honoured(monkeypatch, tmp_path):
+    monkeypatch.delenv("DAY_RULES")
+    p = tmp_path / "rules.json"; p.write_text('{"me": "Ann"}')
+    monkeypatch.setattr(rules, "DEFAULT_PATH", str(p))
+    assert rules.load()["me"] == "Ann"
+
+
+def test_a_missing_day_rules_path_fails_clearly(monkeypatch, tmp_path):
+    import pytest
+    monkeypatch.setenv("DAY_RULES", str(tmp_path / "nope.json"))
+    with pytest.raises(FileNotFoundError, match="DAY_RULES"):
+        rules.load()

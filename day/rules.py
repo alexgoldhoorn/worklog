@@ -1,11 +1,25 @@
-"""Day rules: care duties, who 'me' is, Family-calendar title patterns. The package file
-holds neutral defaults; DAY_RULES=<path> points at your own (see rules.example.json)."""
+"""Day rules: care duties, who 'me' is, Family-calendar title patterns. DAY_RULES=<path> points
+at your own file (start from rules.example.json). Without it, an optional git-ignored
+day/rules.json beside this module is used, and without that the neutral built-in defaults."""
+import copy
 import json
 import os
 
-DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "rules.json")
+DEFAULT_PATH = os.path.join(os.path.dirname(__file__), "rules.json")   # optional, git-ignored
 EXAMPLE_PATH = os.path.join(os.path.dirname(__file__), "rules.example.json")
 
+
+NEUTRAL_RULES = {
+    "household": {
+        "me": "me", "me_aliases": ["you", "me"], "partner": "partner", "child": "child",
+        "calendars": {"personal": "Personal", "family": "Family", "child": "Child", "agent": "Agent"},
+        "timezone": "UTC", "people": {},
+    },
+    "duties": [],
+    "family_patterns": {"partner": [], "child": [], "family": []},
+    "slots": {"step_min": 15, "day_start": "06:30", "day_end": "21:30", "work_start": "08:30",
+              "travel_margin_min": 15, "work_share_tolerance_h": 0.5},
+}
 
 HOUSEHOLD_DEFAULTS = {
     "me": "me", "me_aliases": ["you", "me"], "partner": "partner", "child": "child",
@@ -32,9 +46,18 @@ def household(rules: dict) -> dict:
 
 
 def load(path: str | None = None) -> dict:
-    p = path or os.environ.get("DAY_RULES") or DEFAULT_PATH
-    with open(p) as f:
-        rules = json.load(f)
+    p = path or os.environ.get("DAY_RULES")
+    if not p and os.path.exists(DEFAULT_PATH):
+        p = DEFAULT_PATH
+    if p:
+        try:
+            with open(p) as f:
+                rules = json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"household rules file not found: {p} (check DAY_RULES; "
+                                    "start from day/rules.example.json)") from None
+    else:
+        rules = copy.deepcopy(NEUTRAL_RULES)
     rules.setdefault("duties", [])
     rules.setdefault("me", (rules.get("household") or {}).get("me", "me"))
     rules.setdefault("family_patterns", {})

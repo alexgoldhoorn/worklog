@@ -21,3 +21,6 @@ garmin/local.jungle
 .env
 *.env
 !examples/*.env.example
+
+# household rules are personal: keep them out of git (use DAY_RULES; see day/rules.example.json)
+day/rules.json

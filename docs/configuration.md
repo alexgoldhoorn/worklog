@@ -19,7 +19,7 @@ everything else is optional and switches a feature on.
 | `BALANCE_STATE_DIR` | unset | The snapshots the host jobs write (read-only for the server). |
 | `BALANCE_PLAN` | unset | Training plan CSV, for run sessions on the timeline. |
 | `WORK_CALENDAR_INBOX` | unset | Where an uploaded calendar PDF is saved for an importer to pick up. |
-| `DAY_RULES` | packaged neutral defaults | Household rules JSON; start from `day/rules.example.json`. |
+| `DAY_RULES` | built-in neutral defaults (no duties) | Household rules JSON; start from `day/rules.example.json`. |
 | `DAY_SCHOOL_HOLIDAY_SCOPES` | empty (every scope) | Holiday scopes that close the school, so care duties drop on those days. |
 
 ## Host jobs (`balance/config.py`, `balance/inputs.py`)
