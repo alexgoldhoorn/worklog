@@ -537,3 +537,60 @@ def test_brief_actions_and_resume(client, app):
 
 def test_status_without_brief_unchanged(client):
     assert "week" in client.get("/api/status").json()
+
+
+def _open_count(client):
+    return sum(1 for b in client.get("/api/day/2026-10-20").json()["blocks"] if b["end"] is None)
+
+
+def test_calendar_add_in_progress_meeting_starting_before_the_timer_leaves_one_open_block(client, app):
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 5)
+    client.post("/api/start", json={"type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 20)
+    r = client.post("/api/calendar/add", json={"date": "2026-10-20", "start": "10:00", "end": "11:00", "title": "standup"})
+    assert r.status_code == 200
+    blocks = client.get("/api/day/2026-10-20").json()["blocks"]
+    # the running block would be zero minutes long (10:05-10:05), so it is dropped
+    assert [(b["start"], b["end"], b["type"]) for b in blocks] == [("10:00", None, "meet")]
+    assert _open_count(client) == 1
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 30)
+    client.post("/api/stop", json={})
+    assert client.get("/api/status").json()["state"] == "stopped"
+
+
+def test_calendar_add_finished_meeting_starting_before_the_timer_resumes_after_it(client, app):
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 5)
+    client.post("/api/start", json={"type": "dev", "project": "widgets"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 11, 30)
+    r = client.post("/api/calendar/add", json={"date": "2026-10-20", "start": "10:00", "end": "11:00", "title": "standup"})
+    assert r.status_code == 200
+    blocks = client.get("/api/day/2026-10-20").json()["blocks"]
+    assert [(b["start"], b["end"], b["type"]) for b in blocks] == [
+        ("10:00", "11:00", "meet"), ("11:00", None, "dev")]
+    assert _open_count(client) == 1
+
+
+def test_calendar_add_meeting_starting_with_the_timer_does_not_double_open(client, app):
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 0)
+    client.post("/api/start", json={"type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 20)
+    client.post("/api/calendar/add", json={"date": "2026-10-20", "start": "10:00", "end": "11:00", "title": "standup"})
+    assert _open_count(client) == 1
+
+
+def test_calendar_add_overlap_with_start_before_timer_keeps_the_timer_tail(client, app):
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 30)
+    client.post("/api/start", json={"type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 12, 0)
+    client.post("/api/calendar/add", json={"date": "2026-10-20", "start": "10:00", "end": "11:00", "title": "standup"})
+    blocks = client.get("/api/day/2026-10-20").json()["blocks"]
+    assert [(b["start"], b["end"], b["type"]) for b in blocks] == [("10:00", "11:00", "meet"), ("11:00", None, "dev")]
+
+
+def test_calendar_add_meeting_wholly_before_the_timer_leaves_it_alone(client, app):
+    app.state.clock = lambda: datetime(2026, 10, 20, 10, 5)
+    client.post("/api/start", json={"type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 11, 0)
+    client.post("/api/calendar/add", json={"date": "2026-10-20", "start": "08:00", "end": "08:30", "title": "early"})
+    blocks = client.get("/api/day/2026-10-20").json()["blocks"]
+    assert [(b["start"], b["end"], b["type"]) for b in blocks] == [("08:00", "08:30", "meet"), ("10:05", None, "dev")]

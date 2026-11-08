@@ -380,9 +380,15 @@ def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
     client = db.setting(c.conn, "default_client")
     with _LOCK:
         ob = db.open_block(c.conn)
-        interrupted = ob is not None and ob.date == date and ob.start < start
+        # The meeting cuts the running block when it reaches past the block's start; a meeting
+        # wholly before the block leaves it alone. Never more than one open block results.
+        interrupted = ob is not None and ob.date == date and end > ob.start
         if interrupted:
-            db.update_block(c.conn, ob.id, end=start)
+            cut = max(ob.start, start)   # a meeting that began before the timer eats its start
+            if cut == ob.start:
+                db.delete_block(c.conn, ob.id)   # nothing of the running block is left
+            else:
+                db.update_block(c.conn, ob.id, end=cut)
         b = Block(None, date, start, None if in_progress else end, title, "meet", client,
                   _client_default(c.conn, client), "calendar")
         b.id = db.insert_block(c.conn, b)
