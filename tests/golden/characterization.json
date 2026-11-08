@@ -1,0 +1,955 @@
+{
+ "brief_morning": {
+  "date": "2026-10-20",
+  "elapsed_s": 1800,
+  "project": "alpha",
+  "resume": {
+   "project": "alpha",
+   "type": "dev"
+  },
+  "since": "09:00",
+  "state": "working",
+  "today_work_h": 0.5,
+  "type": "dev"
+ },
+ "brief_past_stop": {
+  "date": "2026-10-20",
+  "elapsed_s": 33000,
+  "project": "alpha",
+  "resume": {
+   "project": "alpha",
+   "type": "dev"
+  },
+  "since": "09:00",
+  "state": "working",
+  "today_work_h": 9.17,
+  "type": "dev"
+ },
+ "day_2026-10-12": {
+  "blocks": [
+   {
+    "auto_closed": false,
+    "billable": true,
+    "client": "ACME",
+    "date": "2026-10-12",
+    "duration": "01:00",
+    "duration_h": 1.0,
+    "end": "10:00",
+    "flags": {
+     "overlap": false,
+     "start_gt_end": false
+    },
+    "id": 3,
+    "is_workday": true,
+    "minutes": 60,
+    "project": "alpha",
+    "source": "manual",
+    "start": "09:00",
+    "type": "dev",
+    "week": "2026-42",
+    "week_day": 2,
+    "work_type": "work",
+    "year_week": "2026-42"
+   }
+  ],
+  "date": "2026-10-12",
+  "notices": [],
+  "overlaps": [],
+  "proposals": [],
+  "totals": {
+   "billable_h": 1.0,
+   "by_client": {
+    "ACME": 1.0
+   },
+   "by_project": {
+    "alpha": 1.0
+   },
+   "by_type": {
+    "dev": 1.0
+   },
+   "other_h": 0.0,
+   "work_h": 1.0
+  }
+ },
+ "day_2026-10-14": {
+  "blocks": [
+   {
+    "auto_closed": false,
+    "billable": true,
+    "client": "ACME",
+    "date": "2026-10-14",
+    "duration": "02:00",
+    "duration_h": 2.0,
+    "end": "11:00",
+    "flags": {
+     "overlap": false,
+     "start_gt_end": false
+    },
+    "id": 4,
+    "is_workday": true,
+    "minutes": 120,
+    "project": "standup",
+    "source": "manual",
+    "start": "09:00",
+    "type": "meet",
+    "week": "2026-42",
+    "week_day": 4,
+    "work_type": "work",
+    "year_week": "2026-42"
+   },
+   {
+    "auto_closed": false,
+    "billable": null,
+    "client": null,
+    "date": "2026-10-14",
+    "duration": "00:30",
+    "duration_h": 0.5,
+    "end": "11:30",
+    "flags": {
+     "overlap": false,
+     "start_gt_end": false
+    },
+    "id": 5,
+    "is_workday": true,
+    "minutes": 30,
+    "project": null,
+    "source": "manual",
+    "start": "11:00",
+    "type": "eat",
+    "week": "2026-42",
+    "week_day": 4,
+    "work_type": "other",
+    "year_week": "2026-42"
+   },
+   {
+    "auto_closed": false,
+    "billable": true,
+    "client": "ACME",
+    "date": "2026-10-14",
+    "duration": "06:30",
+    "duration_h": 6.5,
+    "end": "18:00",
+    "flags": {
+     "overlap": false,
+     "start_gt_end": false
+    },
+    "id": 6,
+    "is_workday": true,
+    "minutes": 390,
+    "project": "alpha",
+    "source": "manual",
+    "start": "11:30",
+    "type": "dev",
+    "week": "2026-42",
+    "week_day": 4,
+    "work_type": "work",
+    "year_week": "2026-42"
+   }
+  ],
+  "date": "2026-10-14",
+  "notices": [],
+  "overlaps": [],
+  "proposals": [],
+  "totals": {
+   "billable_h": 8.5,
+   "by_client": {
+    "ACME": 8.5
+   },
+   "by_project": {
+    "alpha": 6.5,
+    "standup": 2.0
+   },
+   "by_type": {
+    "dev": 6.5,
+    "meet": 2.0
+   },
+   "other_h": 0.5,
+   "work_h": 8.5
+  }
+ },
+ "day_2026-10-19": {
+  "blocks": [
+   {
+    "auto_closed": false,
+    "billable": true,
+    "client": "ACME",
+    "date": "2026-10-19",
+    "duration": "04:00",
+    "duration_h": 4.0,
+    "end": "13:00",
+    "flags": {
+     "overlap": false,
+     "start_gt_end": false
+    },
+    "id": 7,
+    "is_workday": true,
+    "minutes": 240,
+    "project": "beta",
+    "source": "manual",
+    "start": "09:00",
+    "type": "dev",
+    "week": "2026-43",
+    "week_day": 2,
+    "work_type": "work",
+    "year_week": "2026-43"
+   },
+   {
+    "auto_closed": false,
+    "billable": true,
+    "client": "ACME",
+    "date": "2026-10-19",
+    "duration": "02:00",
+    "duration_h": 2.0,
+    "end": "14:00",
+    "flags": {
+     "overlap": true,
+     "start_gt_end": false
+    },
+    "id": 8,
+    "is_workday": true,
+    "minutes": 120,
+    "project": "overlap",
+    "source": "manual",
+    "start": "12:00",
+    "type": "meet",
+    "week": "2026-43",
+    "week_day": 2,
+    "work_type": "work",
+    "year_week": "2026-43"
+   }
+  ],
+  "date": "2026-10-19",
+  "notices": [],
+  "overlaps": [
+   "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
+  ],
+  "proposals": [],
+  "totals": {
+   "billable_h": 6.0,
+   "by_client": {
+    "ACME": 6.0
+   },
+   "by_project": {
+    "beta": 4.0,
+    "overlap": 2.0
+   },
+   "by_type": {
+    "dev": 4.0,
+    "meet": 2.0
+   },
+   "other_h": 0.0,
+   "work_h": 6.0
+  }
+ },
+ "day_2026-10-20": {
+  "blocks": [
+   {
+    "auto_closed": false,
+    "billable": true,
+    "client": "ACME",
+    "date": "2026-10-20",
+    "duration": null,
+    "duration_h": null,
+    "end": null,
+    "flags": {
+     "overlap": false,
+     "start_gt_end": false
+    },
+    "id": 9,
+    "is_workday": true,
+    "minutes": null,
+    "project": "alpha",
+    "source": "timer",
+    "start": "09:00",
+    "type": "dev",
+    "week": "2026-43",
+    "week_day": 3,
+    "work_type": "work",
+    "year_week": "2026-43"
+   }
+  ],
+  "date": "2026-10-20",
+  "notices": [],
+  "overlaps": [],
+  "proposals": [
+   {
+    "end": "10:30",
+    "start": "10:15",
+    "title": "weekly sync"
+   },
+   {
+    "end": "16:00",
+    "start": "15:00",
+    "title": "review"
+   }
+  ],
+  "totals": {
+   "billable_h": 0.0,
+   "by_client": {},
+   "by_project": {},
+   "by_type": {},
+   "other_h": 0.0,
+   "work_h": 0.0
+  }
+ },
+ "status_morning": {
+  "auto_closed": [],
+  "block": {
+   "auto_closed": false,
+   "billable": true,
+   "client": "ACME",
+   "date": "2026-10-20",
+   "duration": null,
+   "duration_h": null,
+   "end": null,
+   "id": 9,
+   "is_workday": true,
+   "minutes": null,
+   "project": "alpha",
+   "source": "timer",
+   "start": "09:00",
+   "type": "dev",
+   "week": "2026-43",
+   "week_day": 3,
+   "work_type": "work",
+   "year_week": "2026-43"
+  },
+  "chips": {
+   "break_types": [
+    "eat",
+    "admin",
+    "child",
+    "fam",
+    "family",
+    "gym",
+    "house",
+    "other",
+    "out",
+    "pomo",
+    "rest",
+    "run",
+    "shop",
+    "sick",
+    "sport",
+    "travel"
+   ],
+   "projects": [
+    "alpha",
+    "beta",
+    "overlap",
+    "standup"
+   ],
+   "types": [
+    "dev",
+    "meet"
+   ]
+  },
+  "date": "2026-10-20",
+  "elapsed_min": 30,
+  "elapsed_s": 1800,
+  "hard_stop": "17:30",
+  "month": {
+   "billable_h": 19.5,
+   "days_worked": 4,
+   "expected_h": 109.0,
+   "extra_h": -89.5,
+   "key": "2026-10",
+   "worked_h": 19.5,
+   "worked_h_live": 20.0
+  },
+  "needs_review": [],
+  "net": {
+   "with_current_h": -102.5,
+   "without_current_h": -76.5
+  },
+  "notices": [],
+  "overlaps": [
+   "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
+  ],
+  "past_stop_min": 0,
+  "running_min": 30,
+  "since": "09:00",
+  "state": "working",
+  "today": {
+   "billable_h": 0.0,
+   "by_client": {},
+   "by_project": {},
+   "by_type": {},
+   "expected_h": 7.0,
+   "other_h": 0.0,
+   "work_h": 0.0,
+   "work_h_live": 0.5
+  },
+  "week": {
+   "amount": null,
+   "billable_h": 6.0,
+   "by_client": {
+    "ACME": 6.0
+   },
+   "by_project": {
+    "beta": 4.0,
+    "overlap": 2.0
+   },
+   "by_type": {
+    "dev": 4.0,
+    "meet": 2.0
+   },
+   "days": [
+    {
+     "date": "2026-10-19",
+     "expected_h": 7.0,
+     "weekday": "Mon",
+     "worked_h": 6.0
+    },
+    {
+     "date": "2026-10-20",
+     "expected_h": 7.0,
+     "weekday": "Tue",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-21",
+     "expected_h": 7.0,
+     "weekday": "Wed",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-22",
+     "expected_h": 7.0,
+     "weekday": "Thu",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-23",
+     "expected_h": 4.0,
+     "weekday": "Fri",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-24",
+     "expected_h": 0,
+     "weekday": "Sat",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-25",
+     "expected_h": 0,
+     "weekday": "Sun",
+     "worked_h": 0.0
+    }
+   ],
+   "days_equiv": 0.8571428571428571,
+   "days_worked": 1,
+   "expected_alt_h": 36.57142857142857,
+   "expected_h": 32.0,
+   "extra_alt_h": -30.57142857142857,
+   "extra_h": -26.0,
+   "extra_h_live": -25.5,
+   "key": "2026-43",
+   "other_h": 0.0,
+   "sick_h": 1.0,
+   "worked_h": 6.0,
+   "worked_h_live": 6.5
+  },
+  "week_basis_h": 35.0
+ },
+ "status_past_stop": {
+  "auto_closed": [],
+  "block": {
+   "auto_closed": false,
+   "billable": true,
+   "client": "ACME",
+   "date": "2026-10-20",
+   "duration": null,
+   "duration_h": null,
+   "end": null,
+   "id": 9,
+   "is_workday": true,
+   "minutes": null,
+   "project": "alpha",
+   "source": "timer",
+   "start": "09:00",
+   "type": "dev",
+   "week": "2026-43",
+   "week_day": 3,
+   "work_type": "work",
+   "year_week": "2026-43"
+  },
+  "chips": {
+   "break_types": [
+    "eat",
+    "admin",
+    "child",
+    "fam",
+    "family",
+    "gym",
+    "house",
+    "other",
+    "out",
+    "pomo",
+    "rest",
+    "run",
+    "shop",
+    "sick",
+    "sport",
+    "travel"
+   ],
+   "projects": [
+    "alpha",
+    "beta",
+    "overlap",
+    "standup"
+   ],
+   "types": [
+    "dev",
+    "meet"
+   ]
+  },
+  "date": "2026-10-20",
+  "elapsed_min": 550,
+  "elapsed_s": 33000,
+  "hard_stop": "17:30",
+  "month": {
+   "billable_h": 19.5,
+   "days_worked": 4,
+   "expected_h": 109.0,
+   "extra_h": -89.5,
+   "key": "2026-10",
+   "worked_h": 19.5,
+   "worked_h_live": 28.666666666666664
+  },
+  "needs_review": [],
+  "net": {
+   "with_current_h": -102.5,
+   "without_current_h": -76.5
+  },
+  "notices": [],
+  "overlaps": [
+   "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
+  ],
+  "past_stop_min": 40,
+  "running_min": 550,
+  "since": "09:00",
+  "state": "working",
+  "today": {
+   "billable_h": 0.0,
+   "by_client": {},
+   "by_project": {},
+   "by_type": {},
+   "expected_h": 7.0,
+   "other_h": 0.0,
+   "work_h": 0.0,
+   "work_h_live": 9.166666666666666
+  },
+  "week": {
+   "amount": null,
+   "billable_h": 6.0,
+   "by_client": {
+    "ACME": 6.0
+   },
+   "by_project": {
+    "beta": 4.0,
+    "overlap": 2.0
+   },
+   "by_type": {
+    "dev": 4.0,
+    "meet": 2.0
+   },
+   "days": [
+    {
+     "date": "2026-10-19",
+     "expected_h": 7.0,
+     "weekday": "Mon",
+     "worked_h": 6.0
+    },
+    {
+     "date": "2026-10-20",
+     "expected_h": 7.0,
+     "weekday": "Tue",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-21",
+     "expected_h": 7.0,
+     "weekday": "Wed",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-22",
+     "expected_h": 7.0,
+     "weekday": "Thu",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-23",
+     "expected_h": 4.0,
+     "weekday": "Fri",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-24",
+     "expected_h": 0,
+     "weekday": "Sat",
+     "worked_h": 0.0
+    },
+    {
+     "date": "2026-10-25",
+     "expected_h": 0,
+     "weekday": "Sun",
+     "worked_h": 0.0
+    }
+   ],
+   "days_equiv": 0.8571428571428571,
+   "days_worked": 1,
+   "expected_alt_h": 36.57142857142857,
+   "expected_h": 32.0,
+   "extra_alt_h": -30.57142857142857,
+   "extra_h": -26.0,
+   "extra_h_live": -16.833333333333336,
+   "key": "2026-43",
+   "other_h": 0.0,
+   "sick_h": 1.0,
+   "worked_h": 6.0,
+   "worked_h_live": 15.166666666666666
+  },
+  "week_basis_h": 35.0
+ },
+ "summary_month": {
+  "alt_week_h": 40.0,
+  "rate_h": null,
+  "rows": [
+   {
+    "amount": null,
+    "billable_h": 8.0,
+    "by_client": {
+     "ACME": 8.0
+    },
+    "by_project": {
+     "alpha": 8.0
+    },
+    "by_type": {
+     "dev": 8.0
+    },
+    "days_equiv": 1.1428571428571428,
+    "days_worked": 1,
+    "expected_alt_h": 24.0,
+    "expected_h": 21.0,
+    "extra_alt_h": -16.0,
+    "extra_h": -13.0,
+    "key": "2026-09",
+    "other_h": 0.0,
+    "sick_h": 0,
+    "worked_h": 8.0
+   },
+   {
+    "amount": null,
+    "billable_h": 19.5,
+    "by_client": {
+     "ACME": 19.5
+    },
+    "by_project": {
+     "alpha": 7.5,
+     "beta": 8.0,
+     "overlap": 2.0,
+     "standup": 2.0
+    },
+    "by_type": {
+     "dev": 15.5,
+     "meet": 4.0
+    },
+    "days_equiv": 2.7857142857142856,
+    "days_worked": 4,
+    "expected_alt_h": 124.57142857142857,
+    "expected_h": 109.0,
+    "extra_alt_h": -105.07142857142857,
+    "extra_h": -89.5,
+    "key": "2026-10",
+    "other_h": 0.5,
+    "sick_h": 1.0,
+    "worked_h": 19.5
+   }
+  ],
+  "stats": null,
+  "week_basis_h": 35.0
+ },
+ "summary_quarter": {
+  "alt_week_h": 40.0,
+  "rate_h": null,
+  "rows": [
+   {
+    "amount": null,
+    "billable_h": 8.0,
+    "by_client": {
+     "ACME": 8.0
+    },
+    "by_project": {
+     "alpha": 8.0
+    },
+    "by_type": {
+     "dev": 8.0
+    },
+    "days_equiv": 1.1428571428571428,
+    "days_worked": 1,
+    "expected_alt_h": 24.0,
+    "expected_h": 21.0,
+    "extra_alt_h": -16.0,
+    "extra_h": -13.0,
+    "key": "2026-Q3",
+    "other_h": 0.0,
+    "sick_h": 0,
+    "worked_h": 8.0
+   },
+   {
+    "amount": null,
+    "billable_h": 19.5,
+    "by_client": {
+     "ACME": 19.5
+    },
+    "by_project": {
+     "alpha": 7.5,
+     "beta": 8.0,
+     "overlap": 2.0,
+     "standup": 2.0
+    },
+    "by_type": {
+     "dev": 15.5,
+     "meet": 4.0
+    },
+    "days_equiv": 2.7857142857142856,
+    "days_worked": 4,
+    "expected_alt_h": 124.57142857142857,
+    "expected_h": 109.0,
+    "extra_alt_h": -105.07142857142857,
+    "extra_h": -89.5,
+    "key": "2026-Q4",
+    "other_h": 0.5,
+    "sick_h": 1.0,
+    "worked_h": 19.5
+   }
+  ],
+  "stats": null,
+  "week_basis_h": 35.0
+ },
+ "summary_range": {
+  "alt_week_h": 40.0,
+  "rate_h": null,
+  "rows": [
+   {
+    "amount": null,
+    "billable_h": 9.5,
+    "by_client": {
+     "ACME": 9.5
+    },
+    "by_project": {
+     "alpha": 7.5,
+     "standup": 2.0
+    },
+    "by_type": {
+     "dev": 7.5,
+     "meet": 2.0
+    },
+    "days_equiv": 1.3571428571428572,
+    "days_worked": 2,
+    "expected_alt_h": 32.0,
+    "expected_h": 28.0,
+    "extra_alt_h": -22.5,
+    "extra_h": -18.5,
+    "key": "2026-42",
+    "other_h": 0.5,
+    "sick_h": 0,
+    "worked_h": 9.5
+   }
+  ],
+  "stats": {
+   "with_current": {
+    "last4_alt_h": -22.5,
+    "last4_h": -18.5,
+    "max_h": -18.5,
+    "median_alt_h": -22.5,
+    "median_h": -18.5,
+    "min_h": -18.5,
+    "net_alt_h": -22.5,
+    "net_h": -18.5,
+    "q1_h": null,
+    "q3_h": null
+   },
+   "without_current": {
+    "last4_alt_h": -22.5,
+    "last4_h": -18.5,
+    "max_h": -18.5,
+    "median_alt_h": -22.5,
+    "median_h": -18.5,
+    "min_h": -18.5,
+    "net_alt_h": -22.5,
+    "net_h": -18.5,
+    "q1_h": null,
+    "q3_h": null
+   }
+  },
+  "week_basis_h": 35.0
+ },
+ "summary_week": {
+  "alt_week_h": 40.0,
+  "rate_h": null,
+  "rows": [
+   {
+    "amount": null,
+    "billable_h": 8.0,
+    "by_client": {
+     "ACME": 8.0
+    },
+    "by_project": {
+     "alpha": 8.0
+    },
+    "by_type": {
+     "dev": 8.0
+    },
+    "days_equiv": 1.1428571428571428,
+    "days_worked": 1,
+    "expected_alt_h": 40.0,
+    "expected_h": 35.0,
+    "extra_alt_h": -32.0,
+    "extra_h": -27.0,
+    "key": "2026-40",
+    "other_h": 0.0,
+    "sick_h": 0,
+    "worked_h": 8.0
+   },
+   {
+    "amount": null,
+    "billable_h": 4.0,
+    "by_client": {
+     "ACME": 4.0
+    },
+    "by_project": {
+     "beta": 4.0
+    },
+    "by_type": {
+     "dev": 4.0
+    },
+    "days_equiv": 0.5714285714285714,
+    "days_worked": 1,
+    "expected_alt_h": 40.0,
+    "expected_h": 35.0,
+    "extra_alt_h": -36.0,
+    "extra_h": -31.0,
+    "key": "2026-41",
+    "other_h": 0.0,
+    "sick_h": 0,
+    "worked_h": 4.0
+   },
+   {
+    "amount": null,
+    "billable_h": 9.5,
+    "by_client": {
+     "ACME": 9.5
+    },
+    "by_project": {
+     "alpha": 7.5,
+     "standup": 2.0
+    },
+    "by_type": {
+     "dev": 7.5,
+     "meet": 2.0
+    },
+    "days_equiv": 1.3571428571428572,
+    "days_worked": 2,
+    "expected_alt_h": 32.0,
+    "expected_h": 28.0,
+    "extra_alt_h": -22.5,
+    "extra_h": -18.5,
+    "key": "2026-42",
+    "other_h": 0.5,
+    "sick_h": 0,
+    "worked_h": 9.5
+   },
+   {
+    "amount": null,
+    "billable_h": 6.0,
+    "by_client": {
+     "ACME": 6.0
+    },
+    "by_project": {
+     "beta": 4.0,
+     "overlap": 2.0
+    },
+    "by_type": {
+     "dev": 4.0,
+     "meet": 2.0
+    },
+    "days_equiv": 0.8571428571428571,
+    "days_worked": 1,
+    "expected_alt_h": 36.57142857142857,
+    "expected_h": 32.0,
+    "extra_alt_h": -30.57142857142857,
+    "extra_h": -26.0,
+    "key": "2026-43",
+    "other_h": 0.0,
+    "sick_h": 1.0,
+    "worked_h": 6.0
+   }
+  ],
+  "stats": {
+   "with_current": {
+    "last4_alt_h": -121.07142857142857,
+    "last4_h": -102.5,
+    "max_h": -18.5,
+    "median_alt_h": -31.285714285714285,
+    "median_h": -26.5,
+    "min_h": -31.0,
+    "net_alt_h": -121.07142857142857,
+    "net_h": -102.5,
+    "q1_h": -28.0,
+    "q3_h": -24.125
+   },
+   "without_current": {
+    "last4_alt_h": -90.5,
+    "last4_h": -76.5,
+    "max_h": -18.5,
+    "median_alt_h": -32.0,
+    "median_h": -27.0,
+    "min_h": -31.0,
+    "net_alt_h": -90.5,
+    "net_h": -76.5,
+    "q1_h": -29.0,
+    "q3_h": -22.75
+   }
+  },
+  "week_basis_h": 35.0
+ },
+ "summary_year": {
+  "alt_week_h": 40.0,
+  "rate_h": null,
+  "rows": [
+   {
+    "amount": null,
+    "billable_h": 27.5,
+    "by_client": {
+     "ACME": 27.5
+    },
+    "by_project": {
+     "alpha": 15.5,
+     "beta": 8.0,
+     "overlap": 2.0,
+     "standup": 2.0
+    },
+    "by_type": {
+     "dev": 23.5,
+     "meet": 4.0
+    },
+    "days_equiv": 3.9285714285714284,
+    "days_worked": 5,
+    "expected_alt_h": 148.57142857142858,
+    "expected_h": 130.0,
+    "extra_alt_h": -121.07142857142858,
+    "extra_h": -102.5,
+    "key": "2026",
+    "other_h": 0.5,
+    "sick_h": 1.0,
+    "worked_h": 27.5
+   }
+  ],
+  "stats": null,
+  "week_basis_h": 35.0
+ }
+}
