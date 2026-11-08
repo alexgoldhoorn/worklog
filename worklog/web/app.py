@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import config, db
 from ..auth import BasicAuth
+from ..csrf import CrossSiteGuard
 from ..config import Settings
 from .api import ApiError, router
 from .pages import router as pages_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings) -> FastAPI:
         if request.url.path.startswith("/static/") or "text/html" in response.headers.get("content-type", ""):
             response.headers.setdefault("Cache-Control", "no-cache")
         return response
+    app.add_middleware(CrossSiteGuard)
     if settings.auth_user and settings.auth_password_hash:
         app.add_middleware(BasicAuth, user=settings.auth_user, password_hash=settings.auth_password_hash)
     else:
