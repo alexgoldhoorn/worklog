@@ -5,6 +5,11 @@ from . import db, model
 from .db import Block
 
 
+# Before this hour a block dated yesterday counts as a late-night session still in progress:
+# auto_close leaves it open, and an explicit stop/pause/switch splits it at midnight.
+LATE_NIGHT_END = time(6, 0)
+
+
 def now_parts(now: datetime) -> tuple[str, str]:
     return now.strftime("%Y-%m-%d"), now.strftime("%H:%M")
 
@@ -21,7 +26,7 @@ def auto_close(conn, now: datetime) -> list[Block]:
     """
     limit = db.setting(conn, "auto_close_time")
     cutoff = now.date()
-    if now.time() < time(6, 0):
+    if now.time() < LATE_NIGHT_END:
         cutoff -= timedelta(days=1)
     rows = conn.execute(
         "SELECT id, start FROM blocks WHERE end IS NULL AND date < ? ORDER BY date, start, id",
@@ -30,18 +35,31 @@ def auto_close(conn, now: datetime) -> list[Block]:
 
 
 def close_open(conn, now: datetime) -> Block | None:
-    """Close the open block at the current minute. A block from an earlier day is closed at
-    23:59 and flagged auto_closed; a block that would last zero minutes is deleted instead."""
+    """Close the open block at the current minute; a block that would last zero minutes is
+    deleted instead.
+
+    A late-night block (dated yesterday, acted on before LATE_NIGHT_END, so auto_close left it
+    open) is split at midnight: yesterday's part ends 23:59, today's part runs 00:00 to now,
+    neither flagged. Any older block is closed at 23:59 and flagged auto_closed."""
     ob = db.open_block(conn)
     if ob is None:
         return None
     today, hhmm = now_parts(now)
-    auto = ob.date < today
-    end = "23:59" if auto else hhmm
-    if not auto and model.minutes(ob.start, end) == 0:
+    if ob.date < today:
+        yesterday = (now.date() - timedelta(days=1)).isoformat()
+        if ob.date == yesterday and now.time() < LATE_NIGHT_END:
+            db.update_block(conn, ob.id, end="23:59", auto_closed=False)
+            if model.minutes("00:00", hhmm) == 0:
+                return db.get_block(conn, ob.id)
+            part = Block(None, today, "00:00", hhmm, ob.project, ob.type, ob.client,
+                         ob.billable, ob.source)
+            part.id = db.insert_block(conn, part)
+            return db.get_block(conn, part.id)
+        return db.update_block(conn, ob.id, end="23:59", auto_closed=True)
+    if model.minutes(ob.start, hhmm) == 0:
         db.delete_block(conn, ob.id)
         return None
-    return db.update_block(conn, ob.id, end=end, auto_closed=auto)
+    return db.update_block(conn, ob.id, end=hhmm, auto_closed=False)
 
 
 def start(conn, now: datetime, type_: str | None = None, project: str | None = None,

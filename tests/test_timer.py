@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from worklog import db, timer
+import pytest
+
+from worklog import db, reports, timer
 
 
 def T(s):
@@ -74,10 +76,40 @@ def test_forgotten_block_started_after_18_closes_at_its_start(conn):
     assert (old.end, old.auto_closed) == ("19:10", True)
 
 
-def test_stop_after_midnight_closes_at_2359_flagged(conn):
+def test_stop_after_midnight_splits_the_block_at_midnight(conn):
+    timer.start(conn, T("2026-10-19 22:00"), "dev", "widgets")
+    b = timer.stop(conn, T("2026-10-20 01:00"))
+    assert (b.date, b.start, b.end, b.auto_closed) == ("2026-10-20", "00:00", "01:00", False)
+    before = db.blocks_on(conn, "2026-10-19")
+    assert [(x.start, x.end, x.auto_closed, x.project, x.client) for x in before] == [
+        ("22:00", "23:59", False, "widgets", b.client)]
+    assert db.open_block(conn) is None
+    # per-day totals: 22:00-23:59 yesterday, 00:00-01:00 today
+    bt = db.break_types(conn)
+    assert reports.day_totals(conn, "2026-10-19", bt)["work_h"] == pytest.approx(119 / 60, abs=1e-3)
+    assert reports.day_totals(conn, "2026-10-20", bt)["work_h"] == 1.0
+
+
+def test_stop_at_midnight_exactly_keeps_no_empty_block(conn):
     timer.start(conn, T("2026-10-19 22:00"))
-    b = timer.stop(conn, T("2026-10-20 00:30"))
-    assert (b.end, b.auto_closed) == ("23:59", True)
+    timer.stop(conn, T("2026-10-20 00:00"))
+    assert db.blocks_on(conn, "2026-10-20") == []
+    assert [(x.end, x.auto_closed) for x in db.blocks_on(conn, "2026-10-19")] == [("23:59", False)]
+
+
+def test_pause_after_midnight_splits_and_starts_the_break_at_now(conn):
+    timer.start(conn, T("2026-10-19 22:00"))
+    timer.pause(conn, T("2026-10-20 00:40"))
+    assert [(x.start, x.end, x.type) for x in db.blocks_on(conn, "2026-10-20")] == [
+        ("00:00", "00:40", "dev"), ("00:40", None, "eat")]
+    assert db.blocks_on(conn, "2026-10-19")[0].auto_closed is False
+
+
+def test_block_forgotten_past_the_morning_cutoff_is_still_auto_closed(conn):
+    timer.start(conn, T("2026-10-19 22:00"))
+    b = timer.stop(conn, T("2026-10-20 06:30"))
+    assert (b.date, b.end, b.auto_closed) == ("2026-10-19", "22:00", True)
+    assert db.blocks_on(conn, "2026-10-20") == []
 
 
 def test_status_reports_state(conn):
