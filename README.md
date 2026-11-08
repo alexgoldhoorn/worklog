@@ -23,6 +23,18 @@ Clients that talk to the same JSON API:
 Everything personal (people, calendars, timezone, holiday scopes, paths, credentials) is
 configuration. Nothing is hardcoded to one household or one server.
 
+## Screenshots
+
+![The Day page: one timeline of work meetings, personal and family calendars, care duties and protected blocks, with the capacity gate on top](docs/screenshots/day.png)
+
+All screenshots show synthetic demo data (made-up projects, meetings and people).
+
+| | |
+|---|---|
+| ![Timer](docs/screenshots/timer.png) **Timer** (`/timer`): the running block, today's blocks and calendar proposals. | ![Pomodoro](docs/screenshots/pomodoro.png) **Pomodoro**: a per-device countdown that offers to pause the timer. |
+| ![Week](docs/screenshots/week.png) **Week** (`/week`): meetings, approved and proposed protected blocks, the hard stop and the capacity gate. | ![Reports](docs/screenshots/reports.png) **Reports**: hours against expected, balance, by type and project. |
+| ![Timer on a phone](docs/screenshots/timer-phone.png) **Phone**: the timer page at 390 px wide. | ![Qt app](docs/screenshots/qt-app.png) **Qt app** (`qt/`): timer, pomodoro and reports, rendered offscreen on the desktop. |
+
 ## Quick start
 
 You need Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
