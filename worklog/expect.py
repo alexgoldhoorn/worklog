@@ -31,16 +31,20 @@ def load_holidays(path: str | None) -> tuple[dict[str, str], str | None]:
         return {}, f"holidays cache unavailable: {e}"
 
 
-def _default(conn, date: str, holidays: dict[str, str]) -> db.DayExpectation:
+def default_workday_h(conn) -> float:
+    """The default expected hours of a Mon-Fri workday (read once per call by callers)."""
+    return float(db.setting(conn, "default_expected_h"))
+
+
+def _default(date: str, holidays: dict[str, str], workday_h: float) -> db.DayExpectation:
     if date in holidays:
         return db.DayExpectation(date, 0, 0, holidays[date], "holiday")
-    h = float(db.setting(conn, "default_expected_h")) if model.is_workday(date) else 0
-    return db.DayExpectation(date, h, 0, "", "default")
+    return db.DayExpectation(date, workday_h if model.is_workday(date) else 0, 0, "", "default")
 
 
 def expected_for(conn, date: str, holidays: dict[str, str]) -> db.DayExpectation:
     """A stored override wins; else 0 h on a holiday; else the default workday on Mon-Fri."""
-    return db.get_expectation(conn, date) or _default(conn, date, holidays)
+    return db.get_expectation(conn, date) or _default(date, holidays, default_workday_h(conn))
 
 
 def first_logged_day(conn) -> str | None:
@@ -51,11 +55,12 @@ def expected_between(conn, start: str, end: str, holidays, first_day: str | None
     """One entry per calendar day in the range. Days before `first_day` (the first logged
     block) expect 0 h, so a new install does not start with a huge negative balance."""
     stored = db.expectations_between(conn, start, end)
+    workday_h = default_workday_h(conn)
     out: dict[str, db.DayExpectation] = {}
     d, last = _date.fromisoformat(start), _date.fromisoformat(end)
     while d <= last:
         key = d.isoformat()
-        e = stored.get(key) or _default(conn, key, holidays)
+        e = stored.get(key) or _default(key, holidays, workday_h)
         if first_day is not None and key < first_day:
             e = db.DayExpectation(key, 0, e.sick_h, e.reason, "before-first")
         out[key] = e

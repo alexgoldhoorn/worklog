@@ -1,17 +1,16 @@
 """JSON API routes."""
 import dataclasses
 import math
-import os
 import re
 import threading
-from datetime import date as _date, datetime, timedelta
+from datetime import date as _date, datetime
 
 from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import Response
 
-from .. import calendar as wcal, db, expect, model, reports, timer, xlsx_io
+from .. import calendar as wcal, db, expect, model, reports, status, timer, xlsx_io
 from ..db import Block, DayExpectation
-from ..validate import ApiError, date_arg, is_hhmm
+from ..validate import ApiError, date_arg
 
 router = APIRouter()
 _LOCK = threading.Lock()  # one timer mutation at a time (phone tap vs Telegram call)
@@ -78,22 +77,6 @@ def _client_default(conn, client):
     return None if row is None else bool(row["billable"])
 
 
-def _fmt_day(d: str) -> str:
-    return _date.fromisoformat(d).strftime("%a %-d %b")
-
-
-def _overlap_notices(blocks: list[Block]) -> list[str]:
-    by_date: dict[str, list[Block]] = {}
-    for b in blocks:
-        by_date.setdefault(b.date, []).append(b)
-    out = []
-    for d in sorted(by_date):
-        for a, b in model.overlaps(by_date[d]):
-            out.append(f"Overlap {_fmt_day(d)}: {a.start}–{a.end or 'now'} {a.type} and "
-                       f"{b.start}–{b.end or 'now'} {b.type} · both count in full")
-    return out
-
-
 def _derived(c: Ctx, b: Block) -> dict:
     return model.with_derived(b, db.break_types(c.conn))
 
@@ -119,103 +102,14 @@ def _body(body) -> dict:
 # ---- status -----------------------------------------------------------------
 
 
-
-def _hard_stop(c: Ctx) -> str | None:
-    """The balance store's hard stop ("HH:MM"), or None when there is no store."""
-    path = c.settings.balance_db_path
-    if not path or not os.path.exists(path):
-        return None
-    try:
-        from balance import db as bdb  # lazy: day.web imports this module
-        conn = bdb.connect(path, check_same_thread=False, readonly=True)
-        try:
-            v = bdb.get_settings(conn).get("hard_stop")
-        finally:
-            conn.close()
-        return v if v and is_hhmm(v) else None
-    except Exception:
-        return None
-
-
-def _brief(c: Ctx) -> dict:
-    """Compact status for small clients (the Garmin widget): no week/month/net series."""
-    st = timer.status(c.conn, c.now)
-    bt = db.break_types(c.conn)
-    blk = st["block"]
-    running = st["elapsed_min"] if st["state"] == "working" and st["elapsed_min"] else 0
-    work = [b for b in db.blocks_on(c.conn, c.today.isoformat()) if model.work_type(b.type, bt) == "work"]
-    last = max(work, key=lambda b: b.start, default=None)
-    return {"state": st["state"], "date": st["date"], "since": st["since"], "elapsed_s": st["elapsed_s"],
-            "type": blk["type"] if blk else None, "project": blk["project"] if blk else None,
-            "today_work_h": round(reports.day_totals(c.conn, c.today.isoformat(), bt)["work_h"] + max(0, running) / 60, 2),
-            "resume": {"type": last.type, "project": last.project} if last else None}
-
-
 def _status(c: Ctx) -> dict:
-    conn = c.conn
-    out = timer.status(conn, c.now)
-    out["hard_stop"] = _hard_stop(c)
-    out["past_stop_min"] = None
-    blk = out.get("block")
-    if out["hard_stop"] and out["state"] == "working" and blk and blk.get("date") == c.today.isoformat():
-        hh, mm = out["hard_stop"].split(":")
-        out["past_stop_min"] = max(0, c.now.hour * 60 + c.now.minute - (int(hh) * 60 + int(mm)))
-    bt = db.break_types(conn)
-    today = c.today.isoformat()
-    out["today"] = reports.day_totals(conn, today, bt)
-    running = out["elapsed_min"] if out["state"] == "working" and out["elapsed_min"] else 0
-    running = max(0, running)
-    out["running_min"] = running
-    out["today"]["work_h_live"] = out["today"]["work_h"] + running / 60
-    wk = model.week_key(today)
-    wstart, wend = model.week_bounds(wk)
-    rows = reports.grouped(conn, "week", wstart, min(wend, today), c.holidays, c.today)
-    out["week"] = next((r for r in rows if r["key"] == wk), None) or {
-        "key": wk, "worked_h": 0.0, "other_h": 0.0, "expected_h": 0.0, "extra_h": 0.0,
-        "expected_alt_h": 0.0, "extra_alt_h": 0.0, "days_worked": 0, "days_equiv": 0.0,
-        "billable_h": 0.0, "by_client": {}, "sick_h": 0.0}
-    out["week"]["worked_h_live"] = out["week"]["worked_h"] + running / 60
-    out["week"]["extra_h_live"] = out["week"]["worked_h_live"] - out["week"]["expected_h"]
-    mk = model.month_key(today)
-    mrows = reports.grouped(conn, "month", f"{mk}-01", today, c.holidays, c.today)
-    mrow = next((r for r in mrows if r["key"] == mk), None) or {
-        "key": mk, "worked_h": 0.0, "expected_h": 0.0, "extra_h": 0.0, "days_worked": 0, "billable_h": 0.0}
-    out["month"] = {k: mrow[k] for k in ("key", "worked_h", "expected_h", "extra_h", "days_worked", "billable_h")}
-    out["month"]["worked_h_live"] = out["month"]["worked_h"] + running / 60
-    out["week_basis_h"] = float(db.setting(conn, "base_week_h"))
-    # per-day series for the whole ISO week (future days carry expected hours only)
-    out["week"]["days"] = [
-        {"date": d["date"], "weekday": d["weekday"], "worked_h": d["worked_h"], "expected_h": d["expected_h"]}
-        for d in reports.day_rows(conn, wstart, wend, c.holidays)]
-    out["today"]["expected_h"] = next((d["expected_h"] for d in out["week"]["days"] if d["date"] == today), 0.0)
-    out["needs_review"] = [
-        {"date": b.date, "start": b.start, "end": b.end, "type": b.type}
-        for b in db.auto_closed_between(conn, (c.today - timedelta(days=30)).isoformat(), today)]
-    out["net"] = reports.net_balance(conn, c.holidays, c.today)
-    _, cal_warn = wcal.proposals(c.settings.calendar_db_path, today, [])
-    out["overlaps"] = _overlap_notices(db.blocks_between(conn, (c.today - timedelta(days=14)).isoformat(), today))
-    out["notices"] = c.notices + ([cal_warn] if cal_warn else [])
-    # chips: most used work types / projects in the last 60 days
-    since = (c.today - timedelta(days=60)).isoformat()
-    types: dict[str, int] = {}
-    projects: dict[str, int] = {}
-    breaks: dict[str, int] = {}
-    for b in db.blocks_between(conn, since, today):
-        if model.work_type(b.type, bt) != "work":
-            breaks[b.type] = breaks.get(b.type, 0) + 1
-            continue
-        types[b.type] = types.get(b.type, 0) + 1
-        # a calendar meeting's project is its title, not a project to pick again
-        if b.source != "calendar" and b.project and b.project.strip():
-            projects[b.project] = projects.get(b.project, 0) + 1
+    return status.build(c.conn, c.now, c.holidays, c.notices, c.settings)
 
-    def top(d):
-        return [k for k, _ in sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[:8]]
 
-    out["chips"] = {"types": top(types), "projects": top(projects),
-                    # eat first, then the break types by recent use, then the rest alphabetically
-                    "break_types": sorted(bt, key=lambda n: (n != "eat", -breaks.get(n, 0), n))}
-    return out
+def _status_payload(c: Ctx, brief: bool) -> dict:
+    if brief:
+        return status.brief(c.conn, c.now, c.holidays, c.notices, c.settings)
+    return _status(c)
 
 
 @router.get("/healthz")
@@ -225,7 +119,7 @@ def healthz():
 
 @router.get("/api/status")
 def get_status(c: Ctx = Depends(ctx), brief: bool = Query(False)):
-    return _brief(c) if brief else _status(c)
+    return _status_payload(c, brief)
 
 
 @router.post("/api/start")
@@ -236,7 +130,7 @@ def post_start(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: boo
         raise ApiError(f"'{t}' is a break type; use pause")
     with _LOCK:
         timer.start(c.conn, c.now, b.get("type"), b.get("project"), b.get("client"))
-    return _brief(c) if brief else _status(c)
+    return _status_payload(c, brief)
 
 
 @router.post("/api/pause")
@@ -250,14 +144,14 @@ def post_pause(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: boo
             raise ApiError(f"unknown break type '{t}'; valid: {valid}")
     with _LOCK:
         timer.pause(c.conn, c.now, t)
-    return _brief(c) if brief else _status(c)
+    return _status_payload(c, brief)
 
 
 @router.post("/api/stop")
 def post_stop(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: bool = Query(False)):
     with _LOCK:
         timer.stop(c.conn, c.now)
-    return _brief(c) if brief else _status(c)
+    return _status_payload(c, brief)
 
 
 # ---- day --------------------------------------------------------------------
@@ -274,7 +168,7 @@ def get_day(date: str, c: Ctx = Depends(ctx)):
     dismissed = db.dismissed_on(c.conn, date)
     props = [p for p in props if (p["start"], p["title"] or "") not in dismissed]
     return {"date": date, "blocks": items, "totals": reports.day_totals(c.conn, date, bt),
-            "proposals": props, "overlaps": _overlap_notices(blocks),
+            "proposals": props, "overlaps": status.overlap_notices(blocks),
             "notices": c.notices + ([warn] if warn else [])}
 
 
