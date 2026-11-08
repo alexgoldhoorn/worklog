@@ -95,3 +95,14 @@ def test_sentry_server_name_is_configurable(monkeypatch):
         monkeypatch.setitem(sys.modules, name, m)
     appmod._init_sentry("http://k@h/1", "box1")
     assert seen["server_name"] == "box1"
+
+
+def test_non_ascii_username_is_a_401_not_a_500(secured):
+    r = secured.get("/api/status", headers=basic("jösé", "s3cret:x"))
+    assert r.status_code == 401
+
+
+def test_non_ascii_configured_user_can_log_in(tmp_path):
+    app = create_app(Settings(db_path=str(tmp_path / "t.db"), auth_user="jösé",
+                              auth_password_hash=hash_password("pw", iterations=1000)))
+    assert TestClient(app).get("/api/status", headers=basic("jösé", "pw")).status_code == 200

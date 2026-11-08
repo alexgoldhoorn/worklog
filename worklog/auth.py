@@ -54,7 +54,7 @@ class BasicAuth:
             user, sep, password = base64.b64decode(token, validate=True).decode().partition(":")
         except (binascii.Error, UnicodeDecodeError):
             return False
-        if not sep or not hmac.compare_digest(user, self.user) or not verify_password(password, self.password_hash):
+        if not sep or not hmac.compare_digest(user.encode(), self.user.encode()) or not verify_password(password, self.password_hash):
             return False
         self._ok.add(key)
         return True
