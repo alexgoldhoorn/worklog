@@ -22,7 +22,7 @@ from day.web import router as day_router
 _STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
-def _init_sentry(dsn: str) -> None:
+def _init_sentry(dsn: str, server_name: str | None = None) -> None:
     """Report unhandled exceptions (500s) to Sentry (or a Sentry-compatible server such as Bugsink). ApiError and the other registered
     handlers answer 4xx themselves and never reach Sentry. Must never stop the app starting."""
     try:
@@ -30,7 +30,7 @@ def _init_sentry(dsn: str) -> None:
         from sentry_sdk.integrations.fastapi import FastApiIntegration
         from sentry_sdk.integrations.starlette import StarletteIntegration
         # no PII flag: the SDK default already sends none, and send_default_pii is deprecated
-        sentry_sdk.init(dsn=dsn, environment="worklog", server_name="nuc", traces_sample_rate=0,
+        sentry_sdk.init(dsn=dsn, environment="worklog", server_name=server_name, traces_sample_rate=0,
                         integrations=[StarletteIntegration(), FastApiIntegration()])
     except Exception as e:  # noqa: BLE001
         logging.getLogger(__name__).warning("error reporting disabled: %s", e)
@@ -43,7 +43,7 @@ def create_app(settings: Settings) -> FastAPI:
         raise ValueError(f"authentication is half configured: {missing} is not set "
                          "(set both WORKLOG_AUTH_USER and WORKLOG_AUTH_PASSWORD_HASH, or neither)")
     if settings.sentry_dsn:
-        _init_sentry(settings.sentry_dsn)
+        _init_sentry(settings.sentry_dsn, settings.sentry_server_name)
     app = FastAPI(title="worklog")
     app.state.settings = settings
     db.connect(settings.db_path).close()  # migrate once, before the first request

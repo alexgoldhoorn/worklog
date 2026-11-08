@@ -18,6 +18,7 @@ class Settings:
     plan_path: str | None = None
     calendar_inbox: str | None = None     # where an uploaded Outlook PDF goes (the inbox job imports it)
     sentry_dsn: str | None = None         # Sentry-compatible error reporting; unset = off
+    sentry_server_name: str | None = None  # label on reported events; unset = the SDK default (hostname)
 
 
 def from_env() -> Settings:
@@ -34,4 +35,5 @@ def from_env() -> Settings:
         plan_path=os.environ.get("BALANCE_PLAN") or None,
         calendar_inbox=os.environ.get("WORK_CALENDAR_INBOX") or None,
         sentry_dsn=os.environ.get("WORKLOG_SENTRY_DSN") or None,
+        sentry_server_name=os.environ.get("WORKLOG_SENTRY_SERVER_NAME") or None,
     )

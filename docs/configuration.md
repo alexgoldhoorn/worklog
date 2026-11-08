@@ -14,6 +14,7 @@ everything else is optional and switches a feature on.
 | `WORKLOG_HOLIDAYS` | unset | Holidays cache JSON (format below); holidays get 0 expected hours. |
 | `WORKLOG_HOLIDAY_SKIP_SCOPES` | empty | Comma-separated holiday scopes that are *not* days off for work (e.g. `town` when your client follows the city's calendar). |
 | `WORKLOG_SENTRY_DSN` | unset | Report unhandled exceptions to Sentry or a compatible server. |
+| `WORKLOG_SENTRY_SERVER_NAME` | unset | Label for reported events (default: the hostname). |
 | `BALANCE_DB` | unset | The planner store (blocks, write queue, taps), shared with the host jobs. Set it together with `BALANCE_STATE_DIR` to use the Day and Week pages. |
 | `BALANCE_STATE_DIR` | unset | The snapshots the host jobs write (read-only for the server). |
 | `BALANCE_PLAN` | unset | Training plan CSV, for run sessions on the timeline. |

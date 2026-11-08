@@ -74,3 +74,24 @@ def test_auth_on_logs_no_auth_warning(tmp_path, caplog):
     with caplog.at_level("WARNING"):
         create_app(_settings(tmp_path, auth_user="sam", auth_password_hash=hash_password("x", iterations=1000)))
     assert not any("authentication is off" in r.message for r in caplog.records)
+
+
+def test_sentry_server_name_is_configurable(monkeypatch):
+    from worklog import config
+    from worklog.web import app as appmod
+    monkeypatch.setenv("WORKLOG_SENTRY_SERVER_NAME", "box1")
+    assert config.from_env().sentry_server_name == "box1"
+    monkeypatch.delenv("WORKLOG_SENTRY_SERVER_NAME")
+    assert config.from_env().sentry_server_name is None
+
+    seen = {}
+    import sys, types
+    fake = types.ModuleType("sentry_sdk")
+    fake.init = lambda **kw: seen.update(kw)
+    monkeypatch.setitem(sys.modules, "sentry_sdk", fake)
+    for name in ("sentry_sdk.integrations.fastapi", "sentry_sdk.integrations.starlette"):
+        m = types.ModuleType(name)
+        m.FastApiIntegration = m.StarletteIntegration = lambda: None
+        monkeypatch.setitem(sys.modules, name, m)
+    appmod._init_sentry("http://k@h/1", "box1")
+    assert seen["server_name"] == "box1"
