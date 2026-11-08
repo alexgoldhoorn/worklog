@@ -301,6 +301,9 @@ def calendar_undismiss(body: dict = Body(...), c: Ctx = Depends(ctx)):
 
 # ---- reports ----------------------------------------------------------------
 
+MAX_SUMMARY_DAYS = 3660  # /api/summary refuses ranges longer than about ten years (HTTP 400)
+
+
 @router.get("/api/summary")
 def summary(group: str = "week", start: str | None = None, end: str | None = None,
             c: Ctx = Depends(ctx)):
@@ -312,6 +315,9 @@ def summary(group: str = "week", start: str | None = None, end: str | None = Non
         start = _date_arg(start, "start")
     else:
         start = expect.first_logged_day(c.conn) or c.today.isoformat()
+    span = (_date.fromisoformat(end) - _date.fromisoformat(start)).days
+    if span > MAX_SUMMARY_DAYS:
+        raise ApiError(f"range too long: {span} days (the summary covers at most {MAX_SUMMARY_DAYS} days)")
     rows = reports.grouped(c.conn, group, start, end, c.holidays, c.today)
     stats = (reports.weekly_stats(rows, model.week_key(c.today.isoformat()))
              if group == "week" else None)

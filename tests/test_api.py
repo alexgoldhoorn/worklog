@@ -594,3 +594,20 @@ def test_calendar_add_meeting_wholly_before_the_timer_leaves_it_alone(client, ap
     client.post("/api/calendar/add", json={"date": "2026-10-20", "start": "08:00", "end": "08:30", "title": "early"})
     blocks = client.get("/api/day/2026-10-20").json()["blocks"]
     assert [(b["start"], b["end"], b["type"]) for b in blocks] == [("08:00", "08:30", "meet"), ("10:05", None, "dev")]
+
+
+def test_summary_refuses_a_range_beyond_the_cap(client):
+    from worklog.web.api import MAX_SUMMARY_DAYS
+    r = client.get("/api/summary", params={"start": "2000-01-01", "end": "2026-10-20"})
+    assert r.status_code == 400 and "range too long" in r.json()["error"]
+    assert (client.get("/api/summary", params={"start": "2016-10-21", "end": "2026-10-20"}).status_code == 200)
+    assert MAX_SUMMARY_DAYS == 3660
+
+
+def test_default_workday_hours_are_read_once_per_range(conn, monkeypatch):
+    from worklog import db, expect
+    calls = []
+    real = db.setting
+    monkeypatch.setattr(db, "setting", lambda c, k: (calls.append(k), real(c, k))[1])
+    expect.expected_between(conn, "2026-10-01", "2026-12-31", {}, None)
+    assert calls.count("default_expected_h") == 1

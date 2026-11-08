@@ -35,7 +35,7 @@ time anything reads the timer. Such blocks are flagged `auto_closed` and listed 
 
 | Route | Does |
 |---|---|
-| `GET /api/summary?group=week\|month\|quarter\|year&start=&end=` | Worked, expected and extra hours per group; weekly stats for `week`. |
+| `GET /api/summary?group=week\|month\|quarter\|year&start=&end=` | Worked, expected and extra hours per group; weekly stats for `week`. A range longer than 3660 days (about ten years) is refused with HTTP 400. |
 | `GET /api/heatmap?start=&end=` | Hours per day for the heat map. |
 | `GET /api/invoice?month=YYYY-MM` | Billable days and amounts for one month (needs a `rate`). |
 | `GET /api/days?start=&end=` | Expected and sick hours per day. |
