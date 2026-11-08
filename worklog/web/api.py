@@ -11,19 +11,15 @@ from fastapi.responses import Response
 
 from .. import calendar as wcal, db, expect, model, reports, timer, xlsx_io
 from ..db import Block, DayExpectation
+from ..validate import ApiError, date_arg, is_hhmm
 
 router = APIRouter()
 _LOCK = threading.Lock()  # one timer mutation at a time (phone tap vs Telegram call)
 
-_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
-_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-class ApiError(Exception):
-    """Raised for bad input; the app turns it into `{"error": message}` with this status."""
-    def __init__(self, message: str, status: int = 400):
-        self.message, self.status = message, status
+# ApiError lives in worklog.validate (shared by the day and balance APIs); re-exported here.
 
 
 # ---- dependencies / helpers -------------------------------------------------
@@ -60,13 +56,7 @@ def ctx(request: Request, conn=Depends(get_conn)) -> Ctx:
     return Ctx(request, conn)
 
 
-def _date_arg(v, name="date") -> str:
-    try:
-        if not _DATE.fullmatch(str(v)):
-            raise ValueError
-        return _date.fromisoformat(str(v)).isoformat()
-    except (ValueError, TypeError):
-        raise ApiError(f"invalid {name}: {v!r} (expected YYYY-MM-DD)")
+_date_arg = date_arg
 
 
 _LOOSE_TIME = re.compile(r"(\d{1,2})[:.hH]?(\d{2})")
@@ -142,7 +132,7 @@ def _hard_stop(c: Ctx) -> str | None:
             v = bdb.get_settings(conn).get("hard_stop")
         finally:
             conn.close()
-        return v if v and _HHMM.fullmatch(v) else None
+        return v if v and is_hhmm(v) else None
     except Exception:
         return None
 

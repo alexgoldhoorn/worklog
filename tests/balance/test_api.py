@@ -49,3 +49,60 @@ def test_queue_api_lists_retries_and_dismisses(client, app):
     assert client.post(f"/api/balance/queue/{b['id']}/retry").json()["status"] == "pending"
     assert client.post(f"/api/balance/queue/{a['id']}/dismiss").json()["status"] == "dismissed"
     assert client.post("/api/balance/queue/999/retry").status_code == 404
+
+
+# ---- review fixes: input validation ------------------------------------------
+
+import pytest
+from datetime import datetime
+from fastapi.testclient import TestClient
+from worklog.config import Settings
+
+
+@pytest.mark.parametrize("key,value", [
+    ("week_hours_max", "abc"), ("week_hours_min", "-1"), ("week_hours_max", "nan"), ("week_hours_max", "999"),
+    ("run_alt_slots", "13:00,25:99"), ("run_slot", 730), ("hard_stop", None), ("gcal_calendar", ["x"]),
+    ("todoist_project", "x" * 101), ("milestone_label", True),
+])
+def test_bad_setting_values_are_rejected_and_not_stored(client, key, value):
+    before = client.get("/api/balance/settings").json()
+    assert client.put("/api/balance/settings", json={key: value}).status_code == 400
+    assert client.get("/api/balance/settings").json() == before
+
+
+def test_settings_put_is_all_or_nothing_and_accepts_numbers(client):
+    r = client.put("/api/balance/settings", json={"week_hours_min": 28, "week_hours_max": "x"})
+    assert r.status_code == 400 and client.get("/api/balance/settings").json()["week_hours_min"] != "28"
+    ok = client.put("/api/balance/settings", json={"week_hours_min": 28, "week_hours_max": "36.5",
+                                                   "run_alt_slots": "12:30, 18:00", "todoist_project": ""})
+    assert ok.status_code == 200 and ok.json()["week_hours_min"] == "28" and ok.json()["run_alt_slots"] == "12:30,18:00"
+
+
+def test_no_balance_store_is_503_not_500(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    from balance.web.api import ApiError, router
+    app = FastAPI()
+    app.state.settings = Settings(db_path=str(tmp_path / "w.db"))
+    app.state.clock = lambda: datetime(2026, 11, 2, 9, 0)
+
+    @app.exception_handler(ApiError)
+    async def _e(_r, exc):
+        return JSONResponse({"error": exc.message}, status_code=exc.status)
+    app.include_router(router)
+    c = TestClient(app)
+    for path in ("/api/balance/week", "/api/balance/settings", "/api/balance/queue", "/api/balance/outlook"):
+        assert c.get(path).status_code == 503, path
+
+
+@pytest.mark.parametrize("patch", [{"start": 900}, {"end": 1000}, {"start": None}, {"title": 5}, {"kind": []}, {"date": 20261109}])
+def test_add_block_with_wrong_types_is_400(client, patch):
+    body = {"date": "2026-11-03", "start": "09:00", "end": "10:00", "kind": "other", "title": "x", **patch}
+    assert client.post("/api/balance/blocks", json=body).status_code == 400
+
+
+@pytest.mark.parametrize("raw", ["20261109", "2026-W45-1", "2026-11-9"])
+def test_non_canonical_dates_are_rejected(client, raw):
+    body = {"date": raw, "start": "09:00", "end": "10:00", "kind": "other", "title": "x"}
+    assert client.post("/api/balance/blocks", json=body).status_code == 400
+    assert client.get("/api/balance/week", params={"start": raw}).status_code == 400

@@ -1,34 +1,29 @@
 """JSON API. Reads the store, the snapshots the host jobs write, and two read-only
 input files (work calendar, plan.csv); writes only to the store."""
 import os
-import re
 from datetime import date as _date, timedelta
 
 from fastapi import APIRouter, Body, Request
 
+from worklog.validate import date_arg, is_hhmm as _is_hhmm, optional_date as _date_arg
 from .. import db, inputs, propose as prop
 from fastapi.responses import PlainTextResponse
 from worklog.web.api import ApiError  # noqa: F401  (one shared class; re-exported)
 
 router = APIRouter(prefix="/api/balance")
-_HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-
 
 def _conn(request: Request):
-    return db.connect(request.app.state.settings.balance_db_path, check_same_thread=False)
+    path = request.app.state.settings.balance_db_path
+    if not path:
+        raise ApiError("balance store not configured", 503)
+    return db.connect(path, check_same_thread=False)
 
 
 def _state(request: Request) -> str:
-    return request.app.state.settings.balance_state_dir
-
-
-def _date_arg(s: str | None, default: _date) -> _date:
-    if not s:
-        return default
-    try:
-        return _date.fromisoformat(s)
-    except ValueError:
-        raise ApiError("date must be YYYY-MM-DD")
+    path = request.app.state.settings.balance_state_dir
+    if not path:
+        raise ApiError("balance state directory not configured", 503)
+    return path
 
 
 def _monday(d: _date) -> _date:
@@ -105,13 +100,15 @@ def add_block(request: Request, body: dict = Body(...)):
     for k in ("date", "start", "end", "kind", "title"):
         if not body.get(k):
             raise ApiError(f"{k} is required")
-    if not _HHMM.match(body["start"]) or not _HHMM.match(body["end"]) or body["end"] <= body["start"]:
+    if not _is_hhmm(body["start"]) or not _is_hhmm(body["end"]) or body["end"] <= body["start"]:
         raise ApiError("start/end must be HH:MM with end after start")
-    _date_arg(body["date"], None)
+    day = date_arg(body["date"])
+    if not isinstance(body["title"], str) or not isinstance(body["kind"], str):
+        raise ApiError("kind and title must be text")
     conn = _conn(request)
     try:
         try:
-            bid = db.add_block(conn, body["date"], body["start"], body["end"], body["kind"],
+            bid = db.add_block(conn, day, body["start"], body["end"], body["kind"],
                                body["title"][:120], note=str(body.get("note", ""))[:300],
                                source="manual", state="approved")
         except ValueError as e:
@@ -173,16 +170,16 @@ def get_settings(request: Request):
 
 @router.put("/settings")
 def put_settings(request: Request, body: dict = Body(...)):
-    for k in ("hard_stop", "run_slot"):
-        if k in body and not _HHMM.match(str(body[k])):
-            raise ApiError(f"{k} must be HH:MM")
+    clean = {}
+    for k, v in body.items():
+        try:
+            clean[k] = db.normalise_setting(k, v)
+        except ValueError as e:
+            raise ApiError(str(e))
     conn = _conn(request)
     try:
-        for k, v in body.items():
-            try:
-                db.set_setting(conn, k, str(v).strip())
-            except ValueError as e:
-                raise ApiError(str(e))
+        for k, v in clean.items():
+            db.set_setting(conn, k, v)
         return db.get_settings(conn)
     finally:
         conn.close()

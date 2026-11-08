@@ -301,3 +301,13 @@ def test_day_lists_meeting_proposals_until_logged(dayclient, app, tmp_path):
 
 def test_day_proposals_empty_without_calendar(dayclient):
     assert dayclient.get("/api/day").json()["work"]["proposals"] == []
+
+
+def test_day_writes_reject_non_canonical_dates_and_wrong_types(weekclient):
+    for raw in ("20261106", "2026-W45-5"):
+        assert weekclient.post("/api/day/prep", json={"date": raw, "start": "10:00", "title": "x", "note": "n"}).status_code == 400
+        assert weekclient.post("/api/day/workcal/add", json={"events": [
+            {"date": raw, "start": "14:00", "end": "14:45", "title": "x"}]}).status_code == 400
+    assert weekclient.post("/api/day/workcal/add", json={"events": [
+        {"date": "2026-11-06", "start": 1400, "end": "14:45", "title": "x"}]}).status_code == 400
+    assert weekclient.post("/api/day/move", json={"ref": {}, "date": "2026-11-06", "start": 900, "end": 1000}).status_code == 400

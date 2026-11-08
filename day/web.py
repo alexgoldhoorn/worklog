@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
 
 from balance import db as bdb
 from worklog import calendar as wcal, db as wdb
+from worklog.validate import date_arg, is_hhmm as _is_hhmm, optional_date as _date_arg
 from worklog.web.api import ApiError, Ctx, _status, ctx as worklog_ctx
 
 from . import holidays, model, outlook, rules, slots as _slots
@@ -17,7 +18,6 @@ _EMAIL = re.compile(r"\S+@\S+\.\S+")
 TARGETS = ("personal", "family", "work", "training", "todoist")
 
 router = APIRouter(prefix="/api/day")
-_HHMM = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 def _owners() -> tuple:
     h = rules.household(rules.load())
     return (h["me"], h["partner"])
@@ -39,21 +39,12 @@ def _flag_dir(request: Request) -> str:
     return os.path.dirname(request.app.state.settings.balance_db_path or "") or "."
 
 
-def _date_arg(s: str | None, default: _date) -> _date:
-    if not s:
-        return default
-    try:
-        return _date.fromisoformat(s)
-    except ValueError:
-        raise ApiError("date must be YYYY-MM-DD")
-
-
 def _event_fields(body: dict) -> tuple[str, str, str]:
     d, start, title = body.get("date", ""), body.get("start", ""), (body.get("title") or "").strip()
     if not d:
         raise ApiError("date required")
-    _date_arg(d, None)
-    if not _HHMM.match(start or ""):
+    d = date_arg(d)
+    if not _is_hhmm(start):
         raise ApiError("start must be HH:MM")
     if not title or len(title) > 200:
         raise ApiError("title required (max 200)")
@@ -116,9 +107,9 @@ def _slot_fields(body: dict) -> tuple[str, str, str]:
     d = body.get("date") or ""
     if not d:
         raise ApiError("date required")
-    _date_arg(d, None)
+    d = date_arg(d)
     start, end = body.get("start") or "", body.get("end") or ""
-    if not (_HHMM.match(start) and _HHMM.match(end)) or end <= start:
+    if not (_is_hhmm(start) and _is_hhmm(end)) or end <= start:
         raise ApiError("start/end must be HH:MM with end after start")
     return d, start, end
 
@@ -287,8 +278,8 @@ def _mirror_row(ev: dict) -> dict:
     d, start, end = ev.get("date") or "", ev.get("start") or "", ev.get("end") or ""
     if not d:
         raise ApiError("date required")
-    _date_arg(d, None)
-    if not (_HHMM.match(start) and (not end or _HHMM.match(end))) or (end and end <= start):
+    d = date_arg(d)
+    if not (_is_hhmm(start) and (not end or _is_hhmm(end))) or (end and end <= start):
         raise ApiError("start/end must be HH:MM with end after start")
     title = (ev.get("title") or "").strip()
     if not title or len(title) > 200:

@@ -1,4 +1,5 @@
 """SQLite store for agent blocks and settings. Host jobs and the container share it."""
+import re
 import json
 import os
 import sqlite3
@@ -95,9 +96,40 @@ def get_settings(conn) -> dict:
     return {r["key"]: r["value"] for r in conn.execute("SELECT key, value FROM settings")}
 
 
-def set_setting(conn, key: str, value: str) -> None:
+_TIME_SETTINGS = ("hard_stop", "run_slot")
+_NUMBER_SETTINGS = ("week_hours_min", "week_hours_max")
+_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+
+
+def normalise_setting(key: str, value) -> str:
+    """The string to store for `value`, or ValueError. Readers call float()/HH:MM parsing on
+    these, so a bad value stored here would break the Day page and the gate job."""
     if key not in DEFAULT_SETTINGS:
         raise ValueError(f"unknown setting {key}")
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        raise ValueError(f"{key} must be a string or number")
+    text = str(value).strip()
+    if key in _TIME_SETTINGS:
+        if not _HHMM.fullmatch(text):
+            raise ValueError(f"{key} must be HH:MM")
+    elif key == "run_alt_slots":
+        if text and not all(_HHMM.fullmatch(p.strip()) for p in text.split(",")):
+            raise ValueError(f"{key} must be a comma-separated list of HH:MM")
+        text = ",".join(p.strip() for p in text.split(",")) if text else ""
+    elif key in _NUMBER_SETTINGS:
+        try:
+            n = float(text)
+        except ValueError:
+            raise ValueError(f"{key} must be a number")
+        if not 0 <= n <= 168:
+            raise ValueError(f"{key} must be between 0 and 168")
+    elif len(text) > 100:
+        raise ValueError(f"{key} is too long (max 100)")
+    return text
+
+
+def set_setting(conn, key: str, value) -> None:
+    value = normalise_setting(key, value)
     conn.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)", (key, value))
     conn.commit()
 
