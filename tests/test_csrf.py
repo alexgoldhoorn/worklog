@@ -14,6 +14,10 @@ def test_foreign_origin_without_fetch_metadata_is_refused(client):
     assert r.status_code == 403
 
 
+def test_same_site_sibling_subdomain_is_refused(client):
+    assert client.post("/api/start", headers={"Sec-Fetch-Site": "same-site"}).status_code == 403
+
+
 def test_null_origin_is_refused(client):
     assert client.post("/api/start", headers={"Origin": "null"}).status_code == 403
 

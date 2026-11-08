@@ -1,8 +1,8 @@
 """Cross-site request guard for state-changing requests.
 
 A browser that holds cached Basic credentials attaches them to a cross-site form post, and several
-routes need no JSON body. So a non-safe request is refused when the browser says it is cross-site
-(`Sec-Fetch-Site`) or, for older browsers, when `Origin` names another host than the one asked.
+routes need no JSON body. So a non-safe request is refused when the browser says it is not same-origin
+(`Sec-Fetch-Site`, so a sibling subdomain is refused too) or, for older browsers, when `Origin` names another host than the one asked.
 Clients that are not browsers (curl, the Qt/Android app, the MCP server, host jobs) send neither
 header and are unaffected.
 """
@@ -22,7 +22,8 @@ class CrossSiteGuard:
     def _cross_site(self, headers: dict) -> bool:
         fetch_site = headers.get(b"sec-fetch-site", b"").decode("latin-1").lower()
         if fetch_site:
-            return fetch_site == "cross-site"
+            # same-site is refused too: a sibling subdomain is another app.
+            return fetch_site not in ("same-origin", "none")
         origin = headers.get(b"origin", b"").decode("latin-1")
         if not origin:
             return False
