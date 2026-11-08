@@ -14,6 +14,7 @@ class ApiError(Exception):
 
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+_LOOSE_TIME = re.compile(r"(\d{1,2})[:.hH]?(\d{2})")
 
 
 def date_arg(v, name: str = "date") -> str:
@@ -41,4 +42,41 @@ def hhmm(v, name: str = "time") -> str:
     """Strictly HH:MM; a non-string (e.g. 900) is a 400, never a TypeError."""
     if not is_hhmm(v):
         raise ApiError(f"invalid {name}: {v!r} (expected HH:MM)")
+    return v
+
+
+def loose_time(v, name: str = "time") -> str:
+    """Accept HH:MM, and also 9:50 / 9.50 / 950 / 0950 (what people type in the timer), as HH:MM."""
+    if isinstance(v, str):
+        m = _LOOSE_TIME.fullmatch(v.strip())
+        if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
+            return f"{int(m.group(1)):02d}:{m.group(2)}"
+    raise ApiError(f"invalid {name}: {v!r} (expected HH:MM)")
+
+
+def text(v, name: str = "text") -> str:
+    """A missing value is ""; a string is stripped; anything else (a number, a list) is a 400,
+    never an AttributeError from .strip()."""
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise ApiError(f"{name} must be a string")
+    return v.strip()
+
+
+def obj(v, name: str) -> dict:
+    """A missing value is {}; a JSON object is returned as is; anything else is a 400."""
+    if v is None:
+        return {}
+    if not isinstance(v, dict):
+        raise ApiError(f"{name} must be an object")
+    return v
+
+
+def str_list(v, name: str) -> list:
+    """A missing value is []; a JSON list of strings is returned as is; anything else is a 400."""
+    if v is None:
+        return []
+    if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+        raise ApiError(f"{name} must be a list of strings")
     return v

@@ -10,7 +10,7 @@ from fastapi.responses import Response
 
 from .. import calendar as wcal, db, expect, model, reports, status, timer, xlsx_io
 from ..db import Block, DayExpectation
-from ..validate import ApiError, date_arg
+from ..validate import ApiError, date_arg, loose_time
 
 router = APIRouter()
 _LOCK = threading.Lock()  # one timer mutation at a time (phone tap vs Telegram call)
@@ -55,19 +55,6 @@ def ctx(request: Request, conn=Depends(get_conn)) -> Ctx:
     return Ctx(request, conn)
 
 
-_date_arg = date_arg
-
-
-_LOOSE_TIME = re.compile(r"(\d{1,2})[:.hH]?(\d{2})")
-
-
-def _time_arg(v, name) -> str:
-    """Accept HH:MM, and also 9:50 / 9.50 / 950 / 0950, normalised to HH:MM."""
-    if isinstance(v, str):
-        m = _LOOSE_TIME.fullmatch(v.strip())
-        if m and int(m.group(1)) < 24 and int(m.group(2)) < 60:
-            return f"{int(m.group(1)):02d}:{m.group(2)}"
-    raise ApiError(f"invalid {name}: {v!r} (expected HH:MM)")
 
 
 def _client_default(conn, client):
@@ -158,7 +145,7 @@ def post_stop(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: bool
 
 @router.get("/api/day/{date}")
 def get_day(date: str, c: Ctx = Depends(ctx)):
-    date = _date_arg(date)
+    date = date_arg(date)
     c.auto_close()
     bt = db.break_types(c.conn)
     blocks = db.blocks_on(c.conn, date)
@@ -177,11 +164,11 @@ def get_day(date: str, c: Ctx = Depends(ctx)):
 @router.post("/api/blocks")
 def create_block(body: dict = Body(...), c: Ctx = Depends(ctx)):
     c.auto_close()
-    date = _date_arg(body.get("date"))
-    start = _time_arg(body.get("start"), "start")
+    date = date_arg(body.get("date"))
+    start = loose_time(body.get("start"), "start")
     end = body.get("end")
     if end is not None:
-        end = _time_arg(end, "end")
+        end = loose_time(end, "end")
     type_ = (_opt_str(body, "type") or "").strip() if "type" in body else db.setting(c.conn, "default_type")
     if not type_:
         raise ApiError("type is required")
@@ -208,11 +195,11 @@ def update_block(block_id: int, body: dict = Body(...), c: Ctx = Depends(ctx)):
         raise ApiError("block is not running any more", 409)  # a chip aimed at the running block hit a closed one
     fields = {}
     if "date" in body:
-        fields["date"] = _date_arg(body["date"])
+        fields["date"] = date_arg(body["date"])
     if "start" in body:
-        fields["start"] = _time_arg(body["start"], "start")
+        fields["start"] = loose_time(body["start"], "start")
     if body.get("end") is not None:
-        fields["end"] = _time_arg(body["end"], "end")
+        fields["end"] = loose_time(body["end"], "end")
     elif "end" in body:
         fields["end"] = None
     if "type" in body:
@@ -253,9 +240,9 @@ def delete_block(block_id: int, c: Ctx = Depends(ctx)):
 @router.post("/api/calendar/add")
 def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
     c.auto_close()
-    date = _date_arg(body.get("date"))
-    start = _time_arg(body.get("start"), "start")
-    end = _time_arg(body.get("end"), "end")
+    date = date_arg(body.get("date"))
+    start = loose_time(body.get("start"), "start")
+    end = loose_time(body.get("end"), "end")
     title = body.get("title") or None
     today, hhmm = c.today.isoformat(), c.now.strftime("%H:%M")
     if date > today or (date == today and start > hhmm):
@@ -284,7 +271,7 @@ def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
 
 
 def _dismiss_args(body: dict) -> tuple[str, str, str | None]:
-    return _date_arg(body.get("date")), _time_arg(body.get("start"), "start"), _opt_str(body, "title") or None
+    return date_arg(body.get("date")), loose_time(body.get("start"), "start"), _opt_str(body, "title") or None
 
 
 @router.post("/api/calendar/dismiss")
@@ -310,9 +297,9 @@ def summary(group: str = "week", start: str | None = None, end: str | None = Non
     if group not in ("week", "month", "quarter", "year"):
         raise ApiError(f"invalid group: {group!r}")
     c.auto_close()
-    end = _date_arg(end, "end") if end else c.today.isoformat()
+    end = date_arg(end, "end") if end else c.today.isoformat()
     if start:
-        start = _date_arg(start, "start")
+        start = date_arg(start, "start")
     else:
         start = expect.first_logged_day(c.conn) or c.today.isoformat()
     span = (_date.fromisoformat(end) - _date.fromisoformat(start)).days
@@ -387,14 +374,14 @@ def invoice(month: str, c: Ctx = Depends(ctx)):
 
 @router.get("/api/days")
 def get_days(start: str, end: str, c: Ctx = Depends(ctx)):
-    start, end = _date_arg(start, "start"), _date_arg(end, "end")
+    start, end = date_arg(start, "start"), date_arg(end, "end")
     exps = expect.expected_between(c.conn, start, end, c.holidays, expect.first_logged_day(c.conn))
     return [dataclasses.asdict(e) for e in exps.values()]
 
 
 @router.put("/api/days/{date}")
 def put_day(date: str, body: dict = Body(...), c: Ctx = Depends(ctx)):
-    date = _date_arg(date)
+    date = date_arg(date)
     try:
         expected = float(body["expected_h"])
         sick = float(body.get("sick_h") or 0)
@@ -409,15 +396,15 @@ def put_day(date: str, body: dict = Body(...), c: Ctx = Depends(ctx)):
 
 @router.delete("/api/days/{date}")
 def delete_day(date: str, c: Ctx = Depends(ctx)):
-    db.delete_expectation(c.conn, _date_arg(date))
+    db.delete_expectation(c.conn, date_arg(date))
     return {"ok": True}
 
 
 # ---- export -----------------------------------------------------------------
 
 def _export_range(c: Ctx, start, end) -> tuple[str, str]:
-    end = _date_arg(end, "end") if end else c.today.isoformat()
-    start = _date_arg(start, "start") if start else (
+    end = date_arg(end, "end") if end else c.today.isoformat()
+    start = date_arg(start, "start") if start else (
         expect.first_logged_day(c.conn) or c.today.isoformat())
     return start, end
 

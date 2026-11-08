@@ -1,9 +1,10 @@
 """SQLite store for agent blocks and settings. Host jobs and the container share it."""
-import re
 import json
 import os
 import sqlite3
 from datetime import datetime, timedelta
+
+from worklog.validate import is_hhmm
 
 from .config import DEFAULT_SETTINGS
 
@@ -98,7 +99,6 @@ def get_settings(conn) -> dict:
 
 _TIME_SETTINGS = ("hard_stop", "run_slot")
 _NUMBER_SETTINGS = ("week_hours_min", "week_hours_max")
-_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 
 def normalise_setting(key: str, value) -> str:
@@ -110,10 +110,10 @@ def normalise_setting(key: str, value) -> str:
         raise ValueError(f"{key} must be a string or number")
     text = str(value).strip()
     if key in _TIME_SETTINGS:
-        if not _HHMM.fullmatch(text):
+        if not is_hhmm(text):
             raise ValueError(f"{key} must be HH:MM")
     elif key == "run_alt_slots":
-        if text and not all(_HHMM.fullmatch(p.strip()) for p in text.split(",")):
+        if text and not all(is_hhmm(p.strip()) for p in text.split(",")):
             raise ValueError(f"{key} must be a comma-separated list of HH:MM")
         text = ",".join(p.strip() for p in text.split(",")) if text else ""
     elif key in _NUMBER_SETTINGS:

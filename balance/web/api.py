@@ -5,7 +5,7 @@ from datetime import date as _date, timedelta
 
 from fastapi import APIRouter, Body, Request
 
-from worklog.validate import date_arg, is_hhmm as _is_hhmm, optional_date as _date_arg
+from worklog.validate import date_arg, is_hhmm, optional_date
 from .. import db, inputs, propose as prop
 from fastapi.responses import PlainTextResponse
 from worklog.web.api import ApiError  # noqa: F401  (one shared class; re-exported)
@@ -33,7 +33,7 @@ def _monday(d: _date) -> _date:
 @router.get("/week")
 def week(request: Request, start: str | None = None):
     today = request.app.state.clock().date()
-    mon = _monday(_date_arg(start, today))
+    mon = _monday(optional_date(start, today))
     sun = mon + timedelta(days=6)
     st = _state(request)
     conn = _conn(request)
@@ -100,7 +100,7 @@ def add_block(request: Request, body: dict = Body(...)):
     for k in ("date", "start", "end", "kind", "title"):
         if not body.get(k):
             raise ApiError(f"{k} is required")
-    if not _is_hhmm(body["start"]) or not _is_hhmm(body["end"]) or body["end"] <= body["start"]:
+    if not is_hhmm(body["start"]) or not is_hhmm(body["end"]) or body["end"] <= body["start"]:
         raise ApiError("start/end must be HH:MM with end after start")
     day = date_arg(body["date"])
     if not isinstance(body["title"], str) or not isinstance(body["kind"], str):
@@ -121,8 +121,8 @@ def add_block(request: Request, body: dict = Body(...)):
 @router.post("/propose")
 def propose_week(request: Request, body: dict = Body(default={})):
     today = request.app.state.clock().date()
-    start = _date_arg(body.get("start"), today + timedelta(days=1))
-    end = _date_arg(body.get("end"), _monday(start) + timedelta(days=6))
+    start = optional_date(body.get("start"), today + timedelta(days=1))
+    end = optional_date(body.get("end"), _monday(start) + timedelta(days=6))
     if end < start or (end - start).days > 14:
         raise ApiError("range must be 1-15 days")
     plan = inputs.read_plan()
@@ -139,7 +139,7 @@ def propose_week(request: Request, body: dict = Body(default={})):
 @router.get("/outlook", response_class=PlainTextResponse)
 def outlook(request: Request, start: str | None = None):
     today = request.app.state.clock().date()
-    mon = _monday(_date_arg(start, today))
+    mon = _monday(optional_date(start, today))
     sun = mon + timedelta(days=6)
     conn = _conn(request)
     try:

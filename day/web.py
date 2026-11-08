@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
 
 from balance import db as bdb
 from worklog import calendar as wcal, db as wdb
-from worklog.validate import date_arg, is_hhmm as _is_hhmm, optional_date as _date_arg
+from worklog.validate import date_arg, is_hhmm, obj, optional_date, str_list, text
 from worklog.web.api import ApiError, Ctx, _status, ctx as worklog_ctx
 
 from . import holidays, model, outlook, rules, slots as _slots
@@ -40,11 +40,11 @@ def _flag_dir(request: Request) -> str:
 
 
 def _event_fields(body: dict) -> tuple[str, str, str]:
-    d, start, title = body.get("date", ""), body.get("start", ""), (body.get("title") or "").strip()
+    d, start, title = body.get("date", ""), body.get("start", ""), text(body.get("title"), "title")
     if not d:
         raise ApiError("date required")
     d = date_arg(d)
-    if not _is_hhmm(start):
+    if not is_hhmm(start):
         raise ApiError("start must be HH:MM")
     if not title or len(title) > 200:
         raise ApiError("title required (max 200)")
@@ -61,7 +61,7 @@ def _day_ctx(request: Request, c: Ctx, conn, d: _date) -> Context:
 
 @router.get("")
 def get_day(request: Request, date: str | None = None, c: Ctx = Depends(worklog_ctx)):
-    d = _date_arg(date, c.today)
+    d = optional_date(date, c.today)
     conn = _bconn(request)
     try:
         out = model.build_day(_day_ctx(request, c, conn, d))
@@ -77,8 +77,8 @@ def get_day(request: Request, date: str | None = None, c: Ctx = Depends(worklog_
 # ---- plan 2: slots, move, find --------------------------------------------------
 
 def _item(body: dict) -> _slots.Item:
-    raw = body.get("item") or {}
-    title = (raw.get("title") or "").strip()
+    raw = obj(body.get("item"), "item")
+    title = text(raw.get("title"), "item.title")
     if not title or len(title) > 200:
         raise ApiError("item.title required (max 200)")
     try:
@@ -96,8 +96,8 @@ def _item(body: dict) -> _slots.Item:
 
 
 def _range(body: dict, today: _date) -> list[str]:
-    lo = _date_arg(body.get("from"), today)
-    hi = _date_arg(body.get("to"), lo)
+    lo = optional_date(body.get("from"), today)
+    hi = optional_date(body.get("to"), lo)
     if hi < lo or (hi - lo).days > 20:
         raise ApiError("from/to must span at most 21 days")
     return [(lo + timedelta(days=i)).isoformat() for i in range((hi - lo).days + 1)]
@@ -109,7 +109,7 @@ def _slot_fields(body: dict) -> tuple[str, str, str]:
         raise ApiError("date required")
     d = date_arg(d)
     start, end = body.get("start") or "", body.get("end") or ""
-    if not (_is_hhmm(start) and _is_hhmm(end)) or end <= start:
+    if not (is_hhmm(start) and is_hhmm(end)) or end <= start:
         raise ApiError("start/end must be HH:MM with end after start")
     return d, start, end
 
@@ -137,9 +137,9 @@ def _paste_line(d: str, start: str, end: str, title: str) -> str:
 
 @router.post("/move")
 def post_move(request: Request, body: dict = Body(...)):
-    ref = body.get("ref") or {}
+    ref = obj(body.get("ref"), "ref")
     d, start, end = _slot_fields(body)
-    writes = set(body.get("writes") or [])
+    writes = set(str_list(body.get("writes"), "writes"))
     kind = ref.get("kind")
     if kind not in ("run", "block", "personal"):
         raise ApiError("ref.kind must be run, block or personal")
@@ -150,7 +150,7 @@ def post_move(request: Request, body: dict = Body(...)):
     out = {"queued": [], "blocks": [], "paste": None}
     try:
         if kind == "run":
-            session = (ref.get("session") or "").strip() or "Run"
+            session = text(ref.get("session"), "ref.session") or "Run"
             if "session_time" in writes or not writes:
                 out["queued"].append(bdb.enqueue(conn, "session_time", {"date": ref.get("date") or d, "session": session,
                                                                         "start": start, "end": end},
@@ -239,10 +239,10 @@ def post_prep(request: Request, body: dict = Body(...)):
         raise ApiError("minutes must be a number")
     if not 0 <= minutes <= 480:
         raise ApiError("minutes must be 0–480")
-    text = (body.get("text") or "").strip()[:500]
+    note = text(body.get("text"), "text")[:500]
     conn = _bconn(request)
     try:
-        return {"prep": bdb.set_prep_note(conn, d, start, title, minutes, text)}
+        return {"prep": bdb.set_prep_note(conn, d, start, title, minutes, note)}
     finally:
         conn.close()
 
@@ -270,29 +270,30 @@ def post_owner(request: Request, body: dict = Body(...)):
 @router.post("/workcal/parse")
 def post_workcal_parse(body: dict = Body(...), c: Ctx = Depends(worklog_ctx)):
     """Read pasted Outlook lines; never writes. Rows come back with ok/error per line."""
-    text = str(body.get("text") or "")[:20000]
-    return {"rows": outlook.parse_lines(text, year=c.today.year, today=c.today)}
+    pasted = str(body.get("text") or "")[:20000]
+    return {"rows": outlook.parse_lines(pasted, year=c.today.year, today=c.today)}
 
 
-def _mirror_row(ev: dict) -> dict:
+def _mirror_row(ev) -> dict:
+    ev = obj(ev, "event")
     d, start, end = ev.get("date") or "", ev.get("start") or "", ev.get("end") or ""
     if not d:
         raise ApiError("date required")
     d = date_arg(d)
-    if not (_is_hhmm(start) and (not end or _is_hhmm(end))) or (end and end <= start):
+    if not (is_hhmm(start) and (not end or is_hhmm(end))) or (end and end <= start):
         raise ApiError("start/end must be HH:MM with end after start")
-    title = (ev.get("title") or "").strip()
+    title = text(ev.get("title"), "title")
     if not title or len(title) > 200:
         raise ApiError("title required (max 200)")
     if _EMAIL.search(title) or _EMAIL.search(str(ev.get("note") or "")):
         raise ApiError("email addresses are never stored in the work calendar")
-    return {"date": d, "start": start, "end": end or None, "title": title, "note": (ev.get("note") or "").strip()[:500]}
+    return {"date": d, "start": start, "end": end or None, "title": title, "note": text(ev.get("note"), "note")[:500]}
 
 
 @router.post("/workcal/add")
 def post_workcal_add(request: Request, body: dict = Body(...)):
     rows = body.get("events") or []
-    if not rows or len(rows) > 50:
+    if not isinstance(rows, list) or not rows or len(rows) > 50:
         raise ApiError("1–50 meetings per paste")
     events = [_mirror_row(ev) for ev in rows]
     conn = _bconn(request)

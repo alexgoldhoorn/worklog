@@ -311,3 +311,37 @@ def test_day_writes_reject_non_canonical_dates_and_wrong_types(weekclient):
     assert weekclient.post("/api/day/workcal/add", json={"events": [
         {"date": "2026-11-06", "start": 1400, "end": "14:45", "title": "x"}]}).status_code == 400
     assert weekclient.post("/api/day/move", json={"ref": {}, "date": "2026-11-06", "start": 900, "end": 1000}).status_code == 400
+
+
+# ---- wrongly typed JSON is a 400, never a 500 (review leftover, 2026-11-08) ----------------
+
+_GOOD = {
+    "/api/day/prep": {"date": "2026-11-05", "start": "08:30", "title": "Sync", "minutes": 10, "text": ""},
+    "/api/day/slots": {"item": {"title": "x", "minutes": 30}},
+    "/api/day/move": {"ref": {"kind": "run", "date": "2026-11-05", "start": "07:30", "end": "08:30", "session": "Run"},
+                      "date": "2026-11-05", "start": "13:00", "end": "14:00", "writes": ["block"]},
+    "/api/day/find": {"item": {"title": "x", "minutes": 30}},
+    "/api/day/workcal/add": {"events": [{"date": "2026-11-05", "start": "10:00", "end": "11:00", "title": "Meet"}]},
+    "/api/balance/blocks": {"date": "2026-11-05", "start": "10:00", "end": "11:00", "title": "x", "kind": "other"},
+}
+
+
+def _mutations(body):
+    """Each top-level and one-level-nested value replaced by a number and by a list."""
+    for k, v in body.items():
+        for bad in (123, ["x"]):
+            yield {**body, k: bad}
+        if isinstance(v, dict):
+            for k2 in v:
+                yield {**body, k: {**v, k2: 123}}
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            for k2 in v[0]:
+                yield {**body, k: [{**v[0], k2: 123}]}
+    yield {"events": ["not an object"]}
+
+
+@pytest.mark.parametrize("path", sorted(_GOOD))
+def test_wrong_types_never_500(dayclient, path):
+    for body in _mutations(_GOOD[path]):
+        r = dayclient.post(path, json=body)
+        assert r.status_code < 500, (path, body, r.status_code, r.text[:200])
