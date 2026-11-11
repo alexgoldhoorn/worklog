@@ -38,7 +38,7 @@ ScrollView {
                 || status.past_stop_min === undefined || !status.hard_stop)
             return 0
         const hm = status.hard_stop.split(":")
-        const now = new Date(nowMs)
+        const now = new Date(nowMs + Api.clockOffsetMs)
         return Math.max(0, now.getHours() * 60 + now.getMinutes() - (Number(hm[0]) * 60 + Number(hm[1])))
     }
     readonly property bool over: pastStopMin > 0
@@ -96,7 +96,7 @@ ScrollView {
         if (leftMin <= 0)
             return qsTr("target met · %1").arg(Api.fmtSigned(todayH - todayExpH))
         if (timerState === "working") {
-            const d = new Date(nowMs + leftMin * 60000)
+            const d = new Date(nowMs + Api.clockOffsetMs + leftMin * 60000)
             return qsTr("done at %1").arg(Api.pad(d.getHours()) + ":" + Api.pad(d.getMinutes()))
         }
         return qsTr("%1 left").arg(Api.fmtHM(leftMin / 60))
@@ -557,7 +557,7 @@ ScrollView {
                 Material.elevation: 1
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Add block")
-                onClicked: blockDialog.newBlock(page.status ? page.status.date : Api.isoDate(new Date()))
+                onClicked: blockDialog.newBlock(page.status ? page.status.date : Api.today())
             }
 
             BlockList {

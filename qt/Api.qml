@@ -77,6 +77,8 @@ QtObject {
             let data = null
             try { data = JSON.parse(xhr.responseText) } catch (e) { /* non-JSON body */ }
             if (xhr.status >= 200 && xhr.status < 300) {
+                if (data && typeof data.now === "string" && path.indexOf("/api/status") === 0)
+                    api.syncClock(data.now)
                 if (method !== "GET")
                     api.changed()
                 if (onOk) onOk(data)
@@ -152,7 +154,7 @@ QtObject {
         if (!m)
             return ""
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        const now = new Date()
+        const now = api.now()
         const d = new Date(now.getFullYear(), months.indexOf(m[2]), Number(m[1]))
         if (d > now)
             d.setFullYear(now.getFullYear() - 1)
@@ -172,8 +174,23 @@ QtObject {
         return isoDate(d)
     }
 
+    // Server clock: the offset (ms) between the server's wall clock and this device's, refreshed by
+    // every /api/status answer. now() is a Date whose local fields read the server's local time, so
+    // "today" and "now" follow the server's timezone and clock. With an offset of 0 it is new Date().
+    property real clockOffsetMs: 0
+    function syncClock(iso) {
+        const m = /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)(?::(\d\d))?/.exec(iso)   // the zone suffix is ignored
+        if (!m)
+            return
+        const wall = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4]), Number(m[5]), Number(m[6] || 0))
+        if (!isNaN(wall.getTime()))
+            clockOffsetMs = wall.getTime() - Date.now()
+    }
+    function now() { return new Date(Date.now() + clockOffsetMs) }
+    function today() { return isoDate(now()) }
+
     function nowHHMM() {
-        const d = new Date()
+        const d = now()
         return pad(d.getHours()) + ":" + pad(d.getMinutes())
     }
 

@@ -11,7 +11,7 @@ ScrollView {
     property string end: ""        // empty = today
     property var summary: null
     property var heat: null
-    property string invoiceMonth: Api.isoDate(new Date()).slice(0, 7)
+    property string invoiceMonth: Api.today().slice(0, 7)
     property var invoice: []
     property string error: ""
     property string exportMessage: ""
@@ -19,7 +19,7 @@ ScrollView {
 
     readonly property bool wide: availableWidth >= 760
     readonly property var rows: summary ? summary.rows : []
-    readonly property string currentKey: group === "week" ? Api.weekKey(Api.isoDate(new Date())) : ""
+    readonly property string currentKey: group === "week" ? Api.weekKey(Api.today()) : ""
     readonly property real altWeek: summary && summary.alt_week_h ? summary.alt_week_h : 40
     readonly property bool priced: !!summary && summary.rate_h !== null
 
@@ -165,7 +165,7 @@ ScrollView {
                 model: [qsTr("All"), qsTr("This year"), qsTr("Last 12 weeks"), qsTr("Last 6 months")]
                 current: page.start === "" && page.end === "" ? qsTr("All") : ""
                 onPicked: value => {
-                    const today = new Date()
+                    const today = Api.now()
                     if (value === qsTr("All"))
                         page.setRange("", "")
                     else if (value === qsTr("This year"))

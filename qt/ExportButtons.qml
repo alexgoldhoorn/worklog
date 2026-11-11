@@ -34,7 +34,7 @@ RowLayout {
         nameFilters: root.format === "csv" ? [qsTr("CSV files (*.csv)")] : [qsTr("Excel files (*.xlsx)")]
         defaultSuffix: root.format
         currentFolder: StandardPaths.writableLocation(StandardPaths.DownloadLocation)
-        selectedFile: currentFolder + "/worklog-" + (root.start || "all") + "-" + (root.end || Api.isoDate(new Date()))
+        selectedFile: currentFolder + "/worklog-" + (root.start || "all") + "-" + (root.end || Api.today())
                       + "." + root.format
         onAccepted: {
             const q = Api.query({ start: root.start, end: root.end })

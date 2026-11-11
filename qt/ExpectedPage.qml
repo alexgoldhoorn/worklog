@@ -6,7 +6,7 @@ import QtQuick.Layouts
 // Expected hours per day (the web's Days page): defaults greyed, overrides marked and resettable.
 ScrollView {
     id: page
-    property string month: Api.isoDate(new Date()).slice(0, 7)   // "2026-10"
+    property string month: Api.today().slice(0, 7)   // "2026-10"
     property var days: []
     property string error: ""
 

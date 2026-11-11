@@ -69,7 +69,7 @@ Dialog {
         const now = Api.nowHHMM()
         const start = lastEnd || now
         let end = ""
-        if (d === Api.isoDate(new Date()) && now > start) {
+        if (d === Api.today() && now > start) {
             end = now
         } else {
             const p = start.split(":").map(Number)
@@ -155,7 +155,7 @@ Dialog {
         spacing: 8
 
         Caption {
-            text: Api.parseDate(dlg.date || Api.isoDate(new Date())).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
+            text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
         }
 
         RowLayout {

@@ -193,7 +193,7 @@ ScrollView {
         })
     }
     function lastWorkBody(cb) {
-        Api.request("GET", "/api/day/" + Api.isoDate(new Date()), undefined, function (d) {
+        Api.request("GET", "/api/day/" + Api.today(), undefined, function (d) {
             const work = (d.blocks || []).filter(b => b.work_type === "work")
             const last = work[work.length - 1]
             cb(last ? { type: last.type, project: last.project || null } : undefined)

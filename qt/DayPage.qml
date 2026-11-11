@@ -7,11 +7,11 @@ import QtQuick.Layouts
 // Browse and edit the blocks of any day, and add calendar proposals.
 ScrollView {
     id: page
-    property string date: Api.isoDate(new Date())
+    property string date: Api.today()
     property var day: null
     property var chips: []
     property string error: ""
-    readonly property bool isToday: date === Api.isoDate(new Date())
+    readonly property bool isToday: date === Api.today()
 
     contentWidth: availableWidth
 
@@ -127,7 +127,7 @@ ScrollView {
                     text: qsTr("Back to today")
                     flat: true
                     Layout.alignment: Qt.AlignHCenter
-                    onClicked: page.date = Api.isoDate(new Date())
+                    onClicked: page.date = Api.today()
                 }
             }
         }
