@@ -139,7 +139,7 @@ ScrollView {
             level: "error"
         }
         Repeater {
-            model: page.day ? page.day.notices.concat(page.day.overlaps) : []
+            model: page.day ? page.day.notices.concat(Api.overlapItems(page.day).map(o => o.text)) : []
             delegate: NoticeBanner {
                 required property string modelData
                 text: modelData

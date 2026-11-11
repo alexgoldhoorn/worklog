@@ -322,7 +322,7 @@ ScrollView {
         Repeater {
             model: (page.error ? [{ text: qsTr("Error: %1").arg(page.error), level: "error" }] : [])
                    .concat(page.status ? page.status.notices.map(t => ({ text: t, level: "warn" })) : [])
-                   .concat(page.status ? page.status.overlaps.map(t => ({ text: t, level: "warn", date: Api.overlapDate(t) })) : [])
+                   .concat(page.status ? Api.overlapItems(page.status).map(o => ({ text: o.text, level: "warn", date: o.date })) : [])
                    .concat(page.status && page.status.needs_review.length
                            ? [{ text: qsTr("%n auto-closed block(s) to review: %1", "", page.status.needs_review.length)
                                       .arg([...new Set(page.status.needs_review.map(r => r.date))].join(", ")),

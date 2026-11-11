@@ -148,7 +148,17 @@ QtObject {
         return d.getFullYear() + "-" + pad(week)
     }
 
-    // "Overlap Tue 20 Oct: …" -> ISO date in the last year, or "" when the text has no date
+    // [{text, date}] for the overlap notices of a /api/status or /api/day answer: the server's
+    // overlap_details when present, else the plain overlaps texts with the date parsed out of them
+    function overlapItems(d) {
+        if (!d)
+            return []
+        if (Array.isArray(d.overlap_details))
+            return d.overlap_details.map(o => ({ text: o.text, date: o.date || "" }))
+        return (d.overlaps || []).map(t => ({ text: t, date: overlapDate(t) }))
+    }
+
+    // fallback for servers without overlap_details: "Overlap Tue 20 Oct: …" -> ISO date in the last year, or "" when the text has no date
     function overlapDate(text) {
         const m = /^Overlap \w+ (\d+) (\w+):/.exec(text)
         if (!m)
