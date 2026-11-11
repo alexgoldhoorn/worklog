@@ -32,14 +32,15 @@ Dialog {
         }
     }
 
-    // "09:5" style input normalised like the server does
+    // "700", "7:00", "07.00", "19h00" -> "HH:MM" (same as normTime in the web's app.js)
     function norm(v) {
         const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(v.trim())
-        return m ? Api.pad(Number(m[1])) + ":" + m[2] : v
+        return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? Api.pad(Number(m[1])) + ":" + m[2] : v.trim()
     }
+    function isTime(v) { return /^\d\d:\d\d$/.test(v) }
 
-    readonly property bool valid: startField.acceptableInput
-                                  && (endField.text === "" || endField.acceptableInput)
+    readonly property bool valid: isTime(norm(startField.text))
+                                  && (endField.text.trim() === "" || isTime(norm(endField.text)))
                                   && typeField.editText.trim() !== ""
 
     modal: true
@@ -88,8 +89,8 @@ Dialog {
     onAccepted: {
         const body = {
             date: dlg.date,
-            start: startField.text,
-            end: endField.text === "" ? null : endField.text,
+            start: dlg.norm(startField.text),
+            end: endField.text.trim() === "" ? null : dlg.norm(endField.text),
             type: typeField.editText,
             project: projectField.text,
         }
@@ -150,16 +151,22 @@ Dialog {
             Layout.fillWidth: true
             TextField {
                 id: startField
-                placeholderText: qsTr("Start (HH:MM)")
-                validator: RegularExpressionValidator { regularExpression: /^([01]?\d|2[0-3]):[0-5]\d$/ }
+                placeholderText: qsTr("Start (e.g. 700 or 19:00)")
+                validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
                 inputMethodHints: Qt.ImhPreferNumbers
+                selectByMouse: true
+                onActiveFocusChanged: if (activeFocus) selectAll()
+                onEditingFinished: text = dlg.norm(text)
                 Layout.fillWidth: true
             }
             TextField {
                 id: endField
                 placeholderText: qsTr("End (empty = running)")
-                validator: RegularExpressionValidator { regularExpression: /^(([01]?\d|2[0-3]):[0-5]\d)?$/ }
+                validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
                 inputMethodHints: Qt.ImhPreferNumbers
+                selectByMouse: true
+                onActiveFocusChanged: if (activeFocus) selectAll()
+                onEditingFinished: text = dlg.norm(text)
                 Layout.fillWidth: true
             }
         }
