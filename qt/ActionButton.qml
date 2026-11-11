@@ -11,6 +11,9 @@ AbstractButton {
 
     implicitHeight: 52
     hoverEnabled: true
+    Accessible.role: Accessible.Button
+    Accessible.name: btn.subtext !== "" ? btn.text + ", " + btn.subtext : btn.text
+    Accessible.onPressAction: btn.clicked()
     readonly property color inkNow: enabled ? ink : Api.muted
 
     background: Rectangle {

@@ -36,6 +36,11 @@ ColumnLayout {
             readonly property bool on: chip.modelData === root.current
             text: chip.modelData
             hoverEnabled: true
+            Accessible.role: Accessible.Button
+            Accessible.name: chip.modelData
+            Accessible.checkable: true
+            Accessible.checked: chip.on
+            Accessible.onPressAction: chip.clicked()
             implicitHeight: 32
             leftPadding: 12
             rightPadding: 12

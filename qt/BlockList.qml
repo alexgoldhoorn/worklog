@@ -164,9 +164,16 @@ ColumnLayout {
                                 id: bill
                                 visible: !row.isBreak
                                 readonly property var value: row.modelData.billable
-                                implicitWidth: 28
-                                implicitHeight: 24
+                                implicitWidth: 40   // touch target of at least 40 x 40 dp
+                                implicitHeight: 40
+                                Layout.topMargin: -8
+                                Layout.bottomMargin: -8
                                 hoverEnabled: true
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("Billable: %1").arg(bill.value === true ? qsTr("yes")
+                                                 : bill.value === false ? qsTr("no") : qsTr("not set"))
+                                Accessible.description: qsTr("Tap to cycle yes, no, not set")
+                                Accessible.onPressAction: bill.clicked()
                                 onClicked: root.billableToggled(row.modelData, value === true ? false : value === false ? null : true)
                                 ToolTip.visible: hovered
                                 ToolTip.text: qsTr("Billable: tap to cycle")
