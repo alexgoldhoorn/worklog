@@ -56,7 +56,7 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 | File | Role |
 |---|---|
 | `main.cpp` | Sets the Material style, the organisation/app names (where QSettings stores data) and the window icon |
-| `Api.qml` | A singleton holding: `request()` (XMLHttpRequest plus Basic auth), the server URL/user/password (QtCore `Settings`, plain text in the registry under `HKCU\Software\worklog\WorkLogApp`), the colour palette copied from `static/style.css` (light and dark), and formatting helpers |
+| `Api.qml` | A singleton holding: `request()` (XMLHttpRequest plus Basic auth), the server URL/user (QtCore `Settings`, registry `HKCU\Software\worklog\WorkLogApp`) and the password (in `SecretStore`, migrated once from the old plain-text `password` setting), the server clock (`clockOffsetMs`, refreshed from `now` in every `/api/status` answer; use `Api.now()`/`Api.today()`/`Api.nowHHMM()`, never `new Date()`, for today and now), `overlapItems()` (uses the server's `overlap_details`, falls back to parsing the overlap text), the colour palette copied from `static/style.css` (light and dark), and formatting helpers |
 | `Main.qml` | Tabs: Timer · Pomodoro · Log · Reports · Days · Settings, in a `StackLayout` |
 | `TimerPage.qml` | Hero card (state, clock, Switch/Pause/Stop), chips, Today/Week/Balance tiles, today's blocks |
 | `PomodoroPage.qml` | A port of `pomodoro.js`. State is stored in `Settings` (category `pomodoro`). It keeps counting on other tabs, and `attention()` switches to its tab |
@@ -68,7 +68,8 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 | Components | `Card`, `Tile`, `Caption`, `ChipRow` (single-row, scrolls sideways), `BlockList` (blocks plus gap rows), `BlockDialog`, `NoticeBanner`, `Snackbar`, `ActionButton`, `WeekBars`, `ColumnChart` (diverging, stacked or line), `RankedBars`, `Heatmap`, `DataTable` |
 | `filedownloader.*` | C++ `QML_ELEMENT` that downloads an export to a file. QML can't write files |
 | `notifier.*` | C++ QML singleton `Notifier.schedule(atMs, title, text)` / `cancel()`. On Android it calls `PomodoroAlarm.java` through JNI; elsewhere it does nothing |
-| `android/` | Qt's manifest template filled in (package `net.goldhoorn.worklog`, cleartext allowed for the LAN server) plus launcher icons and `src/net/goldhoorn/worklog/PomodoroAlarm.java`. It is laid over Qt's template through `QT_ANDROID_PACKAGE_SOURCE_DIR`. Permissions are listed by hand, so Qt Multimedia's camera and microphone permissions stay out. OpenSSL comes from the SDK's `android_openssl` (see `CMakeLists.txt`): without it, `https://` fails |
+| `secretstore.*` | C++ QML singleton `SecretStore.get/set/remove(key)` plus `removeLegacy(key)` (deletes a plain QSettings key, for the migration). Windows: Credential Manager (target `worklog/<key>`, links Advapi32). Android: `SecretStore.java` (AES-GCM key in the Android Keystore, ciphertext in SharedPreferences) through JNI. Elsewhere: QSettings |
+| `android/` | Qt's manifest template filled in (package `net.goldhoorn.worklog`, cleartext allowed for the LAN server) plus launcher icons and `src/net/goldhoorn/worklog/PomodoroAlarm.java` and `SecretStore.java`. It is laid over Qt's template through `QT_ANDROID_PACKAGE_SOURCE_DIR`. Permissions are listed by hand, so Qt Multimedia's camera and microphone permissions stay out. OpenSSL comes from the SDK's `android_openssl` (see `CMakeLists.txt`): without it, `https://` fails |
 | `icons/` | `worklog.svg` is the source. The PNGs and `worklog.ico` are rendered from it, so re-render them when the SVG changes |
 
 ### How refreshing works
@@ -76,6 +77,7 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 - `Api.changed()` fires after every successful non-GET request, and every page reloads on it.
 - `Api.serverChanged()` fires when the URL or login changes.
 - Pages also reload when their tab becomes visible, so a failed load never sticks. The Timer also reloads every 60 s.
+- Deleting a block (BlockDialog) is immediate; the page's Snackbar offers Undo, which POSTs the block again (billable restored with a PUT if the client default differs).
 - Mutations of the running block send `require_open: true`, as the web does. A stale snapshot gets a 409 instead of retyping a block that has already closed.
 
 ### QML pitfalls hit here
@@ -99,6 +101,7 @@ There's no test suite. The UI was checked with a mock server and screenshots:
 - **Pomodoro notification:** every `save()` in `PomodoroPage` schedules an exact `AlarmManager` alarm at `endsAt` (`USE_EXACT_ALARM`), or cancels it. `PomodoroAlarm` posts the notification even when the process was killed, and tapping it reopens the app. `POST_NOTIFICATIONS` is requested when `Notifier` is first used.
 - **Edge to edge:** Android 15 and later draw under the status and navigation bars. `Main.qml` pads the tab bar and the pages with `SafeArea.margins`.
 - **Settings is off-screen on a phone** (the tab bar scrolls, but nothing shows that). The app opens on Settings when no user is saved, and any `NoticeBanner` showing `Api.loginMessage` gets a Settings button (`Api.settingsRequested()`).
+- **Tab bar overflow:** `Main.qml` shows a fade with an arrow at the side where tabs are hidden. The billable toggle in `BlockList` is 40 x 40 dp; interactive components carry `Accessible.name`/`role`.
 - **Narrow screens (320 dp):** a Material `SpinBox` needs about 150 px to show two digits, so grids of SpinBoxes go to one column below 360 px.
 
 ### Still missing compared with the web
