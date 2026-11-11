@@ -585,6 +585,7 @@ ScrollView {
         typeSuggestions: page.status ? page.status.chips.types.concat(page.status.chips.break_types) : []
         blocks: page.day ? page.day.blocks : []
         onOffer: (text, action) => snackbar.show(text, action, qsTr("Move it too"))
+        onDeleted: (text, undo) => snackbar.show(text, undo)
     }
 
     Snackbar { id: snackbar }

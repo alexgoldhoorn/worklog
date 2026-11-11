@@ -12,6 +12,29 @@ Dialog {
     property var blocks: []        // the day's blocks, to offer moving a neighbour's edge along
     property string error: ""
     signal offer(string text, var action)
+    // a block was deleted; `undo` re-creates it (the page shows it in its Snackbar)
+    signal deleted(string text, var undo)
+
+    // Deletes at once (no confirmation) and offers an Undo that POSTs the block again.
+    // The server's own message is shown when either step fails.
+    function deleteBlock() {
+        const b = block
+        close()
+        Api.request("DELETE", "/api/blocks/" + b.id, undefined, function () {
+            dlg.deleted(qsTr("Deleted %1–%2 %3").arg(b.start).arg(b.end || "…").arg(b.type), function () {
+                const body = { date: b.date, start: b.start, end: b.end || null, type: b.type,
+                               project: b.project || "", client: b.client || "" }
+                if (b.billable === true || b.billable === false)
+                    body.billable = b.billable
+                Api.request("POST", "/api/blocks", body, function (nb) {
+                    // a billable flag the POST did not take (client default differs): put it back
+                    if (nb && nb.id !== undefined && (nb.billable || null) !== (b.billable === undefined ? null : b.billable))
+                        Api.request("PUT", "/api/blocks/" + nb.id, { billable: b.billable === undefined ? null : b.billable },
+                                    null, e => dlg.deleted(qsTr("Restored, but billable not set: %1").arg(e), null))
+                }, e => dlg.deleted(qsTr("Undo failed: %1").arg(e), null))
+            })
+        }, dlg.fail)
+    }
 
     // After moving an edge, offer to drag the neighbour's matching edge along (the timeline is contiguous).
     function neighbourOffer(b, field, oldV, newV) {
@@ -134,7 +157,7 @@ Dialog {
             flat: true
             Material.foreground: Api.errorColor
             DialogButtonBox.buttonRole: DialogButtonBox.DestructiveRole
-            onClicked: confirmDelete.open()
+            onClicked: dlg.deleteBlock()
         }
         Button {
             text: qsTr("Cancel")
@@ -206,23 +229,6 @@ Dialog {
             level: "error"
             Layout.leftMargin: 0
             Layout.rightMargin: 0
-        }
-    }
-
-    Dialog {
-        id: confirmDelete
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        modal: true
-        title: qsTr("Delete this block?")
-        standardButtons: Dialog.Yes | Dialog.No
-        Label {
-            text: dlg.block ? dlg.block.start + "–" + (dlg.block.end || "…") + "  " + dlg.block.type : ""
-        }
-        onAccepted: {
-            const id = dlg.block.id
-            dlg.close()
-            Api.request("DELETE", "/api/blocks/" + id, undefined, null, dlg.fail)
         }
     }
 }
