@@ -619,3 +619,9 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
 .kbd-hint { margin: 10px 0 0; font-size: .75rem; color: var(--muted); }
 .kbd-hint kbd { font: inherit; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; }
 @media (hover: none), (max-width: 639px) { .kbd-hint { display: none; } }
+
+/* undo snackbar */
+.undo-bar { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: 12px;
+  max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: var(--r-sm); background: var(--fg); color: var(--bg); font-size: .9rem; box-shadow: var(--shadow); }
+.undo-bar[hidden] { display: none; }
+.undo-bar button { border-color: transparent; }

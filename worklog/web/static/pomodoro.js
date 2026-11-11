@@ -222,7 +222,23 @@
     render(Date.now());
     flash();
     if (s.settings.beep) beep();
+    notifyEnd(s);
     if (pomo.onFire) pomo.onFire(s);
+  }
+
+  // Web Notification when an interval ends while the tab is hidden. Permission is asked on the first Start (a user gesture).
+  const canNotify = () => typeof Notification !== "undefined";
+  function askNotifyPermission() {
+    try { if (canNotify() && Notification.permission === "default") Notification.requestPermission().catch(() => {}); } catch (_) { /* unsupported */ }
+  }
+  function notifyEnd(s) {
+    if (!document.hidden || !canNotify() || Notification.permission !== "granted") return;
+    // fire() runs once per ending (it leaves the counting phase), so this never double-notifies
+    const body = s.phase === "awaiting_break" ? "Work interval done. Time for a break." : "Break over. Back to work?";
+    try {
+      const n = new Notification("Pomodoro", { body, tag: "worklog-pomodoro", renotify: true });
+      n.onclick = () => { try { window.focus(); } catch (_) { /* ignore */ } n.close(); };
+    } catch (_) { /* some mobile browsers only allow service-worker notifications */ }
   }
 
   function flash() {
@@ -271,6 +287,7 @@
 
   function onStart() {
     if (pomo.state.phase !== "ready") return;
+    askNotifyPermission();
     if (pomo.onStart) pomo.onStart(); else begin("work");
   }
   function onPause() {
@@ -320,7 +337,8 @@
     $("pomo-reset").addEventListener("click", onReset);
     if (window.AudioContext) $("pomo-beep-label").textContent = "Sound (tap anywhere to enable)";
     document.addEventListener("pointerdown", unlockAudio, { once: true });
-    document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });
+    document.addEventListener("visibilitychange", () => { tick(); }); // endsAt is absolute, so a throttled tab catches up here
+    window.addEventListener("focus", tick);
     pomo.tick = setInterval(tick, 1000);
     logStatus();
     setInterval(logStatus, 60 * 1000);

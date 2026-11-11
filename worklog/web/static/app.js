@@ -36,7 +36,19 @@ async function api(method, url, body) {
 
 const pad = (n) => String(n).padStart(2, "0");
 const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-const nowHHMM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+// Server clock: `clockOffset` (ms) = server wall clock - device clock, from status.now. serverNow() is a Date whose
+// local fields read the server's wall time, so isoDate()/HH:MM of it agree with the server whatever the device TZ or skew.
+let clockOffset = 0;
+const serverNow = () => new Date(Date.now() + clockOffset);
+const todayIso = () => isoDate(serverNow());
+function syncClock(status) {
+  const m = status && typeof status.now === "string" && /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)(?::(\d\d))?/.exec(status.now);
+  if (!m) return;
+  const wall = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+  clockOffset = wall - Date.now();
+  if (Math.abs(clockOffset) < 2000) clockOffset = 0; // ignore network latency / sub-second noise
+}
+const nowHHMM = () => { const d = serverNow(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 const fmtNum = (h, dp = 2) => (Math.round(h * 10 ** dp) / 10 ** dp).toFixed(dp).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 const fmtH = (h) => (h == null ? "–" : `${fmtNum(h)} h`);
 const fmtSigned = (h) => (h == null ? "–" : `${h > 0 ? "+" : ""}${fmtH(h)}`);
@@ -98,7 +110,7 @@ const timer = {
 
 function timerDate() {
   const q = new URLSearchParams(location.search).get("date");
-  return q || isoDate(new Date());
+  return q || todayIso();
 }
 
 function setBusy(on) {
@@ -270,14 +282,14 @@ function basisSelect(cur) {
 
 function weekStrip(s) {
   const days = s.week.days || [];
-  const todayIso = isoDate(new Date());
+  const todayStr = todayIso();
   const run = liveRunH();
-  const scale = Math.max(1, ...days.map((d) => Math.max(d.worked_h + (d.date === todayIso ? run : 0), d.expected_h)));
+  const scale = Math.max(1, ...days.map((d) => Math.max(d.worked_h + (d.date === todayStr ? run : 0), d.expected_h)));
   return el("div", { class: "wk" }, ...days.map((d) => {
-    const worked = d.worked_h + (d.date === todayIso ? run : 0);
+    const worked = d.worked_h + (d.date === todayStr ? run : 0);
     const over = d.expected_h > 0 && worked > d.expected_h;
     const title = `${d.weekday} ${d.date.slice(5)}: ${fmtH(worked)} of ${fmtH(d.expected_h)}`;
-    return el("button", { type: "button", class: `wd-cell${d.date === todayIso ? " today" : ""}${d.date === timer.date ? " sel" : ""}`, title, "aria-label": title,
+    return el("button", { type: "button", class: `wd-cell${d.date === todayStr ? " today" : ""}${d.date === timer.date ? " sel" : ""}`, title, "aria-label": title,
       onclick: () => gotoDate(d.date) },
       el("span", { class: "wd-bar" },
         d.expected_h > 0 ? el("i", { class: "wd-exp", style: `bottom:${(d.expected_h / scale) * 100}%` }) : null,
@@ -453,6 +465,7 @@ function syncPendingFromStatus() {
 async function loadStatus() {
   timer.status = await api("GET", "/api/status");
   timer.fetchedAt = Date.now();
+  syncClock(timer.status);
   syncPendingFromStatus();
   renderStatus();
 }
@@ -577,8 +590,31 @@ function neighbourFollowup(block, field, oldV, newV) {
 }
 
 function deleteBlock(b) {
-  if (!confirm(`Delete ${b.start}–${b.end || "…"} ${b.type}?`)) return;
+  const copy = { date: b.date || timer.date, start: b.start, end: b.end || null, type: b.type,
+    project: b.project || null, client: b.client || null, billable: b.billable === undefined ? null : b.billable };
   mutate(() => api("DELETE", `/api/blocks/${b.id}`));
+  showUndo(`Deleted ${b.start}–${b.end || "…"} ${b.type}`, async () => {
+    try {
+      await api("POST", "/api/blocks", copy);
+      await refreshAll();
+    } catch (err) { showError(err); } // 409 / overlap: the server's message
+  });
+}
+
+// snackbar with an Undo button (aria-live status), auto-dismissed after 8 s
+let undoTimer = null;
+function showUndo(text, onUndo) {
+  let bar = $("undo-bar");
+  if (!bar) {
+    bar = el("div", { id: "undo-bar", class: "undo-bar", role: "status", "aria-live": "polite" });
+    document.body.append(bar);
+  }
+  clearTimeout(undoTimer);
+  const hide = () => { clearTimeout(undoTimer); bar.hidden = true; bar.replaceChildren(); };
+  const btn = el("button", { type: "button", class: "small", text: "Undo", onclick: () => { hide(); onUndo(); } });
+  bar.replaceChildren(el("span", { text }), btn);
+  bar.hidden = false;
+  undoTimer = setTimeout(hide, 8000);
 }
 
 function addRow() {
@@ -587,7 +623,7 @@ function addRow() {
   const now = nowHHMM();
   const start = lastEnd || now;
   let end;
-  if (timer.date === isoDate(new Date()) && now > start) {
+  if (timer.date === todayIso() && now > start) {
     end = now;
   } else {
     const [h, m] = start.split(":").map(Number);
@@ -602,7 +638,7 @@ function addProposal(p) {
   mutate(() => api("POST", "/api/calendar/add", { date: timer.date, start: p.start, end: p.end, title: p.title }));
 }
 
-const gotoDate = (iso) => { location.href = iso === isoDate(new Date()) ? "/timer" : `/timer?date=${iso}`; };
+const gotoDate = (iso) => { location.href = iso === todayIso() ? "/timer" : `/timer?date=${iso}`; };
 
 // keyboard shortcuts on the Timer page (the caller has already excluded inputs and modifiers)
 function shortcut(e) {
@@ -617,9 +653,10 @@ function shortcut(e) {
   }
 }
 
-function initTimer() {
+async function initTimer() {
+  try { syncClock(await api("GET", "/api/status")); } catch (_) { /* the first refreshAll reports it */ }
   timer.date = timerDate();
-  const today = isoDate(new Date());
+  const today = todayIso();
   $("day").value = timer.date;
   $("day-title").textContent = timer.date === today ? `Today · ${fmtDayTitle(timer.date)}` : fmtDayTitle(timer.date);
   $("day-today").hidden = timer.date === today;
@@ -893,7 +930,7 @@ function drawCharts() {
   const { rows, group, hm } = chartState;
   if (!rows) return;
   chartState.w = wideW();
-  const cur = group === "week" ? isoWeek(isoDate(new Date())) : null;
+  const cur = group === "week" ? isoWeek(todayIso()) : null;
   $("charts").replaceChildren(chartExtra(rows, group, cur), chartBalance(rows, group, cur), chartTypes(rows, group, cur),
     chartProjects(rows), hm ? chartHeat(hm) : null);
 }
@@ -954,7 +991,7 @@ async function loadSummary() {
   try {
     const data = await api("GET", `/api/summary?${q}`);
     const rows = data.rows; // oldest first, like the Excel pivot
-    const current = isoWeek(isoDate(new Date()));
+    const current = isoWeek(todayIso());
     renderCharts(rows, $("group").value);
     if (data.alt_week_h) reportAlt = data.alt_week_h;
     const cols = data.rate_h == null ? reportCols().filter(([k]) => k !== "amount") : reportCols();
