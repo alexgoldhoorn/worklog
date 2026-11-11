@@ -15,6 +15,23 @@ def _unavailable(reason):
     return [], f"calendar unavailable: {reason}"
 
 
+def availability_warning(cal_db_path):
+    """The warning proposals() would return for this path, without reading any events."""
+    if not cal_db_path:
+        return _unavailable("not configured")[1]
+    if not os.path.isfile(cal_db_path):
+        return _unavailable(f"{cal_db_path} not found")[1]
+    try:
+        conn = sqlite3.connect(f"file:{cal_db_path}?mode=ro", uri=True)
+        try:
+            conn.execute("SELECT start, end, title, status FROM events WHERE 0").fetchall()
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError) as e:
+        return _unavailable(str(e))[1]
+    return None
+
+
 def proposals(cal_db_path, date, blocks):
     """(proposals, warning) for one day: calendar meetings not yet covered by a block.
     The database is opened read-only. Any problem returns ([], reason) so the timer page

@@ -519,7 +519,9 @@ def test_bad_dsn_never_stops_startup(tmp_path):
 
 
 def test_brief_status_stopped(client):
-    assert client.get("/api/status?brief=1").json() == {
+    r = client.get("/api/status?brief=1").json()
+    assert r.pop("breaks")[0] == "eat"
+    assert r == {
         "state": "stopped", "date": "2026-10-20", "since": None, "elapsed_s": None,
         "type": None, "project": None, "today_work_h": 0.0, "resume": None}
 
@@ -531,7 +533,7 @@ def test_brief_actions_and_resume(client, app):
     r = client.post("/api/pause?brief=1", json={}).json()
     assert (r["state"], r["type"], r["today_work_h"]) == ("break", "eat", 1.5)
     assert r["resume"] == {"type": "dev", "project": "acme"}
-    assert set(r) == {"state", "date", "since", "elapsed_s", "type", "project", "today_work_h", "resume"}
+    assert set(r) == {"state", "date", "since", "elapsed_s", "type", "project", "today_work_h", "resume", "breaks"}
     assert client.post("/api/stop?brief=1", json={}).json()["state"] == "stopped"
 
 
@@ -673,3 +675,56 @@ def test_overlap_details_have_iso_date(client):
     assert day["overlaps"] and day["overlap_details"][0]["date"] == "2026-10-20"
     assert day["overlap_details"][0]["text"] == day["overlaps"][0]
     assert client.get("/api/status").json()["overlap_details"] == day["overlap_details"]
+
+
+# ---- perf / resume / chips ---------------------------------------------------
+
+def test_chips_endpoint_matches_status(client):
+    for d, t, p in [("2026-10-19", "dev", "alpha"), ("2026-10-20", "meet", "beta")]:
+        client.post("/api/blocks", json={"date": d, "start": "09:00", "end": "10:00", "type": t, "project": p})
+    r = client.get("/api/chips")
+    assert r.status_code == 200
+    assert r.json() == client.get("/api/status").json()["chips"]
+    assert set(r.json()) == {"types", "projects", "break_types"}
+
+
+def test_net_balance_cache_identical_and_invalidates(client, app, tmp_path):
+    from datetime import date
+    from worklog import db, reports
+    from worklog.web import api
+    for d in ["2026-09-01", "2026-09-02", "2026-09-15", "2026-10-06", "2026-10-13", "2026-10-19", "2026-10-20"]:
+        client.post("/api/blocks", json={"date": d, "start": "08:00", "end": "17:00", "type": "dev"})
+    conn = db.connect(str(tmp_path / "t.db"))
+    today = date(2026, 10, 20)
+    reports._NET_CACHE.clear()
+    plain = reports.net_balance(conn, {}, today, use_cache=False)
+    first = reports.net_balance(conn, {}, today)
+    again = reports.net_balance(conn, {}, today)  # served from the cache
+    assert reports._NET_CACHE
+    assert repr(plain) == repr(first) == repr(again)
+    assert client.get("/api/status").json()["net"] == plain
+    # editing a closed week invalidates the cached rows
+    bid = conn.execute("SELECT id FROM blocks WHERE date='2026-09-15'").fetchone()[0]
+    assert client.put(f"/api/blocks/{bid}", json={"end": "12:00"}).status_code == 200
+    changed = reports.net_balance(conn, {}, today)
+    assert changed != plain
+    assert repr(changed) == repr(reports.net_balance(conn, {}, today, use_cache=False))
+    # a stored day expectation does too
+    assert client.put("/api/days/2026-09-02", json={"expected_h": 0, "reason": "off"}).status_code == 200
+    assert repr(reports.net_balance(conn, {}, today)) == repr(reports.net_balance(conn, {}, today, use_cache=False))
+    assert reports.net_balance(conn, {}, today) != changed
+    conn.close()
+
+
+def test_brief_resume_falls_back_to_previous_days(client, app):
+    client.post("/api/blocks", json={"date": "2026-10-16", "start": "09:00", "end": "11:00", "type": "dev", "project": "acme"})
+    client.post("/api/blocks", json={"date": "2026-10-19", "start": "09:00", "end": "09:30", "type": "eat"})
+    r = client.get("/api/status?brief=1").json()
+    assert r["resume"] == {"type": "dev", "project": "acme"}
+    assert set(r) == {"state", "date", "since", "elapsed_s", "type", "project", "today_work_h", "resume", "breaks"}
+    assert r["breaks"][0] == "eat" and r["today_work_h"] == 0.0
+
+
+def test_brief_resume_lookback_is_bounded(client):
+    client.post("/api/blocks", json={"date": "2026-09-01", "start": "09:00", "end": "11:00", "type": "dev", "project": "old"})
+    assert client.get("/api/status?brief=1").json()["resume"] is None

@@ -106,6 +106,11 @@ def _status_payload(c: Ctx, brief: bool) -> dict:
     return _status(c)
 
 
+@router.get("/api/chips")
+def get_chips(c: Ctx = Depends(ctx)):
+    return status.chips(c.conn, c.today, db.break_types(c.conn))
+
+
 @router.get("/healthz")
 def healthz():
     return {"ok": True}

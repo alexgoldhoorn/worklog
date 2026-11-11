@@ -1,5 +1,23 @@
 {
  "brief_morning": {
+  "breaks": [
+   "eat",
+   "admin",
+   "child",
+   "fam",
+   "family",
+   "gym",
+   "house",
+   "other",
+   "out",
+   "pomo",
+   "rest",
+   "run",
+   "shop",
+   "sick",
+   "sport",
+   "travel"
+  ],
   "date": "2026-10-20",
   "elapsed_s": 1800,
   "project": "alpha",
@@ -13,6 +31,24 @@
   "type": "dev"
  },
  "brief_past_stop": {
+  "breaks": [
+   "eat",
+   "admin",
+   "child",
+   "fam",
+   "family",
+   "gym",
+   "house",
+   "other",
+   "out",
+   "pomo",
+   "rest",
+   "run",
+   "shop",
+   "sick",
+   "sport",
+   "travel"
+  ],
   "date": "2026-10-20",
   "elapsed_s": 33000,
   "project": "alpha",

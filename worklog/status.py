@@ -59,6 +59,22 @@ def hard_stop(settings) -> str | None:
         return None
 
 
+_RESUME_LOOKBACK_DAYS = 14
+
+
+def last_work_block(conn, now: datetime, bt) -> Block | None:
+    """The latest work block today, else the latest one of the previous days (bounded look-back),
+    so a Start after a night's rest continues the last project."""
+    t = now.date()
+    work = [b for b in db.blocks_on(conn, t.isoformat()) if model.work_type(b.type, bt) == "work"]
+    if work:
+        return max(work, key=lambda b: b.start)
+    since = (t - timedelta(days=_RESUME_LOOKBACK_DAYS)).isoformat()
+    prev = [b for b in db.blocks_between(conn, since, (t - timedelta(days=1)).isoformat())
+            if model.work_type(b.type, bt) == "work"]
+    return max(prev, key=lambda b: (b.date, b.start), default=None)
+
+
 def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     """Compact status for small clients (the Garmin widget): no week/month/net series."""
     today = now.date().isoformat()
@@ -66,12 +82,13 @@ def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     bt = db.break_types(conn)
     blk = st["block"]
     running = live_min(st, now, now.date())
-    work = [b for b in db.blocks_on(conn, today) if model.work_type(b.type, bt) == "work"]
-    last = max(work, key=lambda b: b.start, default=None)
+    last = last_work_block(conn, now, bt)
     return {"state": st["state"], "date": st["date"], "since": st["since"], "elapsed_s": st["elapsed_s"],
             "type": blk["type"] if blk else None, "project": blk["project"] if blk else None,
             "today_work_h": round(reports.day_totals(conn, today, bt)["work_h"] + running / 60, 2),
-            "resume": {"type": last.type, "project": last.project} if last else None}
+            "resume": {"type": last.type, "project": last.project} if last else None,
+            # break types for the watch's Pause picker: eat first, then by recent use
+            "breaks": chips(conn, now.date(), bt)["break_types"]}
 
 
 _EMPTY_WEEK = {"worked_h": 0.0, "other_h": 0.0, "expected_h": 0.0, "extra_h": 0.0,
@@ -156,7 +173,7 @@ def build(conn, now: datetime, holidays, notices, settings) -> dict:
         {"date": b.date, "start": b.start, "end": b.end, "type": b.type}
         for b in db.auto_closed_between(conn, (t - timedelta(days=30)).isoformat(), today)]
     out["net"] = reports.net_balance(conn, holidays, t)
-    _, cal_warn = wcal.proposals(settings.calendar_db_path, today, [])
+    cal_warn = wcal.availability_warning(settings.calendar_db_path)
     det = overlap_details(db.blocks_between(conn, (t - timedelta(days=14)).isoformat(), today))
     out["overlaps"] = [x["text"] for x in det]
     out["overlap_details"] = det

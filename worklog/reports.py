@@ -113,11 +113,50 @@ def weekly_stats(rows: list[dict], current_key: str) -> dict:
             "without_current": _stats([r for r in rows if r["key"] != current_key])}
 
 
-def net_balance(conn, holidays, today: _date) -> dict:
+_NET_CACHE: dict = {}  # db path -> (stamp, extras, alts) for the closed weeks before the current one
+_NET_CACHE_MAX = 8
+
+
+def _closed_stamp(conn, first: str, last: str, holidays, week_end_excl: str) -> tuple:
+    """Cheap fingerprint of everything the closed weeks' rows depend on."""
+    blocks = conn.execute(
+        "SELECT COUNT(*), COALESCE(SUM(id), 0), COALESCE(MAX(updated_at), ''), COALESCE(MAX(id), 0) "
+        "FROM blocks WHERE date BETWEEN ? AND ?", (first, last)).fetchone()
+    exps = conn.execute(
+        "SELECT date, expected_h, sick_h, reason, source FROM day_expectations WHERE date BETWEEN ? AND ?",
+        (first, last)).fetchall()
+    sett = conn.execute("SELECT key, value FROM settings ORDER BY key").fetchall()
+    bts = conn.execute("SELECT name FROM break_types ORDER BY name").fetchall()
+    return (first, last, tuple(blocks), tuple(tuple(r) for r in exps), tuple(tuple(r) for r in sett),
+            tuple(r[0] for r in bts), tuple(sorted(holidays.items())))
+
+
+def _net_rows(conn, holidays, today: _date, first: str, use_cache: bool) -> list[dict]:
+    """Weekly rows from `first` through the current week. Closed weeks are cached per database."""
+    wstart, _ = model.week_bounds(model.week_key(today.isoformat()))
+    cur = grouped(conn, "week", max(first, wstart), today.isoformat(), holidays, today) if first <= today.isoformat() else []
+    if first >= wstart:
+        return cur
+    last = (_date.fromisoformat(wstart) - timedelta(days=1)).isoformat()
+    path = conn.execute("PRAGMA database_list").fetchone()[2] or ""
+    stamp = _closed_stamp(conn, first, last, holidays, wstart) if use_cache and path else None
+    hit = _NET_CACHE.get(path) if stamp is not None else None
+    if hit and hit[0] == stamp:
+        closed = hit[1]
+    else:
+        closed = grouped(conn, "week", first, last, holidays, today)
+        if stamp is not None:
+            if len(_NET_CACHE) >= _NET_CACHE_MAX:
+                _NET_CACHE.clear()
+            _NET_CACHE[path] = (stamp, closed)
+    return closed + cur
+
+
+def net_balance(conn, holidays, today: _date, use_cache: bool = True) -> dict:
     first = expect.first_logged_day(conn)
     if first is None:
         return {"with_current_h": 0.0, "without_current_h": 0.0}
-    rows = grouped(conn, "week", first, today.isoformat(), holidays, today)
+    rows = _net_rows(conn, holidays, today, first, use_cache)
     s = weekly_stats(rows, model.week_key(today.isoformat()))
     return {"with_current_h": s["with_current"]["net_h"],
             "without_current_h": s["without_current"]["net_h"]}

@@ -80,6 +80,14 @@ def create_app(settings: Settings) -> FastAPI:
         if request.url.path.startswith("/static/") or "text/html" in response.headers.get("content-type", ""):
             response.headers.setdefault("Cache-Control", "no-cache")
         return response
+    @app.middleware("http")
+    async def _drop_balance_cache(request, call_next):
+        # Any write may change a closed week; the stamp check catches writes from other processes.
+        response = await call_next(request)
+        if request.method != "GET":
+            from .. import reports
+            reports._NET_CACHE.clear()
+        return response
     app.add_middleware(CrossSiteGuard)
     if settings.auth_user and settings.auth_password_hash:
         app.add_middleware(BasicAuth, user=settings.auth_user, password_hash=settings.auth_password_hash)
