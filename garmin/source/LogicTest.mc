@@ -97,3 +97,12 @@ function testActionsFor(logger as Logger) as Boolean {
         & check(logger, b.size(), 2) & check(logger, b[0] == :start && b[1] == :stop, true)
         & check(logger, s.size(), 1) & check(logger, s[0] == :start, true);
 }
+
+(:test)
+function testBreakChoices(logger as Logger) as Boolean {
+    var none = Logic.breakChoices({"breaks" => null});
+    var some = Logic.breakChoices({"breaks" => ["eat", "walk", 3, "", "run", "a", "b", "c", "d"]});
+    return check(logger, Logic.breakChoices(null).size(), 1) & check(logger, none[0], "eat")
+        & check(logger, some.size(), 6) & check(logger, some[1], "walk") & check(logger, some[2], "run")
+        & check(logger, Logic.pauseBody("walk")["type"], "walk");
+}

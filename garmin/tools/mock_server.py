@@ -27,7 +27,8 @@ def brief() -> dict:
     return {"state": STATE["state"], "date": datetime.now().date().isoformat(), "since": STATE["since"],
             "elapsed_s": int(running) if running is not None else None,
             "type": STATE["type"], "project": STATE["project"],
-            "today_work_h": round(work / 3600, 2), "resume": STATE["resume"]}
+            "today_work_h": round(work / 3600, 2), "resume": STATE["resume"],
+            "breaks": ["eat", "walk", "sport"]}
 
 
 def close_block():

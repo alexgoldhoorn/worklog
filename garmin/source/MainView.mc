@@ -85,14 +85,14 @@ class MainView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
-    //! Start, pause or stop. Pause sends no type, so the server's default break type applies.
-    function act(action as Symbol) as Void {
+    //! Start, pause or stop. `body` overrides the default one (Pause sends the picked break type).
+    function act(action as Symbol, body as Dictionary or Null) as Void {
         if (busy) {
             return;
         }
         busy = true;
         message = "…";
-        _client.call(action, action == :start ? Logic.startBody(status) : {}, method(:onAction));
+        _client.call(action, body != null ? body : (action == :start ? Logic.startBody(status) : {}), method(:onAction));
         WatchUi.requestUpdate();
     }
 

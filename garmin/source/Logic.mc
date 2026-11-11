@@ -147,6 +147,31 @@ module Logic {
         return out;
     }
 
+    //! Break types offered by Pause: the server's `breaks` (eat first), at most 6; ["eat"] if absent.
+    (:glance)
+    function breakChoices(st as Dictionary or Null) as Array<String> {
+        var out = [] as Array<String>;
+        if (st != null) {
+            var b = st["breaks"];
+            if (b instanceof Array) {
+                for (var i = 0; i < b.size() && out.size() < 6; i++) {
+                    if (b[i] instanceof String && b[i].length() > 0) {
+                        out.add(b[i] as String);
+                    }
+                }
+            }
+        }
+        if (out.size() == 0) {
+            out.add("eat");
+        }
+        return out;
+    }
+
+    (:glance)
+    function pauseBody(breakType as String) as Dictionary {
+        return {"type" => breakType};
+    }
+
     (:glance)
     function actionsFor(state as String or Null) as Array<Symbol> {
         if ("working".equals(state)) {
