@@ -75,6 +75,13 @@ def _opt_str(body: dict, key: str):
     return v
 
 
+def _refuse_second_open(conn, exclude_id: int | None = None) -> None:
+    row = conn.execute("SELECT id FROM blocks WHERE end IS NULL AND id IS NOT ? LIMIT 1",
+                       (exclude_id,)).fetchone()
+    if row:
+        raise ApiError("another block is already running; stop it first", 409)
+
+
 def _opt_bool(body: dict, key: str):
     v = body.get(key)
     if v is not None and not isinstance(v, bool):
@@ -112,6 +119,8 @@ def get_status(c: Ctx = Depends(ctx), brief: bool = Query(False)):
 @router.post("/api/start")
 def post_start(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: bool = Query(False)):
     b = _body(body)
+    for k in ("type", "project", "client"):
+        _opt_str(b, k)
     t = (b.get("type") or "").strip() if isinstance(b.get("type"), str) else b.get("type")
     if t and t in db.break_types(c.conn):
         raise ApiError(f"'{t}' is a break type; use pause")
@@ -156,6 +165,7 @@ def get_day(date: str, c: Ctx = Depends(ctx)):
     props = [p for p in props if (p["start"], p["title"] or "") not in dismissed]
     return {"date": date, "blocks": items, "totals": reports.day_totals(c.conn, date, bt),
             "proposals": props, "overlaps": status.overlap_notices(blocks),
+            "overlap_details": status.overlap_details(blocks),
             "notices": c.notices + ([warn] if warn else [])}
 
 
@@ -180,8 +190,11 @@ def create_block(body: dict = Body(...), c: Ctx = Depends(ctx)):
     billable = _opt_bool(body, "billable") if "billable" in body else _client_default(c.conn, client)
     if type_ in db.break_types(c.conn):
         client, billable = None, None  # a break is never billed to anyone
-    b = Block(None, date, start, end, project, type_, client, billable, "manual")
-    b.id = db.insert_block(c.conn, b)
+    with _LOCK:
+        if end is None:
+            _refuse_second_open(c.conn)
+        b = Block(None, date, start, end, project, type_, client, billable, "manual")
+        b.id = db.insert_block(c.conn, b)
     return _derived(c, db.get_block(c.conn, b.id))
 
 
@@ -194,6 +207,8 @@ def update_block(block_id: int, body: dict = Body(...), c: Ctx = Depends(ctx)):
     if body.get("require_open") and cur.end is not None:
         raise ApiError("block is not running any more", 409)  # a chip aimed at the running block hit a closed one
     fields = {}
+    if "end" in body and body["end"] is None and cur.end is not None:
+        _refuse_second_open(c.conn, block_id)
     if "date" in body:
         fields["date"] = date_arg(body["date"])
     if "start" in body:
@@ -389,6 +404,8 @@ def put_day(date: str, body: dict = Body(...), c: Ctx = Depends(ctx)):
         raise ApiError("expected_h (number) is required; sick_h must be a number")
     if not (math.isfinite(expected) and math.isfinite(sick)):
         raise ApiError("expected_h and sick_h must be finite numbers")
+    if expected < 0 or sick < 0:
+        raise ApiError("expected_h and sick_h must not be negative")
     e = DayExpectation(date, expected, sick, str(body.get("reason") or ""), "manual")
     db.set_expectation(c.conn, e)
     return dataclasses.asdict(db.get_expectation(c.conn, date))

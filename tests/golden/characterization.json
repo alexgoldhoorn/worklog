@@ -54,6 +54,7 @@
   ],
   "date": "2026-10-12",
   "notices": [],
+  "overlap_details": [],
   "overlaps": [],
   "proposals": [],
   "totals": {
@@ -148,6 +149,7 @@
   ],
   "date": "2026-10-14",
   "notices": [],
+  "overlap_details": [],
   "overlaps": [],
   "proposals": [],
   "totals": {
@@ -220,6 +222,12 @@
   ],
   "date": "2026-10-19",
   "notices": [],
+  "overlap_details": [
+   {
+    "date": "2026-10-19",
+    "text": "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
+   }
+  ],
   "overlaps": [
    "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
   ],
@@ -270,6 +278,7 @@
   ],
   "date": "2026-10-20",
   "notices": [],
+  "overlap_details": [],
   "overlaps": [],
   "proposals": [
    {
@@ -363,6 +372,13 @@
    "without_current_h": -76.5
   },
   "notices": [],
+  "now": "2026-10-20T09:30:00",
+  "overlap_details": [
+   {
+    "date": "2026-10-19",
+    "text": "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
+   }
+  ],
   "overlaps": [
    "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
   ],
@@ -380,6 +396,7 @@
    "work_h": 0.0,
    "work_h_live": 0.5
   },
+  "tz": "UTC",
   "week": {
    "amount": null,
    "billable_h": 6.0,
@@ -524,6 +541,13 @@
    "without_current_h": -76.5
   },
   "notices": [],
+  "now": "2026-10-20T18:10:00",
+  "overlap_details": [
+   {
+    "date": "2026-10-19",
+    "text": "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
+   }
+  ],
   "overlaps": [
    "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
   ],
@@ -541,6 +565,7 @@
    "work_h": 0.0,
    "work_h_live": 9.166666666666666
   },
+  "tz": "UTC",
   "week": {
    "amount": null,
    "billable_h": 6.0,

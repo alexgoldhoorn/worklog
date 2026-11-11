@@ -611,3 +611,65 @@ def test_default_workday_hours_are_read_once_per_range(conn, monkeypatch):
     monkeypatch.setattr(db, "setting", lambda c, k: (calls.append(k), real(c, k))[1])
     expect.expected_between(conn, "2026-10-01", "2026-12-31", {}, None)
     assert calls.count("default_expected_h") == 1
+
+
+def test_single_open_block(client):
+    assert client.post("/api/blocks", json={"date": "2026-10-20", "start": "08:00"}).status_code == 200
+    r = client.post("/api/blocks", json={"date": "2026-10-20", "start": "09:00"})
+    assert r.status_code == 409 and "error" in r.json()
+    closed = client.post("/api/blocks", json={"date": "2026-10-19", "start": "09:00", "end": "10:00"}).json()
+    assert client.put(f"/api/blocks/{closed['id']}", json={"end": None}).status_code == 409
+
+
+def test_close_open_closes_all(conn):
+    from worklog import timer
+    from worklog.db import Block, insert_block
+    insert_block(conn, Block(None, "2026-10-20", "08:00", None, None, "dev", None, None, "manual"))
+    insert_block(conn, Block(None, "2026-10-20", "08:30", None, None, "dev", None, None, "manual"))
+    timer.close_open(conn, datetime(2026, 10, 20, 9, 0))
+    assert conn.execute("SELECT COUNT(*) FROM blocks WHERE end IS NULL").fetchone()[0] == 0
+
+
+def test_start_non_string_type_is_400(client):
+    r = client.post("/api/start", json={"type": 5})
+    assert r.status_code == 400 and "error" in r.json()
+    assert client.post("/api/start", json={"type": ["a"]}).status_code == 400
+
+
+def test_put_day_rejects_negative(client):
+    assert client.put("/api/days/2026-10-20", json={"expected_h": -1}).status_code == 400
+    assert client.put("/api/days/2026-10-20", json={"expected_h": 8, "sick_h": -2}).status_code == 400
+    assert client.put("/api/days/2026-10-20", json={"expected_h": 8}).status_code == 200
+
+
+def test_status_has_now_and_tz(client):
+    s = client.get("/api/status").json()
+    assert s["now"] == "2026-10-20T09:00:00" and s["tz"] == "UTC"
+
+
+def test_live_totals_count_only_part_in_period(client, app):
+    client.post("/api/blocks", json={"date": "2026-10-19", "start": "22:00", "type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 1, 0)  # before the late-night cut-off: still open
+    s = client.get("/api/status").json()
+    assert s["state"] == "working" and s["elapsed_min"] == 180
+    assert s["today"]["work_h_live"] == pytest.approx(1.0)
+    # 2026-10-19 is a Monday: the week and the month include the whole run
+    assert s["week"]["worked_h_live"] - s["week"]["worked_h"] == pytest.approx(3.0)
+    assert s["month"]["worked_h_live"] - s["month"]["worked_h"] == pytest.approx(3.0)
+
+
+def test_live_totals_stop_at_the_period_start(client, app):
+    # Sunday night run into Monday: the new week only gets the part after midnight
+    client.post("/api/blocks", json={"date": "2026-10-18", "start": "22:00", "type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 19, 1, 0)
+    s = client.get("/api/status").json()
+    assert s["week"]["worked_h_live"] - s["week"]["worked_h"] == pytest.approx(1.0)
+
+
+def test_overlap_details_have_iso_date(client):
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "08:00", "end": "10:00", "type": "dev"})
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "09:00", "end": "11:00", "type": "dev"})
+    day = client.get("/api/day/2026-10-20").json()
+    assert day["overlaps"] and day["overlap_details"][0]["date"] == "2026-10-20"
+    assert day["overlap_details"][0]["text"] == day["overlaps"][0]
+    assert client.get("/api/status").json()["overlap_details"] == day["overlap_details"]

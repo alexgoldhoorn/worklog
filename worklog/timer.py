@@ -35,15 +35,21 @@ def auto_close(conn, now: datetime) -> list[Block]:
 
 
 def close_open(conn, now: datetime) -> Block | None:
-    """Close the open block at the current minute; a block that would last zero minutes is
+    """Close every open block (normally there is one) and return the newest result, if kept.
+
+    Close the open block at the current minute; a block that would last zero minutes is
     deleted instead.
 
     A late-night block (dated yesterday, acted on before LATE_NIGHT_END, so auto_close left it
     open) is split at midnight: yesterday's part ends 23:59, today's part runs 00:00 to now,
     neither flagged. Any older block is closed at 23:59 and flagged auto_closed."""
-    ob = db.open_block(conn)
-    if ob is None:
-        return None
+    result = None
+    for r in conn.execute("SELECT id FROM blocks WHERE end IS NULL ORDER BY date, start, id").fetchall():
+        result = _close_one(conn, now, db.get_block(conn, r["id"]))
+    return result
+
+
+def _close_one(conn, now: datetime, ob: Block) -> Block | None:
     today, hhmm = now_parts(now)
     if ob.date < today:
         yesterday = (now.date() - timedelta(days=1)).isoformat()

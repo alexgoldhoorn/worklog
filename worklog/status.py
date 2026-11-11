@@ -10,19 +10,36 @@ from .validate import is_hhmm
 
 
 def _fmt_day(d: str) -> str:
-    return _date.fromisoformat(d).strftime("%a %-d %b")
+    x = _date.fromisoformat(d)
+    return f"{x:%a} {x.day} {x:%b}"  # not %-d: that is not portable to Windows
 
 
 def overlap_notices(blocks: list[Block]) -> list[str]:
+    return [x["text"] for x in overlap_details(blocks)]
+
+
+def overlap_details(blocks: list[Block]) -> list[dict]:
+    """Overlaps as {date, text}: the ISO date lets a client place the notice without parsing text."""
     by_date: dict[str, list[Block]] = {}
     for b in blocks:
         by_date.setdefault(b.date, []).append(b)
     out = []
     for d in sorted(by_date):
         for a, b in model.overlaps(by_date[d]):
-            out.append(f"Overlap {_fmt_day(d)}: {a.start}–{a.end or 'now'} {a.type} and "
-                       f"{b.start}–{b.end or 'now'} {b.type} · both count in full")
+            out.append({"date": d, "text": f"Overlap {_fmt_day(d)}: {a.start}–{a.end or 'now'} {a.type} and "
+                                           f"{b.start}–{b.end or 'now'} {b.type} · both count in full"})
     return out
+
+
+def live_min(st: dict, now: datetime, since: _date) -> int:
+    """Minutes of the running work block on or after `since` (midnight): a block that crossed
+    midnight only counts its part inside the period."""
+    blk = st.get("block")
+    if st["state"] != "working" or not blk:
+        return 0
+    started = datetime.fromisoformat(f"{blk['date']} {blk['start']}")
+    lo = max(started, datetime.combine(since, datetime.min.time()))
+    return max(0, int((now.replace(second=0, microsecond=0) - lo).total_seconds() // 60))
 
 
 def hard_stop(settings) -> str | None:
@@ -48,12 +65,12 @@ def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     st = timer.status(conn, now)
     bt = db.break_types(conn)
     blk = st["block"]
-    running = st["elapsed_min"] if st["state"] == "working" and st["elapsed_min"] else 0
+    running = live_min(st, now, now.date())
     work = [b for b in db.blocks_on(conn, today) if model.work_type(b.type, bt) == "work"]
     last = max(work, key=lambda b: b.start, default=None)
     return {"state": st["state"], "date": st["date"], "since": st["since"], "elapsed_s": st["elapsed_s"],
             "type": blk["type"] if blk else None, "project": blk["project"] if blk else None,
-            "today_work_h": round(reports.day_totals(conn, today, bt)["work_h"] + max(0, running) / 60, 2),
+            "today_work_h": round(reports.day_totals(conn, today, bt)["work_h"] + running / 60, 2),
             "resume": {"type": last.type, "project": last.project} if last else None}
 
 
@@ -116,6 +133,8 @@ def build(conn, now: datetime, holidays, notices, settings) -> dict:
     t = now.date()
     today = t.isoformat()
     out = timer.status(conn, now)
+    out["now"] = now.replace(microsecond=0).isoformat()
+    out["tz"] = settings.tz
     out["hard_stop"] = hard_stop(settings)
     out["past_stop_min"] = None
     blk = out.get("block")
@@ -126,9 +145,11 @@ def build(conn, now: datetime, holidays, notices, settings) -> dict:
     out["today"] = reports.day_totals(conn, today, bt)
     running = max(0, out["elapsed_min"] if out["state"] == "working" and out["elapsed_min"] else 0)
     out["running_min"] = running
-    out["today"]["work_h_live"] = out["today"]["work_h"] + running / 60
-    out["week"] = _week(conn, now, today, holidays, running)
-    out["month"] = _month(conn, now, today, holidays, running)
+    out["today"]["work_h_live"] = out["today"]["work_h"] + live_min(out, now, t) / 60
+    wstart, _ = model.week_bounds(model.week_key(today))
+    out["week"] = _week(conn, now, today, holidays, live_min(out, now, _date.fromisoformat(wstart)))
+    out["month"] = _month(conn, now, today, holidays,
+                          live_min(out, now, _date.fromisoformat(f"{model.month_key(today)}-01")))
     out["week_basis_h"] = float(db.setting(conn, "base_week_h"))
     out["today"]["expected_h"] = next((d["expected_h"] for d in out["week"]["days"] if d["date"] == today), 0.0)
     out["needs_review"] = [
@@ -136,7 +157,9 @@ def build(conn, now: datetime, holidays, notices, settings) -> dict:
         for b in db.auto_closed_between(conn, (t - timedelta(days=30)).isoformat(), today)]
     out["net"] = reports.net_balance(conn, holidays, t)
     _, cal_warn = wcal.proposals(settings.calendar_db_path, today, [])
-    out["overlaps"] = overlap_notices(db.blocks_between(conn, (t - timedelta(days=14)).isoformat(), today))
+    det = overlap_details(db.blocks_between(conn, (t - timedelta(days=14)).isoformat(), today))
+    out["overlaps"] = [x["text"] for x in det]
+    out["overlap_details"] = det
     out["notices"] = notices + ([cal_warn] if cal_warn else [])
     out["chips"] = chips(conn, t, bt)
     return out
