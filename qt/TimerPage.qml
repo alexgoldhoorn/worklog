@@ -56,7 +56,7 @@ ScrollView {
             page.status = s
             page.fetchedAt = Date.now()
             page.error = ""
-            if (s.state === "working" && !projectField.activeFocus)
+            if (s.state === "working" && s.block.work_type === "work" && s.block.source !== "calendar" && !projectField.activeFocus)
                 projectField.text = s.block.project || ""
             Api.request("GET", "/api/day/" + s.date, undefined, d => page.day = d, e => page.error = e)
         }, e => page.error = e)
@@ -200,8 +200,8 @@ ScrollView {
                         Label {
                             text: page.timerState === "stopped"
                                   ? qsTr("Nothing running. Pick a type and tap Start.")
-                                  : "<b>" + page.runningBlock.type + "</b>"
-                                    + (page.runningBlock.project ? " · " + page.runningBlock.project : "")
+                                  : "<b>" + Api.esc(page.runningBlock.type) + "</b>"
+                                    + (page.runningBlock.project ? " · " + Api.esc(page.runningBlock.project) : "")
                                     + " · " + qsTr("since %1").arg(page.status.since)
                                     + (page.over ? " · " + qsTr("past your %1 stop by %2")
                                                    .arg(page.status.hard_stop).arg(Api.fmtHM(page.pastStopMin / 60)) : "")

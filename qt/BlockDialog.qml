@@ -87,18 +87,30 @@ Dialog {
     }
 
     onAccepted: {
+        const start = dlg.norm(startField.text)
+        const end = endField.text.trim() === "" ? null : dlg.norm(endField.text)
         const body = {
             date: dlg.date,
-            start: dlg.norm(startField.text),
-            end: endField.text.trim() === "" ? null : dlg.norm(endField.text),
+            start: start,
+            end: end,
             type: typeField.editText,
             project: projectField.text,
         }
         if (dlg.block) {
             const b = dlg.block
-            body.client = clientField.text
-            body.billable = billableBox.checked
-            Api.request("PUT", "/api/blocks/" + b.id, body, function () {
+            // send only what changed, like the web: untouched fields (billable unset) stay as they are
+            const cur = { start: b.start, end: b.end || null, type: b.type, project: b.project || "", client: b.client || "" }
+            const changes = {}
+            for (const k in cur)
+                if (body[k] !== undefined ? body[k] !== cur[k] : clientField.text !== cur[k])
+                    changes[k] = k === "client" ? clientField.text : body[k]
+            if (billableBox.checked !== !!b.billable)
+                changes.billable = billableBox.checked
+            if (Object.keys(changes).length === 0)
+                return
+            if (!b.end)
+                changes.require_open = true  // a stale snapshot gets a 409 instead of reopening a closed block
+            Api.request("PUT", "/api/blocks/" + b.id, changes, function () {
                 dlg.neighbourOffer(b, "start", b.start, dlg.norm(startField.text))
                 if (b.end)
                     dlg.neighbourOffer(b, "end", b.end, dlg.norm(endField.text))

@@ -62,6 +62,7 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 | `PomodoroPage.qml` | A port of `pomodoro.js`. State is stored in `Settings` (category `pomodoro`). It keeps counting on other tabs, and `attention()` switches to its tab |
 | `DayPage.qml` | The **Log** tab: any day's blocks, totals and calendar proposals |
 | `ReportsPage.qml` | Summary per week/month/quarter/year, charts, weekly stats, invoice, export |
+| `ExportButtons.qml` | Export buttons used by the Reports page |
 | `ExpectedPage.qml` | The **Days** tab: expected/sick hours per day (`/api/days`) |
 | `SettingsPage.qml` | Server URL and login (`Api.setServer()`), week basis, rate |
 | Components | `Card`, `Tile`, `Caption`, `ChipRow` (single-row, scrolls sideways), `BlockList` (blocks plus gap rows), `BlockDialog`, `NoticeBanner`, `Snackbar`, `ActionButton`, `WeekBars`, `ColumnChart` (diverging, stacked or line), `RankedBars`, `Heatmap`, `DataTable` |
@@ -103,6 +104,7 @@ There's no test suite. The UI was checked with a mock server and screenshots:
 ### Still missing compared with the web
 
 - Import (XLSX/CSV upload). It deliberately stays on the web.
+- The web-only pages Week, Move, Find and Workcal.
 - Export on Android writes to the `content://` link from the Save dialog through `QFile`. This is untested on a device.
 
 ## Garmin widget (`garmin/`)

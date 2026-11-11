@@ -120,6 +120,8 @@ QtObject {
                                        : ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6"]
     readonly property color seriesOther: dark ? "#5f6b7a" : "#9aa3b0"
 
+    // free text going into a StyledText label
+    function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     function pad(n) { return (n < 10 ? "0" : "") + n }
 
     // 2.50 -> "2.5", at most dp decimals

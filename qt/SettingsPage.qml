@@ -11,6 +11,8 @@ ScrollView {
     property string serverMessage: ""
     property string hoursMessage: ""
     property string rateMessage: ""
+    // "12,5" and "12.5" both work; anything else is NaN and keeps Save disabled
+    function parseRate(t) { return /^\d+([.,]\d+)?$/.test(t.trim()) ? Number(t.trim().replace(",", ".")) : NaN }
 
     contentWidth: availableWidth
 
@@ -148,7 +150,8 @@ ScrollView {
                 ComboBox { id: unitBox; model: ["h", "day"]; Layout.preferredWidth: 96 }
                 Button {
                     text: qsTr("Save")
-                    onClicked: page.save({ rate: rateField.text.trim() === "" ? null : Number(rateField.text),
+                    enabled: rateField.text.trim() === "" || isFinite(page.parseRate(rateField.text))
+                    onClicked: page.save({ rate: rateField.text.trim() === "" ? null : page.parseRate(rateField.text),
                                            rate_unit: unitBox.currentText }, m => page.rateMessage = m)
                 }
             }

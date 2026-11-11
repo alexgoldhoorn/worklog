@@ -447,7 +447,7 @@ ScrollView {
                 const b = s.block
                 const min = s.elapsed_min + Math.floor((page.nowMs - page.logFetchedAt) / page.minute)
                 return qsTr("Log: <b>%1</b>").arg(s.state === "working" ? qsTr("working") : qsTr("break"))
-                       + " · " + b.type + (b.project ? " · " + b.project : "") + " · " + Api.fmtHM(min / 60)
+                       + " · " + Api.esc(b.type) + (b.project ? " · " + Api.esc(b.project) : "") + " · " + Api.fmtHM(min / 60)
             }
         }
 
