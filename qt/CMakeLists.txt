@@ -53,6 +53,8 @@ qt_add_qml_module(appWorkLogApp
         filedownloader.cpp
         notifier.h
         notifier.cpp
+        secretstore.h
+        secretstore.cpp
     RESOURCES
         beep.wav
         icons/worklog-256.png
@@ -93,6 +95,9 @@ set_target_properties(appWorkLogApp PROPERTIES
 target_link_libraries(appWorkLogApp
     PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Multimedia
 )
+if (WIN32)
+    target_link_libraries(appWorkLogApp PRIVATE Advapi32)   # Credential Manager (secretstore.cpp)
+endif()
 
 install(TARGETS appWorkLogApp
     BUNDLE DESTINATION .

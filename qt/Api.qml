@@ -8,11 +8,23 @@ QtObject {
 
     property string serverUrl: ""
     property string username: ""
-    property string password: ""   // plain text in the user's settings store
+    property string password: ""   // kept in SecretStore (Credential Manager / Android Keystore), not in Settings
     property Settings settings: Settings {
         property alias baseUrl: api.serverUrl
         property alias username: api.username
-        property alias password: api.password
+    }
+    Component.onCompleted: {
+        // one-time migration: a password an older version left in the plain-text settings moves to the
+        // secret store, and is deleted from Settings only once it reads back identically
+        const legacy = settings.value("password", "")
+        if (legacy !== "") {
+            if (SecretStore.set("password", legacy) && SecretStore.get("password") === legacy)
+                SecretStore.removeLegacy("password")
+            else
+                password = legacy   // the store is unavailable: keep working, retry next start
+        }
+        if (password === "")
+            password = SecretStore.get("password")
     }
     readonly property string baseUrl: serverUrl.trim().replace(/\/+$/, "")
 
@@ -66,6 +78,7 @@ QtObject {
         serverUrl = url
         username = user
         password = pass
+        SecretStore.set("password", pass)
         serverChanged()
     }
 
