@@ -168,3 +168,14 @@ def test_classification_precedence_overlay_then_store_then_rules_then_patterns(c
     assert day["counts"]["unclassified"] == 0
     conn.execute("DELETE FROM event_class"); conn.execute("DELETE FROM family_rules"); conn.commit()
     assert model.build_day(ctx)["counts"]["unclassified"] == 1                   # Haircut again
+
+
+def test_family_view_matches_the_day_page(ctx):
+    day = model.build_day(ctx)
+    view = model.family_view(ctx, [ctx.date.isoformat()])
+    assert view["household"]["partner"]
+    for e in day["timeline"]:
+        if e["layer"] != "personal":
+            continue
+        got = view[(ctx.date.isoformat(), e["start"], e["title"])]
+        assert got == {"classification": e["classification"], "creator_name": e["creator_name"], "lane": e["lane"]}

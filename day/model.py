@@ -62,6 +62,38 @@ def classify_family(title: str, calendar: str, annotations: dict, patterns: dict
     return "unclassified"
 
 
+def _personal_entry(ctx, src, hh: dict, e: dict) -> dict:
+    """One personal-calendar event as a timeline entry: lane, whose it is, who created it."""
+    creator = (e.get("creator") or "").strip().lower()
+    return {"start": e["start"], "end": e.get("end") or e["start"], "title": e["title"], "layer": "personal",
+            "source": e.get("calendar", ""), "uid": e.get("uid", ""),
+            "creator_name": ((hh.get("people") or {}).get(creator) or creator.split("@")[0]) if creator else None,
+            "lane": lane_of(e.get("calendar", ""), hh),
+            "classification": classify_family(e["title"], e.get("calendar", ""), src["annotations"],
+                                              ctx.rules.get("family_patterns", {}), hh,
+                                              stored=src.get("event_class", {}).get((e["start"], e["title"])),
+                                              rules_db=src.get("family_rules"), date=e.get("date"), start=e["start"])}
+
+
+def family_view(ctx, dates: list[str]) -> dict:
+    """Who a personal event belongs to, for tools that only need that (the agenda), not a whole day model.
+
+    {(date, start, title): {"classification", "creator_name", "lane"}} for every timed personal event on
+    `dates`, plus the household names under the key "household". The same rules the Day page uses: the
+    newest tap, an "always for this title" rule, then the household patterns."""
+    hh = _rules.household(ctx.rules)
+    out: dict = {"household": {k: hh[k] for k in ("me", "partner", "child", "calendars")}}
+    for d in dates:
+        dctx = replace(ctx, date=datetime.strptime(d, "%Y-%m-%d").date())
+        src = sources.load(dctx)
+        for e in src["personal"]:
+            if e.get("all_day") or not e.get("start"):
+                continue
+            ent = _personal_entry(dctx, src, hh, e)
+            out[(d, ent["start"], ent["title"])] = {k: ent[k] for k in ("classification", "creator_name", "lane")}
+    return out
+
+
 def _timeline(ctx, src) -> list[dict]:
     out = []
     hh = _rules.household(ctx.rules)
@@ -79,15 +111,7 @@ def _timeline(ctx, src) -> list[dict]:
         uid = str(e.get("uid") or "")
         if uid.split("@")[0] in mirrored_ids or str(e.get("title", "")).startswith("🛡"):
             continue
-        creator = (e.get("creator") or "").strip().lower()
-        out.append({"start": e["start"], "end": e.get("end") or e["start"], "title": e["title"], "layer": "personal",
-                    "source": e.get("calendar", ""), "uid": e.get("uid", ""),
-                    "creator_name": ((hh.get("people") or {}).get(creator) or creator.split("@")[0]) if creator else None,
-                    "lane": lane_of(e.get("calendar", ""), hh),
-                    "classification": classify_family(e["title"], e.get("calendar", ""), src["annotations"],
-                                                      ctx.rules.get("family_patterns", {}), hh,
-                                                      stored=src.get("event_class", {}).get((e["start"], e["title"])),
-                                                      rules_db=src.get("family_rules"), date=e.get("date"), start=e["start"])})
+        out.append(_personal_entry(ctx, src, hh, e))
     for b in src["blocks"]:
         out.append({"start": b["start"], "end": b["end"], "title": b["title"], "layer": "protected",
                     "source": b.get("source", ""), "state": b["state"], "kind": b["kind"], "id": b["id"]})
