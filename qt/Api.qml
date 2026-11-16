@@ -97,7 +97,7 @@ QtObject {
                     api.syncClock(data.now)
                 if (method !== "GET")
                     api.changed()
-                if (onOk) onOk(data)
+                if (onOk) onOk(data, xhr.responseText)
             } else if (onErr) {
                 onErr(xhr.status === 0 ? qsTr("Cannot reach %1").arg(api.baseUrl)
                       : xhr.status === 401 ? api.loginMessage

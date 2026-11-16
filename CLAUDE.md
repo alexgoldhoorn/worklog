@@ -57,10 +57,11 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 |---|---|
 | `main.cpp` | Sets the Material style, the organisation/app names (where QSettings stores data) and the window icon |
 | `Api.qml` | A singleton holding: `request()` (XMLHttpRequest plus Basic auth), the server URL/user (QtCore `Settings`, registry `HKCU\Software\worklog\WorkLogApp`) and the password (in `SecretStore`, migrated once from the old plain-text `password` setting), the server clock (`clockOffsetMs`, refreshed from `now` in every `/api/status` answer; use `Api.now()`/`Api.today()`/`Api.nowHHMM()`, never `new Date()`, for today and now), `overlapItems()` (uses the server's `overlap_details`, falls back to parsing the overlap text), the colour palette copied from `static/style.css` (light and dark), and formatting helpers |
-| `Main.qml` | Tabs: Timer · Pomodoro · Log · Reports · Days · Settings, in a `StackLayout` |
+| `Main.qml` | Tabs: Timer · Pomodoro · Log · Week · Reports · Days · Settings, in a `StackLayout` |
 | `TimerPage.qml` | Hero card (state, clock, Switch/Pause/Stop), chips, Today/Week/Balance tiles, today's blocks |
 | `PomodoroPage.qml` | A port of `pomodoro.js`. State is stored in `Settings` (category `pomodoro`). It keeps counting on other tabs, and `attention()` switches to its tab |
 | `DayPage.qml` | The **Log** tab: any day's blocks, totals and calendar proposals |
+| `WeekPage.qml` | The **Week** tab (`/api/balance/week`): the seven days as cards (work meetings, personal events, blocks with approve/reject), load gate, Propose / Outlook list / Add a block, Todoist goals, 28-day gate history. Balance settings stay on the web. Needs the server's balance store (`BALANCE_DB`, `BALANCE_STATE_DIR`); without it the page shows the 503 error |
 | `ReportsPage.qml` | Summary per week/month/quarter/year, charts, weekly stats, invoice, export |
 | `ExportButtons.qml` | Export buttons used by the Reports page |
 | `ExpectedPage.qml` | The **Days** tab: expected/sick hours per day (`/api/days`) |
@@ -123,7 +124,7 @@ Screenshots can still be taken with a mock server:
 ### Still missing compared with the web
 
 - Import (XLSX/CSV upload). It deliberately stays on the web.
-- The web-only pages Week, Move, Find and Workcal.
+- The web-only pages Move, Find and Workcal.
 - Export on Android writes to the `content://` link from the Save dialog through `QFile`. This is untested on a device.
 
 ## Garmin widget (`garmin/`)
