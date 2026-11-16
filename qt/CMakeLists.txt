@@ -60,6 +60,8 @@ set(WL_SOURCES
     notifier.cpp
     secretstore.h
     secretstore.cpp
+    timerwidget.h
+    timerwidget.cpp
 )
 set(WL_RESOURCES
     beep.wav

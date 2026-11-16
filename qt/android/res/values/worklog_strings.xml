@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timer_widget_description">Timer state with Start, Pause and Stop</string>
+    <string name="timer_tile_label">Worklog</string>
+</resources>

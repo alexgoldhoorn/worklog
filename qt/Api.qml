@@ -25,6 +25,7 @@ QtObject {
         }
         if (password === "")
             password = SecretStore.get("password")
+        TimerWidget.configure(serverUrl, username)   // Android's widget/tile/notification call the server too
     }
     readonly property string baseUrl: serverUrl.trim().replace(/\/+$/, "")
 
@@ -79,6 +80,8 @@ QtObject {
         username = user
         password = pass
         SecretStore.set("password", pass)
+        TimerWidget.configure(url, user)
+        TimerWidget.refresh()
         serverChanged()
     }
 
@@ -92,8 +95,10 @@ QtObject {
             if (xhr.status >= 200 && xhr.status < 300) {
                 if (data && typeof data.now === "string" && path.indexOf("/api/status") === 0)
                     api.syncClock(data.now)
-                if (method !== "GET")
+                if (method !== "GET") {
                     api.changed()
+                    TimerWidget.refresh()   // Android: the widget, tile and ongoing notification
+                }
                 if (onOk) onOk(data)
             } else if (onErr) {
                 onErr(xhr.status === 0 ? qsTr("Cannot reach %1").arg(api.baseUrl)
