@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 option(WORKLOG_TESTS "Build the Qt Quick tests (tests/); they need a running server, see tests/run_tests.py" OFF)
 
-project(WorkLogApp VERSION 0.1 LANGUAGES CXX)
+project(WorkLogApp VERSION 0.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -93,7 +93,7 @@ set_target_properties(appWorkLogApp PROPERTIES
     QT_ANDROID_PACKAGE_NAME net.goldhoorn.worklog
     QT_ANDROID_APP_NAME "Worklog"
     QT_ANDROID_VERSION_NAME ${PROJECT_VERSION}
-    QT_ANDROID_VERSION_CODE 1
+    QT_ANDROID_VERSION_CODE 2
 )
 
 if (ANDROID)
