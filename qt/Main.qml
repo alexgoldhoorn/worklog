@@ -17,6 +17,24 @@ ApplicationWindow {
     Material.background: Api.bg
     color: Api.bg
 
+    // Windows: closing the window hides it to the tray (when the tray exists and the setting is on)
+    readonly property var trayCtl: trayLoader.item
+    readonly property bool hidesToTray: Api.trayCapable && Api.trayKeep && !!trayCtl && trayCtl.available
+    onClosing: close => {
+        if (hidesToTray) {
+            close.accepted = false
+            window.hide()
+        } else {
+            Qt.quit()
+        }
+    }
+    Loader {
+        id: trayLoader
+        active: Api.trayCapable
+        source: "TrayController.qml"
+        onLoaded: window.trayCtl.window = window
+    }
+
     // Android draws the app under the status and navigation bars: keep the tabs and pages clear of them
     readonly property var safe: SafeArea.margins
 

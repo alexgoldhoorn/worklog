@@ -31,5 +31,5 @@ target_compile_definitions(tst_worklog PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CU
 target_link_libraries(tst_worklog PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Multimedia
                                           Qt6::QuickTest Qt6::Test)
 if (WIN32)
-    target_link_libraries(tst_worklog PRIVATE Advapi32)
+    target_link_libraries(tst_worklog PRIVATE Advapi32 User32)
 endif()
