@@ -728,3 +728,20 @@ def test_brief_resume_falls_back_to_previous_days(client, app):
 def test_brief_resume_lookback_is_bounded(client):
     client.post("/api/blocks", json={"date": "2026-09-01", "start": "09:00", "end": "11:00", "type": "dev", "project": "old"})
     assert client.get("/api/status?brief=1").json()["resume"] is None
+
+
+def test_timer_actions_accept_a_queued_time(client, app):
+    """A client that was offline replays start/pause/stop with the time they were tapped."""
+    assert client.post("/api/start", json={"project": "x", "at": "2026-10-20T08:30"}).status_code == 200
+    assert client.post("/api/pause", json={"at": "2026-10-20T08:45"}).status_code == 200
+    assert client.post("/api/stop", json={"at": "2026-10-20T08:55"}).status_code == 200
+    day = client.get("/api/day/2026-10-20").json()
+    assert [(b["start"], b["end"]) for b in day["blocks"]] == [("08:30", "08:45"), ("08:45", "08:55")]
+
+
+def test_timer_at_rejects_nonsense(client, app):
+    client.post("/api/start", json={"at": "2026-10-20T08:30"})
+    for at, why in (("2026-10-20T09:30", "future"), ("2026-10-18T08:00", "more than a day"),
+                    ("2026-10-20T08:00", "before the running block"), ("soon", "look like"), (5, "string")):
+        r = client.post("/api/pause", json={"at": at})
+        assert r.status_code == 400 and why in r.json()["error"], (at, r.json())

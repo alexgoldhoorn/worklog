@@ -3,7 +3,7 @@ import dataclasses
 import math
 import re
 import threading
-from datetime import date as _date, datetime
+from datetime import date as _date, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import Response
@@ -93,6 +93,32 @@ def _body(body) -> dict:
     return body if isinstance(body, dict) else {}
 
 
+_AT_MAX_AGE = timedelta(hours=24)
+
+
+def _at(c: Ctx, body: dict) -> datetime:
+    """The moment a timer action happened: `at` ("YYYY-MM-DDTHH:MM", server local time) when a
+    client replays an action it queued while offline, else now. Never in the future, never older
+    than a day, and never before the running block's start."""
+    raw = body.get("at")
+    if raw is None:
+        return c.now
+    if not isinstance(raw, str):
+        raise ApiError("at must be a string like 2026-10-20T09:30")
+    try:
+        at = datetime.fromisoformat(raw).replace(second=0, microsecond=0, tzinfo=None)
+    except ValueError:
+        raise ApiError("at must look like 2026-10-20T09:30") from None
+    if at > c.now.replace(second=59, microsecond=0):
+        raise ApiError("at is in the future")
+    if c.now - at > _AT_MAX_AGE:
+        raise ApiError("at is more than a day ago")
+    ob = db.open_block(c.conn)
+    if ob and datetime.fromisoformat(f"{ob.date} {ob.start}") > at:
+        raise ApiError("at is before the running block started")
+    return min(at, c.now)
+
+
 # ---- status -----------------------------------------------------------------
 
 
@@ -129,29 +155,33 @@ def post_start(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: boo
     t = (b.get("type") or "").strip() if isinstance(b.get("type"), str) else b.get("type")
     if t and t in db.break_types(c.conn):
         raise ApiError(f"'{t}' is a break type; use pause")
+    at = _at(c, b)
     with _LOCK:
-        timer.start(c.conn, c.now, b.get("type"), b.get("project"), b.get("client"))
+        timer.start(c.conn, at, b.get("type"), b.get("project"), b.get("client"))
     return _status_payload(c, brief)
 
 
 @router.post("/api/pause")
 def post_pause(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: bool = Query(False)):
-    t = _body(body).get("type")
+    b = _body(body)
+    t = b.get("type")
     t = t.strip() if isinstance(t, str) else t
     if t:
         bt = db.break_types(c.conn)
         if t not in bt:
             valid = ", ".join(sorted(bt, key=lambda n: (n != "eat", n)))
             raise ApiError(f"unknown break type '{t}'; valid: {valid}")
+    at = _at(c, b)
     with _LOCK:
-        timer.pause(c.conn, c.now, t)
+        timer.pause(c.conn, at, t)
     return _status_payload(c, brief)
 
 
 @router.post("/api/stop")
 def post_stop(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: bool = Query(False)):
+    at = _at(c, _body(body))
     with _LOCK:
-        timer.stop(c.conn, c.now)
+        timer.stop(c.conn, at)
     return _status_payload(c, brief)
 
 
