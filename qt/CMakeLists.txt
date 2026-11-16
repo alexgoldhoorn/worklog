@@ -67,6 +67,10 @@ set(WL_SOURCES
     secretstore.cpp
     globalhotkey.h
     globalhotkey.cpp
+    timerwidget.h
+    timerwidget.cpp
+    biometric.h
+    biometric.cpp
 )
 set(WL_RESOURCES
     beep.wav

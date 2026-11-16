@@ -44,6 +44,19 @@ ScrollView {
         function onServerChanged() { page.reload() }
     }
 
+    property bool confirmingUnlock: false
+    property string unlockMessage: ""
+    Connections {
+        target: Biometric
+        function onResult(ok, error) {
+            if (!page.confirmingUnlock)
+                return
+            page.confirmingUnlock = false
+            Api.requireUnlock = ok
+            page.unlockMessage = ok ? "" : error
+        }
+    }
+
     ColumnLayout {
         width: page.availableWidth
         spacing: 16
@@ -106,6 +119,33 @@ ScrollView {
                     highlighted: true
                     onClicked: Api.setServer(urlField.text, userField.text, passwordField.text)
                 }
+            }
+            // Android only: the saved login opens after a fingerprint/face (or the screen lock)
+            Switch {
+                id: unlockSwitch
+                visible: Qt.platform.os === "android" && Biometric.isAvailable()
+                text: qsTr("Require fingerprint/face to open")
+                checked: Api.requireUnlock
+                Accessible.name: text
+                Layout.fillWidth: true
+                // switching it on asks once first, so nobody locks themselves out with an unusable prompt
+                onToggled: {
+                    const want = checked
+                    checked = Qt.binding(() => Api.requireUnlock)
+                    if (!want) {
+                        Api.requireUnlock = false
+                    } else {
+                        page.confirmingUnlock = true
+                        Biometric.authenticate(qsTr("Require unlock"), qsTr("Confirm to turn it on"))
+                    }
+                }
+            }
+            Label {
+                visible: unlockSwitch.visible && page.unlockMessage !== ""
+                text: page.unlockMessage
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
         }
 

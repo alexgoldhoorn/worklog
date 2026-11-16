@@ -15,6 +15,7 @@ QtObject {
         property alias trayKeep: api.trayKeep
         property alias hotkeyOn: api.hotkeyOn
         property alias hotkeySeq: api.hotkeySeq
+        property alias requireUnlock: api.requireUnlock
     }
     // Windows desktop: keep running in the tray when the window closes, and the global start/pause hotkey
     property bool trayKeep: true
@@ -22,6 +23,10 @@ QtObject {
     property string hotkeySeq: "Ctrl+Alt+W"
     property string hotkeyError: ""   // set by TrayController when the hotkey could not be registered
     readonly property bool trayCapable: Qt.platform.os === "windows"
+    // Android: fingerprint/face (or the screen lock) before the saved password is read (Settings switch)
+    property bool requireUnlock: false
+    // true until Biometric confirms; requests wait and Main.qml shows a locked screen
+    property bool locked: false
     Component.onCompleted: {
         // one-time migration: a password an older version left in the plain-text settings moves to the
         // secret store, and is deleted from Settings only once it reads back identically
@@ -32,11 +37,14 @@ QtObject {
             else
                 password = legacy   // the store is unavailable: keep working, retry next start
         }
-        if (password === "")
+        if (requireUnlock && Biometric.isAvailable())
+            locked = true
+        else if (password === "")
             password = SecretStore.get("password")
         loadQueue()
         if (queue.length > 0 && baseUrl !== "")
             flushQueue()
+        TimerWidget.configure(serverUrl, username)   // Android's widget/tile/notification call the server too
     }
     readonly property string baseUrl: serverUrl.trim().replace(/\/+$/, "")
 
@@ -86,15 +94,31 @@ QtObject {
     // the error for a 401; a NoticeBanner showing it links to Settings
     readonly property string loginMessage: qsTr("Login required: set user and password in Settings")
 
+    // after Biometric confirmed: read the login and let the pages load
+    function unlock() {
+        if (!locked)
+            return
+        if (password === "")
+            password = SecretStore.get("password")
+        locked = false
+        serverChanged()
+    }
+
     function setServer(url, user, pass) {
         serverUrl = url
         username = user
         password = pass
         SecretStore.set("password", pass)
+        TimerWidget.configure(url, user)
+        TimerWidget.refresh()
         serverChanged()
     }
 
     function request(method, path, body, onOk, onErr) {
+        if (api.locked) {   // no password yet: the pages reload on serverChanged() after unlock()
+            if (onErr) onErr(qsTr("Locked"))
+            return
+        }
         const xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== XMLHttpRequest.DONE)
@@ -104,8 +128,10 @@ QtObject {
             if (xhr.status >= 200 && xhr.status < 300) {
                 if (data && typeof data.now === "string" && path.indexOf("/api/status") === 0)
                     api.syncClock(data.now)
-                if (method !== "GET")
+                if (method !== "GET") {
                     api.changed()
+                    TimerWidget.refresh()   // Android: the widget, tile and ongoing notification
+                }
                 if (onOk) onOk(data, xhr.responseText)
             } else if (onErr) {
                 onErr(xhr.status === 0 ? qsTr("Cannot reach %1").arg(api.baseUrl)
