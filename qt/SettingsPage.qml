@@ -110,6 +110,37 @@ ScrollView {
         }
 
         Card {
+            visible: Api.trayCapable
+            title: qsTr("Tray and hotkey")
+
+            Switch {
+                text: qsTr("Keep running in the tray")
+                checked: Api.trayKeep
+                onToggled: Api.trayKeep = checked
+            }
+            Switch {
+                text: qsTr("Global start/pause hotkey")
+                checked: Api.hotkeyOn
+                onToggled: Api.hotkeyOn = checked
+            }
+            TextField {
+                id: hotkeyField
+                enabled: Api.hotkeyOn
+                text: Api.hotkeySeq
+                placeholderText: qsTr("e.g. Ctrl+Alt+W")
+                Layout.fillWidth: true
+                onEditingFinished: if (text.trim() !== "") Api.hotkeySeq = text.trim()
+            }
+            Label {
+                text: Api.hotkeyError
+                visible: Api.hotkeyOn && text !== ""
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
+
+        Card {
             title: qsTr("Hours")
             enabled: page.connected === true
 

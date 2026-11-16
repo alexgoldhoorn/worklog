@@ -7,6 +7,9 @@ project(WorkLogApp VERSION 0.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Network Multimedia)
+if (WIN32)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets)   # the tray icon (Qt Labs Platform); not needed on Android
+endif()
 if (WORKLOG_TESTS)
     find_package(Qt6 REQUIRED COMPONENTS QuickTest Test)
 endif()
@@ -52,6 +55,7 @@ set(WL_QML_FILES
     Heatmap.qml
     DataTable.qml
     PomodoroPage.qml
+    TrayController.qml
 )
 set(WL_SOURCES
     filedownloader.h
@@ -60,6 +64,8 @@ set(WL_SOURCES
     notifier.cpp
     secretstore.h
     secretstore.cpp
+    globalhotkey.h
+    globalhotkey.cpp
 )
 set(WL_RESOURCES
     beep.wav
@@ -109,7 +115,7 @@ target_link_libraries(appWorkLogApp
     PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Multimedia
 )
 if (WIN32)
-    target_link_libraries(appWorkLogApp PRIVATE Advapi32)   # Credential Manager (secretstore.cpp)
+    target_link_libraries(appWorkLogApp PRIVATE Advapi32 User32 Qt6::Widgets)   # Credential Manager (secretstore.cpp), RegisterHotKey (globalhotkey.cpp)
 endif()
 
 install(TARGETS appWorkLogApp

@@ -12,7 +12,16 @@ QtObject {
     property Settings settings: Settings {
         property alias baseUrl: api.serverUrl
         property alias username: api.username
+        property alias trayKeep: api.trayKeep
+        property alias hotkeyOn: api.hotkeyOn
+        property alias hotkeySeq: api.hotkeySeq
     }
+    // Windows desktop: keep running in the tray when the window closes, and the global start/pause hotkey
+    property bool trayKeep: true
+    property bool hotkeyOn: true
+    property string hotkeySeq: "Ctrl+Alt+W"
+    property string hotkeyError: ""   // set by TrayController when the hotkey could not be registered
+    readonly property bool trayCapable: Qt.platform.os === "windows"
     Component.onCompleted: {
         // one-time migration: a password an older version left in the plain-text settings moves to the
         // secret store, and is deleted from Settings only once it reads back identically
