@@ -33,6 +33,7 @@ set(WL_QML_FILES
     Api.qml
     TimerPage.qml
     DayPage.qml
+    WeekPage.qml
     SettingsPage.qml
     BlockList.qml
     BlockDialog.qml

@@ -35,6 +35,7 @@ ApplicationWindow {
         TabButton { text: qsTr("Timer"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Pomodoro"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Log"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
+        TabButton { text: qsTr("Week"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Reports"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Days"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Settings"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
@@ -108,6 +109,7 @@ ApplicationWindow {
             }
         }
         DayPage { id: logPage }
+        WeekPage {}
         ReportsPage {}
         ExpectedPage {}
         SettingsPage {}

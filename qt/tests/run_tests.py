@@ -41,6 +41,8 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="worklog-qt-test-") as tmp:
         env = dict(os.environ, WORKLOG_ENV_FILE=os.devnull, WORKLOG_DB=str(Path(tmp, "t.db")),
                    TZ="Europe/Amsterdam", PYTHONPATH=str(REPO))
+        Path(tmp, "balance").mkdir()   # the Week page reads the balance store
+        env.update(BALANCE_DB=str(Path(tmp, "b.db")), BALANCE_STATE_DIR=str(Path(tmp, "balance")))
         for k in ("WORKLOG_AUTH_USER", "WORKLOG_AUTH_PASSWORD_HASH"):
             env.pop(k, None)
         server = subprocess.Popen(
