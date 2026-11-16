@@ -72,6 +72,10 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 | `android/` | Qt's manifest template filled in (package `net.goldhoorn.worklog`, cleartext allowed for the LAN server) plus launcher icons and `src/net/goldhoorn/worklog/PomodoroAlarm.java` and `SecretStore.java`. It is laid over Qt's template through `QT_ANDROID_PACKAGE_SOURCE_DIR`. Permissions are listed by hand, so Qt Multimedia's camera and microphone permissions stay out. OpenSSL comes from the SDK's `android_openssl` (see `CMakeLists.txt`): without it, `https://` fails |
 | `icons/` | `worklog.svg` is the source. The PNGs and `worklog.ico` are rendered from it, so re-render them when the SVG changes |
 
+### Offline queue
+
+`Api.timerAction(path, body, onOk, onErr, onQueued)` is what Start/Pause/Stop use. When the server cannot be reached (status 0) the action is queued in order with `at` (the server's wall clock when it was tapped, `Api.atNow()`), kept in `Settings` category `offline`, and replayed by `Api.flushQueue()`: after any answer from the server, every 15 s while queued, and at start-up. The server accepts `at` on `/api/start|pause|stop` (never in the future, never over 24 h old, never before the running block's start). An action the server refuses on replay is dropped and `Api.queueFailed(message)` fires. Block edits, deletes and the other requests are not queued.
+
 ### How refreshing works
 
 - `Api.changed()` fires after every successful non-GET request, and every page reloads on it.
@@ -87,9 +91,21 @@ cmake --build <builddir> --target apk   # android-build/build/outputs/apk/releas
 - Files with delegates use `pragma ComponentBehavior: Bound` and qualify everything (`row.modelData`, `root.x`), so qmllint stays clean.
 - Repeater models that mix item kinds (BlockList's gap rows) must guard fields that are missing: `!!x.flags`, `x.type || ""`.
 
+### Tests
+
+`qt/tests/` holds Qt Quick tests (`tst_*.qml`) that run against the real server on a throwaway database. Build with `-DWORKLOG_TESTS=ON` and run them with a Python that has the server's dependencies:
+
+```sh
+cmake -S qt -B <builddir> -G Ninja -DCMAKE_PREFIX_PATH=$QT/<desktop kit> -DWORKLOG_TESTS=ON
+cmake --build <builddir> --target tst_worklog
+python qt/tests/run_tests.py <builddir>      # starts uvicorn on a free port, runs tst_worklog offscreen
+```
+
+The test executable is built from the same `WL_QML_FILES`/`WL_SOURCES` lists as the app, so register a new file once, in `qt/CMakeLists.txt`. `tst_pages.qml` fails on any QML warning while a page loads. The tests use their own settings store, so the saved URL and login are never touched. On Windows the test exe is a GUI program: `run_tests.py` reads its result file, not stdout.
+
 ### Checking the UI without the real server
 
-There's no test suite. The UI was checked with a mock server and screenshots:
+Screenshots can still be taken with a mock server:
 
 - Run a throwaway Python `http.server` mock on `127.0.0.1:8503` that returns fixture JSON for `/api/status`, `/api/day/*`, `/api/summary`, `/api/heatmap`, `/api/invoice`, `/api/days` and `/api/settings`. Use `ThreadingHTTPServer`, because the app sends several requests at once on startup.
 - Build a scratch copy whose `main.cpp` uses a different organisation name, so it doesn't overwrite the real saved URL and login, and calls `grabWindow()` per tab.

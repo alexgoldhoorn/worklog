@@ -25,6 +25,9 @@ QtObject {
         }
         if (password === "")
             password = SecretStore.get("password")
+        loadQueue()
+        if (queue.length > 0 && baseUrl !== "")
+            flushQueue()
     }
     readonly property string baseUrl: serverUrl.trim().replace(/\/+$/, "")
 
@@ -98,8 +101,11 @@ QtObject {
             } else if (onErr) {
                 onErr(xhr.status === 0 ? qsTr("Cannot reach %1").arg(api.baseUrl)
                       : xhr.status === 401 ? api.loginMessage
-                      : (data && data.error) || ("HTTP " + xhr.status))
+                      : (data && data.error) || ("HTTP " + xhr.status), xhr.status)   // status 0: unreachable
             }
+            // any answer proves the server is there: send what was queued while it was not
+            if (xhr.status !== 0 && !api.flushing && api.queue.length > 0)
+                Qt.callLater(api.flushQueue)
         }
         xhr.open(method, api.baseUrl + path)
         if (api.username !== "")
@@ -110,6 +116,85 @@ QtObject {
         } else {
             xhr.send()
         }
+    }
+
+    // ---- offline queue -------------------------------------------------------
+    // Start/pause/stop tapped while the server is unreachable are kept (in order, each with the server
+    // time it was tapped, the API's `at`) and sent when it answers again.
+
+    property var queue: []   // [{ path, body }]
+    property bool flushing: false
+    // a queued action the server refused when it was replayed (e.g. a block changed meanwhile)
+    signal queueFailed(string message)
+    property Settings offline: Settings {
+        category: "offline"
+        property string queueJson: "[]"
+    }
+    function loadQueue() {
+        try { queue = JSON.parse(offline.queueJson) } catch (e) { queue = [] }
+        if (!Array.isArray(queue))
+            queue = []
+    }
+    function saveQueue() { offline.queueJson = JSON.stringify(queue) }
+
+    // "2026-10-20T09:30", the server's wall clock now
+    function atNow() { return today() + "T" + nowHHMM() }
+
+    // POST /api/start|pause|stop. When the server cannot be reached the action is queued and
+    // onQueued() runs instead of onErr. A queue that is not empty also takes the action, to keep the order.
+    function timerAction(path, body, onOk, onErr, onQueued) {
+        const queueIt = function () {
+            const b = Object.assign({}, body)
+            b.at = atNow()
+            queue = queue.concat([{ path: path, body: b }])
+            saveQueue()
+            if (onQueued) onQueued()
+        }
+        if (queue.length > 0) {
+            queueIt()
+            return
+        }
+        request("POST", path, body, onOk, function (e, status) {
+            if (status === 0)
+                queueIt()
+            else if (onErr)
+                onErr(e)
+        })
+    }
+
+    // send the queue front to back; stops at the first unreachable answer, drops an action the server refuses
+    function flushQueue() {
+        if (flushing || queue.length === 0)
+            return
+        flushing = true
+        const next = function () {
+            if (queue.length === 0) {
+                flushing = false
+                return
+            }
+            const item = queue[0]
+            request("POST", item.path, item.body, function () {
+                queue = queue.slice(1)
+                saveQueue()
+                next()
+            }, function (e, status) {
+                if (status === 0 || status === 401) {   // still offline / not logged in: try again later
+                    flushing = false
+                    return
+                }
+                queue = queue.slice(1)
+                saveQueue()
+                queueFailed(e)
+                next()
+            })
+        }
+        next()
+    }
+    property Timer retryTimer: Timer {
+        interval: 15000
+        repeat: true
+        running: api.queue.length > 0 && !api.flushing
+        onTriggered: api.flushQueue()
     }
 
     // "Basic …" for the configured login, "" without one

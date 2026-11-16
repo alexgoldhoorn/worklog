@@ -66,9 +66,12 @@ ScrollView {
         if (busy)
             return
         busy = true
-        Api.request("POST", path, body, () => page.busy = false, function (e) {
+        Api.timerAction(path, body, () => page.busy = false, function (e) {
             page.busy = false
             page.error = e
+        }, function () {
+            page.busy = false
+            snackbar.show(qsTr("Saved offline, it is sent when the server answers"))
         })
     }
 
@@ -108,6 +111,7 @@ ScrollView {
         target: Api
         function onChanged() { page.reload() }
         function onServerChanged() { page.reload() }
+        function onQueueFailed(message) { page.error = qsTr("A queued action was refused: %1").arg(message) }
     }
     Timer { interval: 1000; running: true; repeat: true; onTriggered: page.nowMs = Date.now() }
     Timer { interval: 60000; running: true; repeat: true; onTriggered: page.reload() }
@@ -200,9 +204,9 @@ ScrollView {
                         Label {
                             text: page.timerState === "stopped"
                                   ? qsTr("Nothing running. Pick a type and tap Start.")
-                                  : "<b>" + Api.esc(page.runningBlock.type) + "</b>"
-                                    + (page.runningBlock.project ? " · " + Api.esc(page.runningBlock.project) : "")
-                                    + " · " + qsTr("since %1").arg(page.status.since)
+                                  : "<b>" + Api.esc(page.runningBlock?.type ?? "") + "</b>"
+                                    + (page.runningBlock?.project ? " · " + Api.esc(page.runningBlock.project) : "")
+                                    + " · " + qsTr("since %1").arg(page.status?.since ?? "")
                                     + (page.over ? " · " + qsTr("past your %1 stop by %2")
                                                    .arg(page.status.hard_stop).arg(Api.fmtHM(page.pastStopMin / 60)) : "")
                             textFormat: Text.StyledText
@@ -287,7 +291,7 @@ ScrollView {
                         fill: Api.breakColor
                         ink: Api.breakFg
                         enabled: !page.busy && (page.timerState === "working"
-                                                || (page.timerState === "break" && page.pendingBreak !== page.runningBlock.type))
+                                                || (page.timerState === "break" && page.pendingBreak !== page.runningBlock?.type))
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         onClicked: page.action("/api/pause", { type: page.pendingBreak || "eat" })
@@ -321,6 +325,7 @@ ScrollView {
         // ---- notices ----------------------------------------------------------
         Repeater {
             model: (page.error ? [{ text: qsTr("Error: %1").arg(page.error), level: "error" }] : [])
+                   .concat(Api.queue.length ? [{ text: qsTr("%n action(s) waiting for the server", "", Api.queue.length), level: "warn" }] : [])
                    .concat(page.status ? page.status.notices.map(t => ({ text: t, level: "warn" })) : [])
                    .concat(page.status ? Api.overlapItems(page.status).map(o => ({ text: o.text, level: "warn", date: o.date })) : [])
                    .concat(page.status && page.status.needs_review.length
@@ -387,7 +392,7 @@ ScrollView {
                 label: qsTr("Break")
                 Layout.topMargin: 4
                 model: page.status ? page.status.chips.break_types : []
-                current: page.timerState === "break" ? page.runningBlock.type : page.pendingBreak
+                current: page.timerState === "break" ? (page.runningBlock?.type ?? "") : page.pendingBreak
                 onPicked: value => {
                     page.pendingBreak = value
                     if (page.timerState === "break" && value !== page.runningBlock.type)
