@@ -1,10 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
 
+option(WORKLOG_TESTS "Build the Qt Quick tests (tests/); they need a running server, see tests/run_tests.py" OFF)
+
 project(WorkLogApp VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Network Multimedia)
+if (WORKLOG_TESTS)
+    find_package(Qt6 REQUIRED COMPONENTS QuickTest Test)
+endif()
 
 qt_standard_project_setup(REQUIRES 6.10)
 
@@ -22,42 +27,50 @@ endif()
 
 set_source_files_properties(Api.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
+# the app's QML module is built twice from these lists: for the app and for the tests (tests/)
+set(WL_QML_FILES
+    Main.qml
+    Api.qml
+    TimerPage.qml
+    DayPage.qml
+    SettingsPage.qml
+    BlockList.qml
+    BlockDialog.qml
+    ChipRow.qml
+    Card.qml
+    Caption.qml
+    NoticeBanner.qml
+    Snackbar.qml
+    Tile.qml
+    WeekBars.qml
+    ActionButton.qml
+    ExpectedPage.qml
+    ExportButtons.qml
+    ReportsPage.qml
+    ColumnChart.qml
+    RankedBars.qml
+    Heatmap.qml
+    DataTable.qml
+    PomodoroPage.qml
+)
+set(WL_SOURCES
+    filedownloader.h
+    filedownloader.cpp
+    notifier.h
+    notifier.cpp
+    secretstore.h
+    secretstore.cpp
+)
+set(WL_RESOURCES
+    beep.wav
+    icons/worklog-256.png
+)
+
 qt_add_qml_module(appWorkLogApp
     URI WorkLogApp
-    QML_FILES
-        Main.qml
-        Api.qml
-        TimerPage.qml
-        DayPage.qml
-        SettingsPage.qml
-        BlockList.qml
-        BlockDialog.qml
-        ChipRow.qml
-        Card.qml
-        Caption.qml
-        NoticeBanner.qml
-        Snackbar.qml
-        Tile.qml
-        WeekBars.qml
-        ActionButton.qml
-        ExpectedPage.qml
-        ExportButtons.qml
-        ReportsPage.qml
-        ColumnChart.qml
-        RankedBars.qml
-        Heatmap.qml
-        DataTable.qml
-        PomodoroPage.qml
-    SOURCES
-        filedownloader.h
-        filedownloader.cpp
-        notifier.h
-        notifier.cpp
-        secretstore.h
-        secretstore.cpp
-    RESOURCES
-        beep.wav
-        icons/worklog-256.png
+    QML_FILES ${WL_QML_FILES}
+    SOURCES ${WL_SOURCES}
+    RESOURCES ${WL_RESOURCES}
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
@@ -104,3 +117,8 @@ install(TARGETS appWorkLogApp
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+
+if (WORKLOG_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
