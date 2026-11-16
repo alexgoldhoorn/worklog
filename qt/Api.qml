@@ -12,7 +12,12 @@ QtObject {
     property Settings settings: Settings {
         property alias baseUrl: api.serverUrl
         property alias username: api.username
+        property alias requireUnlock: api.requireUnlock
     }
+    // Android: fingerprint/face (or the screen lock) before the saved password is read (Settings switch)
+    property bool requireUnlock: false
+    // true until Biometric confirms; requests wait and Main.qml shows a locked screen
+    property bool locked: false
     Component.onCompleted: {
         // one-time migration: a password an older version left in the plain-text settings moves to the
         // secret store, and is deleted from Settings only once it reads back identically
@@ -23,7 +28,9 @@ QtObject {
             else
                 password = legacy   // the store is unavailable: keep working, retry next start
         }
-        if (password === "")
+        if (requireUnlock && Biometric.isAvailable())
+            locked = true
+        else if (password === "")
             password = SecretStore.get("password")
         TimerWidget.configure(serverUrl, username)   // Android's widget/tile/notification call the server too
     }
@@ -75,6 +82,16 @@ QtObject {
     // the error for a 401; a NoticeBanner showing it links to Settings
     readonly property string loginMessage: qsTr("Login required: set user and password in Settings")
 
+    // after Biometric confirmed: read the login and let the pages load
+    function unlock() {
+        if (!locked)
+            return
+        if (password === "")
+            password = SecretStore.get("password")
+        locked = false
+        serverChanged()
+    }
+
     function setServer(url, user, pass) {
         serverUrl = url
         username = user
@@ -86,6 +103,10 @@ QtObject {
     }
 
     function request(method, path, body, onOk, onErr) {
+        if (api.locked) {   // no password yet: the pages reload on serverChanged() after unlock()
+            if (onErr) onErr(qsTr("Locked"))
+            return
+        }
         const xhr = new XMLHttpRequest()
         xhr.onreadystatechange = function () {
             if (xhr.readyState !== XMLHttpRequest.DONE)

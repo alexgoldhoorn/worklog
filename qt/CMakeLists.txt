@@ -62,6 +62,8 @@ set(WL_SOURCES
     secretstore.cpp
     timerwidget.h
     timerwidget.cpp
+    biometric.h
+    biometric.cpp
 )
 set(WL_RESOURCES
     beep.wav

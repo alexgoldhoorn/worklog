@@ -112,4 +112,60 @@ ApplicationWindow {
         ExpectedPage {}
         SettingsPage {}
     }
+
+    // Android, "Require fingerprint/face to open": covers everything until Biometric confirms
+    Rectangle {
+        id: lockScreen
+        visible: Api.locked
+        parent: Overlay.overlay
+        anchors.fill: parent
+        color: Api.bg
+        property string message: ""
+        // swallow touches meant for the tabs and pages underneath
+        MouseArea { anchors.fill: parent }
+        function ask() {
+            lockScreen.message = ""
+            Biometric.authenticate(qsTr("Unlock Worklog"), qsTr("Opens the saved login"))
+        }
+        Component.onCompleted: if (Api.locked) ask()
+        Connections {
+            target: Biometric
+            function onResult(ok, error) {
+                if (!Api.locked)
+                    return
+                if (ok)
+                    Api.unlock()
+                else
+                    lockScreen.message = error
+            }
+        }
+        ColumnLayout {
+            anchors.centerIn: parent
+            width: Math.min(parent.width - 32, 360)
+            spacing: 16
+            Label {
+                text: qsTr("Worklog is locked")
+                font.pixelSize: 22
+                font.bold: true
+                color: Api.fg
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+            }
+            Label {
+                text: lockScreen.message
+                visible: text !== ""
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                horizontalAlignment: Text.AlignHCenter
+                Layout.fillWidth: true
+            }
+            Button {
+                text: qsTr("Unlock")
+                highlighted: true
+                Accessible.name: text
+                Layout.alignment: Qt.AlignHCenter
+                onClicked: lockScreen.ask()
+            }
+        }
+    }
 }
