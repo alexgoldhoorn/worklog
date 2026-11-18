@@ -1,0 +1,43 @@
+# Qt app (qt/): build, qmllint and the Qt Quick tests against a real server on a throwaway database.
+name: qt
+
+on:
+  push:
+    paths: ["qt/**", "worklog/**", "pyproject.toml", "uv.lock", ".github/workflows/qt.yml"]
+  pull_request:
+    paths: ["qt/**", "worklog/**", "pyproject.toml", "uv.lock", ".github/workflows/qt.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+          modules: qtmultimedia
+          cache: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Server dependencies
+        run: uv sync
+
+      - name: Configure
+        run: cmake -S qt -B build -DWORKLOG_TESTS=ON -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build -j4
+
+      - name: qmllint (no warnings allowed)
+        run: |
+          cmake --build build --target all_qmllint 2>&1 | tee lint.log
+          ! grep -E "^(Warning|Error):" lint.log
+
+      - name: Qt Quick tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run python qt/tests/run_tests.py build
