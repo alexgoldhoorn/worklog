@@ -17,7 +17,7 @@ your evenings and training time.
 
 Clients that talk to the same JSON API:
 
-- a Qt Quick app for desktop and Android (`qt/`)
+- a Qt Quick app for desktop and Android, with a Windows tray icon and an Android widget (`qt/`, see [qt/README.md](qt/README.md))
 - a Garmin Connect IQ widget with a glance (`garmin/`, see [garmin/README.md](garmin/README.md))
 
 Everything personal (people, calendars, timezone, holiday scopes, paths, credentials) is
