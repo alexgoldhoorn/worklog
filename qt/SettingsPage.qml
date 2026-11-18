@@ -12,18 +12,82 @@ ScrollView {
     property string hoursMessage: ""
     property string rateMessage: ""
     // "12,5" and "12.5" both work; anything else is NaN and keeps Save disabled
-    function parseRate(t) { return /^\d+([.,]\d+)?$/.test(t.trim()) ? Number(t.trim().replace(",", ".")) : NaN }
+    function parseRate(t) { return Api.parseNum(t) }
+
+    // ---- server address helpers (pure; tests call them) -----------------------------------------
+
+    // "https://user@Host:8000/x" -> "host"; an IPv6 literal comes without its brackets
+    function hostOf(url) {
+        const m = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@\/]*@)?(\[[^\]]*\]|[^:\/?#]*)/i.exec(url.trim())
+        return m ? m[1].replace(/^\[|\]$/g, "").toLowerCase() : ""
+    }
+    // localhost, loopback, private ranges, *.local and a bare hostname (no dot): a LAN server
+    function isLocalHost(host) {
+        const h = host.toLowerCase()
+        if (h === "")
+            return false
+        if (h.indexOf(":") >= 0)   // IPv6: loopback, link-local, unique-local
+            return h === "::1" || /^fe80:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h)
+        return h === "localhost" || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)
+               || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /\.local$/.test(h) || h.indexOf(".") < 0
+    }
+    // "worklog.example.com" -> "https://worklog.example.com", "nas:8000" -> "http://nas:8000"; an address that
+    // already has a scheme is kept; trailing slashes go
+    function normalizeUrl(text) {
+        const t = text.trim().replace(/\/+$/, "")
+        if (t === "" || /^[a-z][a-z0-9+.-]*:\/\//i.test(t))
+            return t
+        return (isLocalHost(hostOf(t)) ? "http://" : "https://") + t
+    }
+    // true when connecting would send the password unencrypted over the internet
+    function clearTextLogin(url, user) {
+        return /^http:\/\//i.test(url.trim()) && user.trim() !== "" && !isLocalHost(hostOf(url))
+    }
+
+    function connectNow() {
+        const url = normalizeUrl(urlField.text)
+        urlField.text = url
+        Api.setServer(url, userField.text, passwordField.text)
+    }
+    // forgets the user and the password (and the stored secret); the pages then show the login message
+    function signOut() {
+        userField.text = ""
+        passwordField.text = ""
+        Api.setServer(Api.serverUrl, "", "")
+    }
+
+    property alias weekFieldItem: weekField   // tests
+    // the typed week length, NaN when it is not a number
+    readonly property real weekHours: Api.parseNum(weekField.text)
+
+    // "Saved" disappears after a few seconds
+    function flash(set) {
+        set(qsTr("Saved"))
+        savedTimer.restart()
+    }
+    Timer {
+        id: savedTimer
+        interval: 4000
+        onTriggered: {
+            if (page.hoursMessage === qsTr("Saved"))
+                page.hoursMessage = ""
+            if (page.rateMessage === qsTr("Saved"))
+                page.rateMessage = ""
+        }
+    }
 
     contentWidth: availableWidth
 
     function reload() {
         connected = null
         Api.request("GET", "/api/settings", undefined, function (s) {
+            if (!weekField)   // the answer came after the page was gone
+                return
             page.settings = s
             page.connected = true
             page.serverMessage = qsTr("Connected to %1").arg(Api.baseUrl)
-            weekField.text = s.week_basis_h
-            rateField.text = s.rate === null ? "" : s.rate
+            weekField.text = String(s.week_basis_h)
+            rateField.text = s.rate === null ? "" : String(s.rate)
             unitBox.currentIndex = Math.max(0, unitBox.model.indexOf(s.rate_unit))
         }, function (e) {
             page.connected = false
@@ -33,7 +97,7 @@ ScrollView {
 
     function save(body, setMessage) {
         Api.request("PUT", "/api/settings", body, function (s) {
-            setMessage(qsTr("Saved"))
+            page.flash(setMessage)
             page.reload()
         }, e => setMessage(qsTr("Error: %1").arg(e)))
     }
@@ -99,10 +163,28 @@ ScrollView {
                     id: passwordField
                     text: Api.password
                     placeholderText: qsTr("Password")
-                    echoMode: TextInput.Password
+                    echoMode: showPassword.checked ? TextInput.Normal : TextInput.Password
+                    inputMethodHints: showPassword.checked ? Qt.ImhSensitiveData | Qt.ImhNoPredictiveText : Qt.ImhNone
                     Layout.fillWidth: true
                     onAccepted: connectButton.clicked()
                 }
+                ToolButton {
+                    id: showPassword
+                    checkable: true
+                    text: checked ? qsTr("Hide") : qsTr("Show")
+                    Accessible.name: checked ? qsTr("Hide password") : qsTr("Show password")
+                    Accessible.role: Accessible.Button
+                    Accessible.checkable: true
+                    Accessible.checked: checked
+                }
+            }
+            NoticeBanner {
+                id: clearTextWarning
+                visible: page.clearTextLogin(page.normalizeUrl(urlField.text), userField.text)
+                level: "warn"
+                text: qsTr("This address is plain http:// on the internet: the password would travel unencrypted. Use https://.")
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
             }
             RowLayout {
                 Layout.fillWidth: true
@@ -114,10 +196,19 @@ ScrollView {
                     Layout.fillWidth: true
                 }
                 Button {
+                    id: signOutButton
+                    visible: Api.username !== "" || Api.password !== ""
+                    text: qsTr("Sign out")
+                    flat: true
+                    Accessible.name: qsTr("Sign out: forget the saved user and password")
+                    Accessible.role: Accessible.Button
+                    onClicked: page.signOut()
+                }
+                Button {
                     id: connectButton
                     text: qsTr("Connect")
                     highlighted: true
-                    onClicked: Api.setServer(urlField.text, userField.text, passwordField.text)
+                    onClicked: page.connectNow()
                 }
             }
             // Android only: the saved login opens after a fingerprint/face (or the screen lock)
@@ -159,17 +250,32 @@ ScrollView {
                 onToggled: Api.trayKeep = checked
             }
             Switch {
+                text: qsTr("Start with Windows, minimised to the tray")
+                visible: Autostart.supported
+                checked: Autostart.enabled
+                Component.onCompleted: Autostart.refresh()   // the registry is the truth, not a saved setting
+                onToggled: {
+                    Autostart.enabled = checked
+                    checked = Qt.binding(() => Autostart.enabled)   // snaps back when the entry could not be changed
+                }
+            }
+            Label {
+                text: Autostart.error
+                visible: text !== ""
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Switch {
                 text: qsTr("Global start/pause hotkey")
                 checked: Api.hotkeyOn
                 onToggled: Api.hotkeyOn = checked
             }
-            TextField {
-                id: hotkeyField
+            HotkeyField {
                 enabled: Api.hotkeyOn
-                text: Api.hotkeySeq
-                placeholderText: qsTr("e.g. Ctrl+Alt+W")
+                sequence: Api.hotkeySeq
                 Layout.fillWidth: true
-                onEditingFinished: if (text.trim() !== "") Api.hotkeySeq = text.trim()
+                onCaptured: seq => Api.hotkeySeq = seq
             }
             Label {
                 text: Api.hotkeyError
@@ -177,6 +283,30 @@ ScrollView {
                 color: Api.errorColor
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
+            }
+            Switch {
+                text: qsTr("Ask when I come back after being away")
+                visible: IdleMonitor.available
+                checked: Api.idleOn
+                onToggled: Api.idleOn = checked
+            }
+            RowLayout {
+                visible: IdleMonitor.available
+                enabled: Api.idleOn
+                Layout.fillWidth: true
+                Label {
+                    text: qsTr("Away for at least (minutes)")
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                SpinBox {
+                    from: 1
+                    to: 240
+                    editable: true
+                    value: Api.idleMinutes
+                    onValueModified: Api.idleMinutes = value
+                    Accessible.name: qsTr("Minutes away before asking")
+                }
             }
         }
 
@@ -190,13 +320,16 @@ ScrollView {
                 TextField {
                     id: weekField
                     inputMethodHints: Qt.ImhFormattedNumbersOnly
-                    validator: DoubleValidator { bottom: 1; top: 80 }
+                    // "37.5" and "37,5" both, whatever the device's locale
+                    validator: RegularExpressionValidator { regularExpression: /^\d{0,2}([.,]\d{0,2})?$/ }
                     Layout.fillWidth: true
+                    Accessible.name: qsTr("Full week (hours)")
+                    onTextEdited: page.hoursMessage = ""
                 }
                 Button {
                     text: qsTr("Save")
-                    enabled: weekField.acceptableInput
-                    onClicked: page.save({ week_basis_h: Number(weekField.text) }, m => page.hoursMessage = m)
+                    enabled: page.weekHours >= 1 && page.weekHours <= 80
+                    onClicked: page.save({ week_basis_h: page.weekHours }, m => page.hoursMessage = m)
                 }
             }
             Label {
@@ -217,6 +350,8 @@ ScrollView {
                     id: rateField
                     inputMethodHints: Qt.ImhFormattedNumbersOnly
                     Layout.fillWidth: true
+                    Accessible.name: qsTr("Amount per unit")
+                    onTextEdited: page.rateMessage = ""
                 }
                 ComboBox { id: unitBox; model: ["h", "day"]; Layout.preferredWidth: 96 }
                 Button {
@@ -232,6 +367,28 @@ ScrollView {
                       .filter(x => x).join(" · ")
                 visible: text !== ""
                 opacity: 0.7
+            }
+        }
+
+        Card {
+            title: qsTr("About")
+
+            Label {
+                visible: !!Qt.application.version
+                text: qsTr("App version %1").arg(Qt.application.version)
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: Api.baseUrl !== ""
+                text: qsTr("Server %1").arg(Api.baseUrl)
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                readonly property string tz: Api.status && Api.status.tz ? String(Api.status.tz) : ""
+                visible: tz !== ""
+                text: qsTr("Server time zone %1").arg(tz)
+                Layout.fillWidth: true
             }
         }
         Item { implicitHeight: 8 }

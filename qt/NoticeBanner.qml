@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// A tinted one-line message; level is "error", "warn" or "info". Tappable when `tappable`, and always when
+// A tinted message (wraps onto more lines when it is long); level is "error", "warn" or "info". Tappable when `tappable`, and always when
 // it is the login error, which opens Settings.
 Pane {
     id: banner

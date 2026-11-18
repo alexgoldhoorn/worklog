@@ -54,7 +54,7 @@ ColumnLayout {
             Layout.fillWidth: true
         }
         Label {
-            text: qsTr("Press Start or + Block")
+            text: qsTr("Press Start or the + button")
             font.pixelSize: 12
             opacity: 0.6
             horizontalAlignment: Text.AlignHCenter

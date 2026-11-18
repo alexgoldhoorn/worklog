@@ -28,7 +28,7 @@ ColumnLayout {
         model: root.model
         Layout.fillWidth: true
         // the bar sits along the bottom edge: grow by its height so it runs below the chips, not over them
-        implicitHeight: 34 + (bar.visible ? bar.height + 2 : 0)
+        implicitHeight: (Qt.platform.os === "android" ? 42 : 34) + (bar.visible ? bar.height + 2 : 0)
         // not on touch screens: the cut-off last chip shows it scrolls
         ScrollBar.horizontal: ScrollBar {
             id: bar
@@ -47,16 +47,21 @@ ColumnLayout {
             Accessible.checkable: true
             Accessible.checked: chip.on
             Accessible.onPressAction: chip.clicked()
-            implicitHeight: 32
+            implicitHeight: Qt.platform.os === "android" ? 40 : 32   // 40 dp touch target; the pill stays 32 high
             leftPadding: 12
             rightPadding: 12
             onClicked: root.picked(chip.modelData)
 
-            background: Rectangle {
-                radius: height / 2
-                color: chip.on ? Api.accent : chip.hovered ? Api.line2 : Api.bg
-                border.color: chip.on ? Api.accent : Api.line
-                Behavior on color { ColorAnimation { duration: 120 } }
+            background: Item {
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    height: 32
+                    radius: height / 2
+                    color: chip.on ? Api.accent : chip.hovered ? Api.line2 : Api.bg
+                    border.color: chip.on ? Api.accent : Api.line
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
             }
             contentItem: Text {
                 text: chip.text

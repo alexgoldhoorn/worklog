@@ -15,6 +15,14 @@ Dialog {
     // a block was deleted; `undo` re-creates it (the page shows it in its Snackbar)
     signal deleted(string text, var undo)
 
+    // the fields, for tests
+    property alias startField: startField
+    property alias endField: endField
+    property alias typeField: typeField
+    property alias projectField: projectField
+    property alias clientField: clientField
+    property alias billableBox: billableBox
+
     // Deletes at once (no confirmation) and offers an Undo that POSTs the block again.
     // The server's own message is shown when either step fails.
     function deleteBlock() {
@@ -27,9 +35,12 @@ Dialog {
                 if (b.billable === true || b.billable === false)
                     body.billable = b.billable
                 Api.request("POST", "/api/blocks", body, function (nb) {
-                    // a billable flag the POST did not take (client default differs): put it back
-                    if (nb && nb.id !== undefined && (nb.billable || null) !== (b.billable === undefined ? null : b.billable))
-                        Api.request("PUT", "/api/blocks/" + nb.id, { billable: b.billable === undefined ? null : b.billable },
+                    // a billable flag the POST did not take (client default differs): put it back.
+                    // false must stay false, so only a missing value counts as "not set"
+                    const want = b.billable === undefined ? null : b.billable
+                    const got = nb.billable === undefined ? null : nb.billable
+                    if (nb && nb.id !== undefined && got !== want)
+                        Api.request("PUT", "/api/blocks/" + nb.id, { billable: want },
                                     null, e => dlg.deleted(qsTr("Restored, but billable not set: %1").arg(e), null))
                 }, e => dlg.deleted(qsTr("Undo failed: %1").arg(e), null))
             })
@@ -55,20 +66,56 @@ Dialog {
         }
     }
 
-    // "700", "7:00", "07.00", "19h00" -> "HH:MM" (same as normTime in the web's app.js)
-    function norm(v) {
-        const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(v.trim())
-        return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? Api.pad(Number(m[1])) + ":" + m[2] : v.trim()
-    }
     function isTime(v) { return /^\d\d:\d\d$/.test(v) }
 
-    readonly property bool valid: isTime(norm(startField.text))
-                                  && (endField.text.trim() === "" || isTime(norm(endField.text)))
+    // a new block on another day cannot be left open: that would be a running block in the past
+    readonly property bool needsEnd: block === null && date !== "" && date !== Api.today()
+
+    readonly property bool valid: isTime(Api.normTime(startField.text))
+                                  && (endField.text.trim() === "" ? !needsEnd : isTime(Api.normTime(endField.text)))
                                   && typeField.editText.trim() !== ""
+
+    // what the form says now, normalised
+    function formValues() {
+        return {
+            date: dlg.date,
+            start: Api.normTime(startField.text),
+            end: endField.text.trim() === "" ? null : Api.normTime(endField.text),
+            type: typeField.editText.trim(),
+            project: projectField.text,
+            client: clientField.text,
+        }
+    }
+
+    // the fields of the edited block that differ from it (only those are sent, like the web: an
+    // untouched billable flag stays as it is, a date is sent only when the block moves)
+    function changedFields() {
+        const b = block, f = formValues()
+        const cur = { date: b.date, start: b.start, end: b.end || null, type: b.type,
+                      project: b.project || "", client: b.client || "" }
+        const changes = {}
+        for (const k in cur)
+            if (f[k] !== cur[k])
+                changes[k] = f[k]
+        if (billableBox.checked !== !!b.billable)
+            changes.billable = billableBox.checked
+        // A block the server closed by itself stays "to review" until its end is saved again. Saving it
+        // as it is must count as that, so the end goes along even unchanged (the server clears the flag).
+        if (needsConfirm && changes.end === undefined && f.end)
+            changes.end = f.end
+        return changes
+    }
+    readonly property bool needsConfirm: !!block && !!block.auto_closed
 
     modal: true
     anchors.centerIn: Overlay.overlay
     width: Math.min(420, parent ? parent.width - 32 : 420)
+    // the soft keyboard covers the lower part of the window: the content scrolls in what is left
+    readonly property real keyboardH: Qt.inputMethod.visible ? Qt.inputMethod.keyboardRectangle.height : 0
+    readonly property real maxH: (parent ? parent.height : 600) - keyboardH - 16
+    height: Math.min(implicitHeight, maxH)
+    topMargin: 8
+    bottomMargin: keyboardH + 8
     title: block ? qsTr("Edit block") : qsTr("New block")
 
     function editBlock(b) {
@@ -81,57 +128,48 @@ Dialog {
         clientField.text = b.client || ""
         billableBox.checked = !!b.billable
         error = ""
+        scroller.contentY = 0
         open()
     }
 
-    // a new row starts where the day's last block ended (or now) and is left open: empty end = running
+    // Today: a new row starts where the day's last block ended (or now) and is left open, empty end =
+    // running. Another day: the end is required and "now" means nothing there, so only the last end is offered.
     function newBlock(d) {
         block = null
         date = d
         const lastEnd = blocks.map(b => b.end).filter(e => !!e).sort().pop()
-        const start = lastEnd || Api.nowHHMM()
-        startField.text = start
+        startField.text = d === Api.today() ? (lastEnd || Api.nowHHMM()) : (lastEnd || "")
         endField.text = ""
         typeField.editText = ""
         projectField.text = ""
         clientField.text = ""
         billableBox.checked = false
         error = ""
+        scroller.contentY = 0
         open()
     }
 
     onAccepted: {
-        const start = dlg.norm(startField.text)
-        const end = endField.text.trim() === "" ? null : dlg.norm(endField.text)
-        const body = {
-            date: dlg.date,
-            start: start,
-            end: end,
-            type: typeField.editText,
-            project: projectField.text,
-        }
+        const f = formValues()
         if (dlg.block) {
             const b = dlg.block
-            // send only what changed, like the web: untouched fields (billable unset) stay as they are
-            const cur = { start: b.start, end: b.end || null, type: b.type, project: b.project || "", client: b.client || "" }
-            const changes = {}
-            for (const k in cur)
-                if (body[k] !== undefined ? body[k] !== cur[k] : clientField.text !== cur[k])
-                    changes[k] = k === "client" ? clientField.text : body[k]
-            if (billableBox.checked !== !!b.billable)
-                changes.billable = billableBox.checked
+            const changes = dlg.changedFields()
             if (Object.keys(changes).length === 0)
                 return
             if (!b.end)
                 changes.require_open = true  // a stale snapshot gets a 409 instead of reopening a closed block
+            const sameDay = changes.date === undefined
             Api.request("PUT", "/api/blocks/" + b.id, changes, function () {
-                dlg.neighbourOffer(b, "start", b.start, dlg.norm(startField.text))
+                if (!sameDay)
+                    return
+                dlg.neighbourOffer(b, "start", b.start, f.start)
                 if (b.end)
-                    dlg.neighbourOffer(b, "end", b.end, dlg.norm(endField.text))
+                    dlg.neighbourOffer(b, "end", b.end, f.end || "")
             }, fail)
         } else {
-            if (clientField.text !== "")
-                body.client = clientField.text  // left out, the server applies the default client
+            const body = { date: f.date, start: f.start, end: f.end, type: f.type, project: f.project }
+            if (f.client !== "")
+                body.client = f.client  // left out, the server applies the default client
             Api.request("POST", "/api/blocks", body, null, fail)
         }
     }
@@ -145,6 +183,15 @@ Dialog {
     function fail(msg) {
         error = msg
         open()  // keep the user's input on screen
+    }
+
+    // scroll so that a focused field is not under the keyboard or the edge
+    function reveal(item) {
+        const y = item.mapToItem(form, 0, 0).y
+        if (y < scroller.contentY)
+            scroller.contentY = Math.max(0, y - 8)
+        else if (y + item.height > scroller.contentY + scroller.height)
+            scroller.contentY = Math.min(Math.max(0, scroller.contentHeight - scroller.height), y + item.height - scroller.height + 8)
     }
 
     footer: DialogButtonBox {
@@ -162,74 +209,136 @@ Dialog {
             DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
         }
         Button {
-            text: qsTr("Save")
+            text: dlg.needsConfirm ? qsTr("Confirm") : qsTr("Save")
             enabled: dlg.valid
             highlighted: true
             DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
         }
     }
 
-    ColumnLayout {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        spacing: 8
-        // TextFields ignore Return after emitting editingFinished (which normalises the time),
-        // so the key reaches here; an open ComboBox popup takes it first
-        Keys.onReturnPressed: dlg.saveIfValid()
-        Keys.onEnterPressed: dlg.saveIfValid()
+    DatePicker {
+        id: datePicker
+        date: dlg.date
+        onPicked: iso => dlg.date = iso
+    }
 
-        Caption {
-            text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
-        }
+    contentItem: Flickable {
+        id: scroller
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        implicitHeight: form.implicitHeight
+        contentWidth: width
+        contentHeight: form.implicitHeight
+        ScrollBar.vertical: ScrollBar { policy: scroller.contentHeight > scroller.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
 
-        RowLayout {
-            spacing: 12
-            Layout.fillWidth: true
-            TextField {
-                id: startField
-                placeholderText: qsTr("Start (e.g. 700 or 19:00)")
-                validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
-                inputMethodHints: Qt.ImhPreferNumbers
-                selectByMouse: true
-                onActiveFocusChanged: if (activeFocus) selectAll()
-                onEditingFinished: text = dlg.norm(text)
+        ColumnLayout {
+            id: form
+            width: scroller.width
+            spacing: 4
+            // TextFields ignore Return after emitting editingFinished (which normalises the time),
+            // so the key reaches here; an open ComboBox popup takes it first
+            Keys.onReturnPressed: dlg.saveIfValid()
+            Keys.onEnterPressed: dlg.saveIfValid()
+
+            Caption { text: qsTr("Date") }
+            Button {
+                id: dateButton
+                text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
+                flat: true
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Date: %1").arg(text)
+                Accessible.role: Accessible.Button
+                onClicked: datePicker.openFor(dlg.date)
+            }
+
+            RowLayout {
+                spacing: 12
+                Layout.fillWidth: true
+                ColumnLayout {
+                    spacing: 4
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Caption { text: qsTr("Start") }
+                    TextField {
+                        id: startField
+                        placeholderText: qsTr("e.g. 700 or 19:00")
+                        validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
+                        inputMethodHints: Qt.ImhPreferNumbers
+                        selectByMouse: true
+                        Accessible.name: qsTr("Start time")
+                        onActiveFocusChanged: if (activeFocus) { selectAll(); dlg.reveal(startField) }
+                        onEditingFinished: text = Api.normTime(text)
+                        Layout.fillWidth: true
+                    }
+                }
+                ColumnLayout {
+                    spacing: 4
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Caption { text: qsTr("End") }
+                    TextField {
+                        id: endField
+                        placeholderText: dlg.needsEnd ? qsTr("Required on another day") : qsTr("empty = running")
+                        validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
+                        inputMethodHints: Qt.ImhPreferNumbers
+                        selectByMouse: true
+                        Accessible.name: qsTr("End time")
+                        onActiveFocusChanged: if (activeFocus) { selectAll(); dlg.reveal(endField) }
+                        onEditingFinished: text = Api.normTime(text)
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
+            Caption { text: qsTr("Type"); Layout.topMargin: 4 }
+            ComboBox {
+                id: typeField
+                editable: true
+                model: dlg.typeSuggestions
+                Accessible.name: qsTr("Type")
+                onActiveFocusChanged: if (activeFocus) dlg.reveal(typeField)
                 Layout.fillWidth: true
             }
+
+            Caption { text: qsTr("Project"); Layout.topMargin: 4 }
             TextField {
-                id: endField
-                placeholderText: qsTr("End (empty = running)")
-                validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
-                inputMethodHints: Qt.ImhPreferNumbers
-                selectByMouse: true
-                onActiveFocusChanged: if (activeFocus) selectAll()
-                onEditingFinished: text = dlg.norm(text)
+                id: projectField
+                placeholderText: qsTr("Project")
+                Accessible.name: qsTr("Project")
+                onActiveFocusChanged: if (activeFocus) dlg.reveal(projectField)
                 Layout.fillWidth: true
             }
-        }
 
-        ComboBox {
-            id: typeField
-            editable: true
-            model: dlg.typeSuggestions
-            Layout.fillWidth: true
-        }
-        Caption { text: qsTr("Type"); Layout.topMargin: -6 }
+            Caption { text: qsTr("Client"); Layout.topMargin: 4 }
+            TextField {
+                id: clientField
+                placeholderText: qsTr("empty = default")
+                Accessible.name: qsTr("Client")
+                onActiveFocusChanged: if (activeFocus) dlg.reveal(clientField)
+                Layout.fillWidth: true
+            }
 
-        TextField { id: projectField; placeholderText: qsTr("Project"); Layout.fillWidth: true }
-        TextField { id: clientField; placeholderText: qsTr("Client (empty = default)"); Layout.fillWidth: true }
+            CheckBox {
+                id: billableBox
+                visible: dlg.block !== null  // new blocks take the client's billable default
+                text: qsTr("Billable")
+            }
 
-        CheckBox {
-            id: billableBox
-            visible: dlg.block !== null  // new blocks take the client's billable default
-            text: qsTr("Billable")
-        }
-
-        NoticeBanner {
-            visible: dlg.error !== ""
-            text: dlg.error
-            level: "error"
-            Layout.leftMargin: 0
-            Layout.rightMargin: 0
+            NoticeBanner {
+                visible: dlg.needsConfirm
+                text: qsTr("This block was left running and closed automatically at %1. Correct the end if needed; Confirm clears the review notice.")
+                      .arg(dlg.block && dlg.block.end ? dlg.block.end : "")
+                level: "warn"
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+            }
+            NoticeBanner {
+                visible: dlg.error !== ""
+                text: dlg.error
+                level: "error"
+                Layout.leftMargin: 0
+                Layout.rightMargin: 0
+            }
         }
     }
 }

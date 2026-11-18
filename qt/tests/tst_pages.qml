@@ -18,6 +18,7 @@ TestCase {
     Component { id: expectedPage; ExpectedPage {} }
     Component { id: pomodoroPage; PomodoroPage {} }
     Component { id: settingsPage; SettingsPage {} }
+    Component { id: findPage; FindPage {} }
 
     function initTestCase() {
         Api.serverUrl = testServer
@@ -42,4 +43,5 @@ TestCase {
     function test_expected_page() { compare(load(expectedPage).error, "") }
     function test_pomodoro_page() { load(pomodoroPage) }
     function test_settings_page() { load(settingsPage) }
+    function test_find_page() { compare(load(findPage).error, "") }
 }

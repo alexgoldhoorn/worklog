@@ -16,6 +16,12 @@ ScrollView {
     property bool adding: false
 
     readonly property var kinds: ["family", "run", "stop", "other"]
+    readonly property var kindModel: kinds.map(k => ({ value: k, text: kindName(k) }))
+    readonly property string formProblem: blockProblem(dateField.text, fromField.text, toField.text, titleField.text)
+    property alias dateFieldItem: dateField   // tests
+    property alias fromFieldItem: fromField
+    property alias toFieldItem: toField
+    property alias titleFieldItem: titleField
     readonly property var gate: weekData ? weekData.gate : ({})
     readonly property var nums: gate && gate.numbers ? gate.numbers : ({})
     readonly property string todayIso: weekData ? weekData.today : Api.today()
@@ -25,6 +31,14 @@ ScrollView {
         red: qsTr("Work load and body signals are both up. The gate protects the week: approve the blocks below.") })
 
     contentWidth: availableWidth
+
+    // the server's words, translated
+    readonly property var colourNames: ({ green: qsTr("green"), amber: qsTr("amber"), red: qsTr("red") })
+    readonly property var stateNames: ({ proposed: qsTr("proposed"), approved: qsTr("approved"), rejected: qsTr("rejected") })
+    readonly property var kindNames: ({ family: qsTr("family"), run: qsTr("run"), stop: qsTr("stop"), other: qsTr("other") })
+    function colourName(c) { return colourNames[c] || c || "" }
+    function stateName(s) { return stateNames[s] || s }
+    function kindName(k) { return kindNames[k] || k }
 
     function gateColor(c) { return c === "green" ? Api.workColor : c === "amber" ? Api.breakColor : c === "red" ? Api.errorColor : Api.muted }
     function dayLabel(iso) { return Api.parseDate(iso).toLocaleDateString(Qt.locale(), "ddd d MMM") }
@@ -43,7 +57,7 @@ ScrollView {
             for (const e of w.personal.filter(x => x.date === d && !x.all_day))
                 items.push({ start: e.start, time: range(e.start, e.end), text: e.title, sub: e.calendar || "", tone: Api.muted, block: null })
             for (const b of w.blocks.filter(x => x.date === d && x.state !== "rejected"))
-                items.push({ start: b.start, time: range(b.start, b.end), text: b.title, sub: b.kind + " · " + b.state,
+                items.push({ start: b.start, time: range(b.start, b.end), text: b.title, sub: page.kindName(b.kind) + " · " + page.stateName(b.state),
                              tone: b.state === "proposed" ? Api.warnColor : b.kind === "stop" ? Api.errorColor : Api.accent, block: b })
             items.sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : 0)
             return { date: d, label: page.dayLabel(d), isToday: d === w.today,
@@ -63,21 +77,42 @@ ScrollView {
         [qsTr("Heavy days tapped (7 d)"), fmt(nums.felt_heavy_7d)]
     ]
 
+    property int requestId: 0
+
     function reload() {
+        const id = ++requestId
         Api.request("GET", "/api/balance/week" + (start !== "" ? "?" + Api.query({ start: start }) : ""), undefined,
                     function (d) {
+                        if (id !== page?.requestId)   // a slower answer for a week the user already left
+                            return
                         page.weekData = d
                         page.error = ""
-                    }, e => page.error = e)
+                    }, function (e) {
+                        if (id === page?.requestId)
+                            page.error = e
+                    })
     }
 
     function shift(days) { start = Api.addDays(weekData ? weekData.start : Api.today(), days) }
 
+    // A block only has a state (proposed / approved / rejected) that the server flips; the calendar sync job
+    // follows it. So the way back from a reject is to approve the block again: that restores an approved
+    // block exactly. A proposed one cannot go back to "proposed" (no route sets it), so Undo approves it.
     function decide(id, action) {
+        const was = weekData ? weekData.blocks.find(b => b.id === id) : null
         Api.request("POST", "/api/balance/blocks/" + id + "/" + action, undefined, function () {
-            page.info = action === "approve" ? qsTr("Approved.") : qsTr("Rejected.")
+            if (action === "approve") {
+                page.info = qsTr("Approved.")
+                return
+            }
+            page.info = ""
+            snack.show(qsTr("Rejected."), () => page.decide(id, "approve"),
+                       was && was.state === "proposed" ? qsTr("Approve instead") : qsTr("Undo"))
         }, e => page.error = e)
     }
+
+    Snackbar { id: snack }
+    property alias snackbar: snack   // tests
 
     function propose() {
         const from = weekData.start < weekData.today ? weekData.today : weekData.start
@@ -100,23 +135,62 @@ ScrollView {
                     (d, text) => page.outlook = text, e => page.error = e)
     }
 
+    // ---- the add-a-block form (pure checks, tests call them) -----------------------------------
+
+    function validDate(t) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(t))
+            return false
+        const p = t.split("-").map(Number)
+        const d = new Date(p[0], p[1] - 1, p[2])
+        return d.getFullYear() === p[0] && d.getMonth() === p[1] - 1 && d.getDate() === p[2]
+    }
+    function validTime(t) { return /^([01]\d|2[0-3]):[0-5]\d$/.test(t) }
+    // "" when the form can be saved, else why not
+    function blockProblem(date, from, to, title) {
+        const f = Api.normTime(from), t = Api.normTime(to)
+        if (!validDate(date.trim()))
+            return qsTr("Date must be YYYY-MM-DD")
+        if (!validTime(f) || !validTime(t))
+            return qsTr("Times must be HH:MM")
+        if (t <= f)
+            return qsTr("End must be after the start")
+        if (title.trim() === "")
+            return qsTr("A title is needed")
+        return ""
+    }
+
     function addBlock() {
         Api.request("POST", "/api/balance/blocks",
-                    { date: dateField.text, start: fromField.text, end: toField.text,
-                      kind: kindBox.currentText, title: titleField.text }, function () {
+                    { date: dateField.text.trim(), start: Api.normTime(fromField.text), end: Api.normTime(toField.text),
+                      kind: kindBox.currentValue, title: titleField.text.trim() }, function () {
             page.adding = false
             titleField.text = ""
             page.info = qsTr("Block saved and approved.")
         }, e => page.error = e)
     }
 
+    // "monospace" does not resolve on Windows: take the first fixed-width family this system has
+    readonly property string monoFamily: {
+        const have = Qt.fontFamilies()
+        const want = ["Cascadia Mono", "Consolas", "Menlo", "DejaVu Sans Mono", "Roboto Mono", "Droid Sans Mono", "Courier New"]
+        return want.find(f => have.indexOf(f) >= 0) || "monospace"
+    }
+
+    function copyOutlook() {
+        outlookText.selectAll()
+        outlookText.copy()
+        outlookText.deselect()
+        snack.show(qsTr("Copied to the clipboard"))
+    }
+
     onStartChanged: reload()
-    Component.onCompleted: reload()
+    Component.onCompleted: if (visible) reload()
     onVisibleChanged: if (visible) reload()
     Connections {
         target: Api
-        function onChanged() { page.reload() }
-        function onServerChanged() { page.reload() }
+        // a hidden page reloads when its tab is shown
+        function onChanged() { if (page.visible) page.reload() }
+        function onServerChanged() { if (page.visible) page.reload() }
     }
 
     ColumnLayout {
@@ -187,7 +261,7 @@ ScrollView {
             title: qsTr("Load gate")
             visible: page.weekData !== null
             actions: Label {
-                text: page.gate && page.gate.colour ? page.gate.colour : qsTr("no verdict")
+                text: page.gate && page.gate.colour ? page.colourName(page.gate.colour) : qsTr("no verdict")
                 color: page.gateColor(page.gate ? page.gate.colour : "")
                 font.weight: Font.Bold
             }
@@ -270,12 +344,29 @@ ScrollView {
         Card {
             visible: page.outlook !== ""
             title: qsTr("Outlook list")
-            Label {
+            actions: Button {
+                text: qsTr("Copy")
+                flat: true
+                Accessible.name: qsTr("Copy the Outlook list")
+                Accessible.role: Accessible.Button
+                onClicked: page.copyOutlook()
+            }
+            // selectable (and copyable with the button): the list is meant to be pasted elsewhere
+            TextEdit {
+                id: outlookText
                 text: page.outlook
-                wrapMode: Text.Wrap
-                font.family: "monospace"
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                color: Api.fg
+                selectionColor: Api.accent
+                selectedTextColor: Api.accentFg
+                font.family: page.monoFamily
                 font.pixelSize: 12
                 Layout.fillWidth: true
+                Accessible.role: Accessible.StaticText
+                Accessible.name: qsTr("Outlook list")
+                Accessible.description: text
             }
         }
 
@@ -286,12 +377,25 @@ ScrollView {
                 columns: 2
                 columnSpacing: 8
                 Layout.fillWidth: true
-                TextField {
-                    id: dateField
-                    placeholderText: qsTr("Date YYYY-MM-DD")
+                RowLayout {
+                    spacing: 8
                     Layout.columnSpan: 2
                     Layout.fillWidth: true
-                    Accessible.name: qsTr("Date")
+                    TextField {
+                        id: dateField
+                        placeholderText: qsTr("Date YYYY-MM-DD")
+                        validator: RegularExpressionValidator { regularExpression: /^[0-9-]{0,10}$/ }
+                        inputMethodHints: Qt.ImhDigitsOnly
+                        Layout.fillWidth: true
+                        Accessible.name: qsTr("Date")
+                    }
+                    Button {
+                        text: qsTr("Pick")
+                        flat: true
+                        Accessible.name: qsTr("Pick a date")
+                        Accessible.role: Accessible.Button
+                        onClicked: datePicker.openFor(dateField.text)
+                    }
                 }
                 TextField {
                     id: fromField
@@ -299,6 +403,7 @@ ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("From")
+                    onEditingFinished: text = Api.normTime(text)
                 }
                 TextField {
                     id: toField
@@ -306,10 +411,13 @@ ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("To")
+                    onEditingFinished: text = Api.normTime(text)
                 }
                 ComboBox {
                     id: kindBox
-                    model: page.kinds
+                    model: page.kindModel
+                    textRole: "text"
+                    valueRole: "value"
                     Layout.columnSpan: 2
                     Layout.fillWidth: true
                     Accessible.name: qsTr("Kind")
@@ -323,13 +431,27 @@ ScrollView {
                     Accessible.name: qsTr("Title")
                 }
             }
+            Label {
+                // only once something is typed, so an empty form is not shouted at
+                visible: page.formProblem !== "" && (titleField.text !== "" || fromField.text !== "" || toField.text !== "")
+                text: page.formProblem
+                color: Api.warnColor
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
             Button {
                 text: qsTr("Save as approved")
-                enabled: titleField.text !== "" && fromField.text !== "" && toField.text !== ""
+                enabled: page.formProblem === ""
                 Accessible.name: text
                 Accessible.role: Accessible.Button
                 onClicked: page.addBlock()
             }
+        }
+
+        DatePicker {
+            id: datePicker
+            onPicked: iso => dateField.text = iso
         }
 
         Repeater {
@@ -459,7 +581,7 @@ ScrollView {
                         color: Qt.alpha(page.gateColor(modelData.colour), 0.35)
                         border.color: page.gateColor(modelData.colour)
                         Accessible.role: Accessible.StaticText
-                        Accessible.name: modelData.date + ": " + modelData.colour
+                        Accessible.name: modelData.date + ": " + page.colourName(modelData.colour)
                         Label {
                             anchors.centerIn: parent
                             text: sq.modelData.date.slice(8)

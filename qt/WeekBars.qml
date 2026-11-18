@@ -66,6 +66,11 @@ RowLayout {
                     border.color: Api.fg
                 }
 
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("%1: %2 of %3 worked").arg(cell.modelData.date)
+                                 .arg(Api.fmtH(cell.w)).arg(Api.fmtH(cell.modelData.expected_h))
+                Accessible.onPressAction: root.dayClicked(cell.modelData.date)
+
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor

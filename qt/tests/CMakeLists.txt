@@ -27,7 +27,7 @@ qt_add_qml_module(tst_worklog
     RESOURCES ${_res}
 )
 target_include_directories(tst_worklog PRIVATE ${APP_DIR})
-target_compile_definitions(tst_worklog PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+target_compile_definitions(tst_worklog PRIVATE QUICK_TEST_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}" WORKLOG_VERSION="${PROJECT_VERSION}")
 target_link_libraries(tst_worklog PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Multimedia
                                           Qt6::QuickTest Qt6::Test)
 if (WIN32)

@@ -4,6 +4,7 @@ option(WORKLOG_TESTS "Build the Qt Quick tests (tests/); they need a running ser
 
 project(WorkLogApp VERSION 0.2 LANGUAGES CXX)
 
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Quick QuickControls2 Network Multimedia)
@@ -16,14 +17,13 @@ endif()
 
 qt_standard_project_setup(REQUIRES 6.10)
 
-# Content of downloaded design from Figma to Qt or similar
-if (EXISTS "${CMAKE_CURRENT_LIST_DIR}/importedcontent/CMakeLists.txt")
-    add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/importedcontent)
-endif()
-
 qt_add_executable(appWorkLogApp
     main.cpp
 )
+if (NOT ANDROID)
+    target_sources(appWorkLogApp PRIVATE singleinstance.h singleinstance.cpp)   # one running copy per user
+endif()
+target_compile_definitions(appWorkLogApp PRIVATE WORKLOG_VERSION="${PROJECT_VERSION}")   # Qt.application.version
 if (WIN32)
     target_sources(appWorkLogApp PRIVATE icons/worklog.rc)   # the .exe icon
 endif()
@@ -37,9 +37,13 @@ set(WL_QML_FILES
     TimerPage.qml
     DayPage.qml
     WeekPage.qml
+    FindPage.qml
+    ChipMulti.qml
     SettingsPage.qml
     BlockList.qml
     BlockDialog.qml
+    DatePicker.qml
+    QueueState.qml
     ChipRow.qml
     Card.qml
     Caption.qml
@@ -57,6 +61,9 @@ set(WL_QML_FILES
     DataTable.qml
     PomodoroPage.qml
     TrayController.qml
+    IdleWatcher.qml
+    WindowState.qml
+    HotkeyField.qml
 )
 set(WL_SOURCES
     filedownloader.h
@@ -67,6 +74,10 @@ set(WL_SOURCES
     secretstore.cpp
     globalhotkey.h
     globalhotkey.cpp
+    idlemonitor.h
+    idlemonitor.cpp
+    autostart.h
+    autostart.cpp
     timerwidget.h
     timerwidget.cpp
     biometric.h
@@ -75,6 +86,10 @@ set(WL_SOURCES
 set(WL_RESOURCES
     beep.wav
     icons/worklog-256.png
+    icons/tray-working.png
+    icons/tray-break.png
+    icons/tray-stopped.png
+    icons/tray-offline.png
 )
 
 qt_add_qml_module(appWorkLogApp
@@ -84,16 +99,16 @@ qt_add_qml_module(appWorkLogApp
     RESOURCES ${WL_RESOURCES}
 )
 
-# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
-# If you are developing for iOS or macOS you should consider setting an
-# explicit, fixed bundle identifier manually though.
+# Android's versionCode follows the project version (0.2 -> 2, 1.3 -> 103), so a release needs one bump
+math(EXPR WL_ANDROID_VERSION_CODE "${PROJECT_VERSION_MAJOR} * 100 + ${PROJECT_VERSION_MINOR}")
+
 # Android: our manifest and launcher icons are laid over Qt's template (android/)
 set_target_properties(appWorkLogApp PROPERTIES
     QT_ANDROID_PACKAGE_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/android
     QT_ANDROID_PACKAGE_NAME net.goldhoorn.worklog
     QT_ANDROID_APP_NAME "Worklog"
     QT_ANDROID_VERSION_NAME ${PROJECT_VERSION}
-    QT_ANDROID_VERSION_CODE 2
+    QT_ANDROID_VERSION_CODE ${WL_ANDROID_VERSION_CODE}
 )
 
 if (ANDROID)
@@ -109,7 +124,6 @@ if (ANDROID)
 endif()
 
 set_target_properties(appWorkLogApp PROPERTIES
-#    MACOSX_BUNDLE_GUI_IDENTIFIER com.example.appWorkLogApp
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE

@@ -15,12 +15,18 @@ QtObject {
         property alias trayKeep: api.trayKeep
         property alias hotkeyOn: api.hotkeyOn
         property alias hotkeySeq: api.hotkeySeq
+        property alias idleOn: api.idleOn
+        property alias idleMinutes: api.idleMinutes
         property alias requireUnlock: api.requireUnlock
     }
     // Windows desktop: keep running in the tray when the window closes, and the global start/pause hotkey
     property bool trayKeep: true
     property bool hotkeyOn: true
     property string hotkeySeq: "Ctrl+Alt+W"
+    // Windows: ask whether to log the time as a break when you come back after being away this long
+    property bool idleOn: true
+    property int idleMinutes: 10
+    property bool hotkeyCapturing: false   // the Settings field is waiting for a key: release the hotkey so it can be pressed
     property string hotkeyError: ""   // set by TrayController when the hotkey could not be registered
     readonly property bool trayCapable: Qt.platform.os === "windows"
     // Android: fingerprint/face (or the screen lock) before the saved password is read (Settings switch)
@@ -44,6 +50,8 @@ QtObject {
         loadQueue()
         if (queue.length > 0 && baseUrl !== "")
             flushQueue()
+        if (baseUrl !== "" && !locked)
+            refreshStatus()
         TimerWidget.configure(serverUrl, username)   // Android's widget/tile/notification call the server too
     }
     readonly property string baseUrl: serverUrl.trim().replace(/\/+$/, "")
@@ -102,9 +110,48 @@ QtObject {
             password = SecretStore.get("password")
         locked = false
         serverChanged()
+        refreshStatus()
+        flushQueue()   // what was tapped before the lock could not be sent while locked
+    }
+
+    // lock again: the password leaves memory and the pages wait behind the lock screen until unlock()
+    function lock() {
+        if (locked)
+            return
+        password = ""
+        locked = true
+    }
+
+    // Android, "Require fingerprint/face to open": the app locks again when it comes back after being
+    // away (another app, screen off) for longer than this
+    readonly property int relockAfterMs: 2 * 60 * 1000
+    property double leftAt: 0   // when the app stopped being active, 0 while it is
+    property Connections appState: Connections {
+        target: Application
+        function onStateChanged(state) {
+            if (state !== Qt.ApplicationActive) {
+                if (api.leftAt === 0)
+                    api.leftAt = Date.now()
+                return
+            }
+            const away = api.leftAt > 0 ? Date.now() - api.leftAt : 0
+            api.leftAt = 0
+            if (Qt.platform.os === "android" && api.requireUnlock && away > api.relockAfterMs && Biometric.isAvailable())
+                api.lock()
+        }
     }
 
     function setServer(url, user, pass) {
+        // actions queued for another server must never be replayed to this one
+        if (url.trim().replace(/\/+$/, "") !== baseUrl && queue.length > 0) {
+            const n = queue.length
+            queue = []
+            saveQueue()
+            queueFailed(qsTr("%n queued action(s) for the previous server dropped", "", n))
+        }
+        status = null
+        statusError = ""
+        statusGen++   // an answer still on its way belongs to the old server or login
         serverUrl = url
         username = user
         password = pass
@@ -112,36 +159,140 @@ QtObject {
         TimerWidget.configure(url, user)
         TimerWidget.refresh()
         serverChanged()
+        refreshStatus()
+    }
+
+    // ---- shared status -------------------------------------------------------
+    // One copy of /api/status for the Timer, the Pomodoro, the Log's chips and the tray: fetched at start,
+    // after every mutation, every 30 s, and whenever a page asks. It keeps its last value while the server
+    // is unreachable (see `online`), so the pages can show what they last knew.
+
+    property var status: null
+    property real statusAt: 0          // Date.now() when `status` arrived
+    property string statusError: ""    // why the last fetch failed, "" after a good one
+    // false after a request that got no answer, true after any answer (also an error answer)
+    property bool online: true
+    property bool statusLoading: false
+    property var statusWaiters: []
+
+    // Bumped whenever an answer already on its way would be out of date: another server or login, or a
+    // mutation. Such an answer is thrown away and asked for again, so the waiters get a current one.
+    property int statusGen: 0
+    onBaseUrlChanged: statusGen++
+
+    // then(status, error): the fresh status, or null and the error text. Calls made while one is in
+    // flight share its answer.
+    function refreshStatus(then) {
+        if (then)
+            statusWaiters = statusWaiters.concat([then])
+        if (statusLoading)
+            return
+        statusLoading = true
+        const gen = statusGen
+        const outdated = function () {
+            if (gen === api.statusGen)
+                return false
+            api.statusLoading = false
+            api.refreshStatus()
+            return true
+        }
+        const done = function (s, e) {
+            statusLoading = false
+            const waiters = statusWaiters
+            statusWaiters = []
+            for (const w of waiters)
+                w(s, e)
+        }
+        request("GET", "/api/status", undefined, function (s) {
+            if (outdated())
+                return
+            status = s
+            statusAt = Date.now()
+            statusError = ""
+            done(s, "")
+        }, function (e) {
+            if (outdated())
+                return
+            statusError = e
+            done(null, e)
+        })
+    }
+    onChanged: {
+        statusGen++   // a status fetched before the mutation no longer counts
+        refreshStatus()
+    }
+    property Timer statusTimer: Timer {
+        interval: 30000
+        repeat: true
+        // Android stops polling in the background (the widget and notification fetch for themselves)
+        running: api.baseUrl !== "" && !api.locked
+                 && (Qt.platform.os !== "android" || Application.state === Qt.ApplicationActive)
+        onTriggered: api.refreshStatus()
+    }
+
+    // the break type Pause uses when none was picked: the server's first (most used), "eat" before any status
+    function defaultBreak() {
+        const b = status && status.chips ? status.chips.break_types : []
+        return b && b.length > 0 ? b[0] : "eat"
+    }
+
+    // ---- requests ------------------------------------------------------------
+
+    // a request without an answer for this long counts as unreachable (status 0)
+    property int requestTimeoutMs: 20000
+    property var inflight: []   // [{xhr, at, finished, fail}]
+    property Timer watchdog: Timer {
+        interval: 2000
+        repeat: true
+        running: api.inflight.length > 0
+        onTriggered: {
+            const now = Date.now()
+            for (const e of api.inflight.slice())
+                if (now - e.at > api.requestTimeoutMs) {
+                    e.fail()        // answers the caller first, so whatever abort() reports is ignored
+                    e.xhr.abort()
+                }
+        }
     }
 
     function request(method, path, body, onOk, onErr) {
         if (api.locked) {   // no password yet: the pages reload on serverChanged() after unlock()
-            if (onErr) onErr(qsTr("Locked"))
+            if (onErr) onErr(qsTr("Locked"), 0)   // status 0: nothing reached the server, so a queued action stays queued
             return
         }
         const xhr = new XMLHttpRequest()
-        xhr.onreadystatechange = function () {
-            if (xhr.readyState !== XMLHttpRequest.DONE)
+        const entry = { xhr: xhr, at: Date.now(), finished: false, fail: null }
+        const finish = function (status, text) {
+            if (entry.finished)
                 return
+            entry.finished = true
+            api.inflight = api.inflight.filter(x => x !== entry)
+            api.online = status !== 0
             let data = null
-            try { data = JSON.parse(xhr.responseText) } catch (e) { /* non-JSON body */ }
-            if (xhr.status >= 200 && xhr.status < 300) {
+            try { data = JSON.parse(text) } catch (e) { /* non-JSON body */ }
+            if (status >= 200 && status < 300) {
                 if (data && typeof data.now === "string" && path.indexOf("/api/status") === 0)
                     api.syncClock(data.now)
                 if (method !== "GET") {
                     api.changed()
                     TimerWidget.refresh()   // Android: the widget, tile and ongoing notification
                 }
-                if (onOk) onOk(data, xhr.responseText)
+                if (onOk) onOk(data, text)
             } else if (onErr) {
-                onErr(xhr.status === 0 ? qsTr("Cannot reach %1").arg(api.baseUrl)
-                      : xhr.status === 401 ? api.loginMessage
-                      : (data && data.error) || ("HTTP " + xhr.status), xhr.status)   // status 0: unreachable
+                onErr(status === 0 ? qsTr("Cannot reach %1").arg(api.baseUrl)
+                      : status === 401 ? api.loginMessage
+                      : (data && data.error) || ("HTTP " + status), status)   // status 0: unreachable
             }
             // any answer proves the server is there: send what was queued while it was not
-            if (xhr.status !== 0 && !api.flushing && api.queue.length > 0)
+            if (status !== 0 && !api.flushing && api.queue.length > 0)
                 Qt.callLater(api.flushQueue)
         }
+        entry.fail = () => finish(0, "")
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === XMLHttpRequest.DONE)
+                finish(xhr.status, xhr.responseText)
+        }
+        api.inflight = api.inflight.concat([entry])
         xhr.open(method, api.baseUrl + path)
         if (api.username !== "")
             xhr.setRequestHeader("Authorization", authHeader())
@@ -259,6 +410,12 @@ QtObject {
     function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
     function pad(n) { return (n < 10 ? "0" : "") + n }
 
+    // "7.5" and "7,5" -> 7.5 whatever the device's locale; NaN for anything that is not a plain number
+    function parseNum(t) {
+        const v = String(t).trim()
+        return /^\d+([.,]\d+)?$/.test(v) ? Number(v.replace(",", ".")) : NaN
+    }
+
     // 2.50 -> "2.5", at most dp decimals
     function fmtNum(v, dp) {
         const f = Math.pow(10, dp === undefined ? 2 : dp)
@@ -335,6 +492,13 @@ QtObject {
     function nowHHMM() {
         const d = now()
         return pad(d.getHours()) + ":" + pad(d.getMinutes())
+    }
+
+    // "700", "7:00", "07.00", "19h00" -> "HH:MM" (same as normTime in the web's app.js); anything else comes back trimmed
+    function normTime(text) {
+        const v = String(text).trim()
+        const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(v)
+        return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? pad(Number(m[1])) + ":" + m[2] : v
     }
 
     // 2.5 -> "2.5 h", trailing zeros dropped

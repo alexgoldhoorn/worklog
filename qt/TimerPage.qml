@@ -7,25 +7,44 @@ import QtQuick.Layouts
 // Start / pause / stop, the running totals and today's blocks.
 ScrollView {
     id: page
-    property var status: null
+    readonly property var status: Api.status   // the shared copy; kept while the server is unreachable
     property var day: null
-    property real fetchedAt: 0   // Date.now() when `status` arrived; the clock ticks on locally
+    readonly property real fetchedAt: Api.statusAt   // Date.now() when `status` arrived; the clock ticks on locally
     property real nowMs: Date.now()
     property bool busy: false
     property string error: ""
 
     // the next block's type / project and the break type, picked with chips
     property string pendingType: ""
-    property string pendingBreak: "eat"
+    property string pendingBreak: ""   // "" = the server's first break type
+    readonly property string breakType: pendingBreak || Api.defaultBreak()
 
     signal openDay(string date)
+    property alias dialog: blockDialog   // for tests
 
-    readonly property string timerState: status ? status.state : "stopped"
-    readonly property var runningBlock: status ? status.block : null
-    readonly property int liveSec: runningBlock
-                                   ? Math.max(0, (status.elapsed_s || 0) + Math.floor((nowMs - fetchedAt) / 1000)) : 0
-    // hours of the running work block, on top of the closed totals the server sent
-    readonly property real liveRunH: timerState === "working" ? liveSec / 3600 : 0
+    // Actions queued while the server was unreachable: the state they lead to is shown instead of the
+    // server's last answer, marked as waiting. `offline` marks everything from the last answer as old.
+    QueueState { id: queueState }
+    readonly property var implied: queueState.implied(Api.queue)
+    readonly property bool queued: implied !== null
+    readonly property bool offline: !Api.online
+    readonly property bool stale: offline || queued
+    readonly property bool unreachableAtStart: !status && !queued && Api.statusError !== ""
+    // time of the last answer on the server's clock, "HH:MM"
+    readonly property string lastUpdate: {
+        const d = new Date(Api.statusAt + Api.clockOffsetMs)
+        return Api.pad(d.getHours()) + ":" + Api.pad(d.getMinutes())
+    }
+    readonly property string impliedSince: implied && implied.at ? implied.at.slice(11, 16) : ""
+
+    readonly property string timerState: implied ? implied.state : status ? status.state : "stopped"
+    readonly property var runningBlock: implied ? (implied.state === "stopped" ? null
+                                                   : { id: -1, type: implied.type, project: implied.project, work_type: implied.state === "working" ? "work" : "break" })
+                                                : status ? status.block : null
+    readonly property int liveSec: implied ? queueState.elapsedSince(implied.at, new Date(nowMs + Api.clockOffsetMs))
+                                   : runningBlock ? Math.max(0, (status.elapsed_s || 0) + Math.floor((nowMs - fetchedAt) / 1000)) : 0
+    // hours of the running work block, on top of the closed totals the server sent (not while they are old)
+    readonly property real liveRunH: timerState === "working" && !stale ? liveSec / 3600 : 0
     readonly property real todayH: status ? status.today.work_h + liveRunH : 0
     readonly property real todayExpH: status ? status.today.expected_h || 0 : 0
     readonly property real weekH: status ? status.week.worked_h + liveRunH : 0
@@ -34,7 +53,7 @@ ScrollView {
     // minutes past the hard stop (balance settings) while today's work block runs. The server
     // sends past_stop_min only then (null otherwise); the clock here keeps it live between reloads.
     readonly property int pastStopMin: {
-        if (timerState !== "working" || !status || status.past_stop_min === null
+        if (timerState !== "working" || stale || !status || status.past_stop_min === null
                 || status.past_stop_min === undefined || !status.hard_stop)
             return 0
         const hm = status.hard_stop.split(":")
@@ -51,15 +70,22 @@ ScrollView {
 
     contentWidth: availableWidth
 
+    property int reloadSeq: 0
     function reload() {
-        Api.request("GET", "/api/status", undefined, function (s) {
-            page.status = s
-            page.fetchedAt = Date.now()
+        const seq = ++reloadSeq
+        Api.refreshStatus(function (s, e) {
+            if (!page || seq !== page?.reloadSeq)
+                return   // the page went away, or a newer reload is on its way
+            if (!s) {
+                page.error = e
+                return
+            }
             page.error = ""
             if (s.state === "working" && s.block.work_type === "work" && s.block.source !== "calendar" && !projectField.activeFocus)
                 projectField.text = s.block.project || ""
-            Api.request("GET", "/api/day/" + s.date, undefined, d => page.day = d, e => page.error = e)
-        }, e => page.error = e)
+            Api.request("GET", "/api/day/" + s.date, undefined, d => { if (seq === page?.reloadSeq) page.day = d },
+                        err => page.error = err)
+        })
     }
 
     function action(path, body) {
@@ -77,7 +103,7 @@ ScrollView {
 
     // change the running block in place; a block closed meanwhile gets a 409, never retyped
     function retypeRunning(fields, what) {
-        if (!runningBlock)
+        if (!runningBlock || queued)
             return
         const b = runningBlock
         const undo = { require_open: true }
@@ -113,25 +139,28 @@ ScrollView {
         function onServerChanged() { page.reload() }
         function onQueueFailed(message) { page.error = qsTr("A queued action was refused: %1").arg(message) }
     }
-    Timer { interval: 1000; running: true; repeat: true; onTriggered: page.nowMs = Date.now() }
-    Timer { interval: 60000; running: true; repeat: true; onTriggered: page.reload() }
+    // both stop while another tab is shown; the tab coming back reloads at once
+    Timer { interval: 1000; running: page.visible; repeat: true; triggeredOnStart: true; onTriggered: page.nowMs = Date.now() }
+    Timer { interval: 60000; running: page.visible; repeat: true; onTriggered: page.reload() }
 
     // keyboard shortcuts, as on the web's Timer page. A focused text field eats plain keys,
     // so they never fire while typing; the buttons' own enabled state covers busy and state.
+    // not while a dialog is open: the window shortcuts would otherwise fire behind it
+    readonly property bool shortcutsOn: visible && !blockDialog.visible
     function press(button) {
         if (button.enabled)
             button.clicked()
     }
-    Shortcut { sequences: ["S", "Shift+S"]; enabled: page.visible; onActivated: page.press(startButton) }
-    Shortcut { sequences: ["P", "Shift+P"]; enabled: page.visible; onActivated: page.press(pauseButton) }
-    Shortcut { sequences: ["X", "Shift+X"]; enabled: page.visible; onActivated: page.press(stopButton) }
-    Shortcut { sequence: "/"; enabled: page.visible; onActivated: projectField.forceActiveFocus() }
+    Shortcut { sequences: ["S", "Shift+S"]; enabled: page.shortcutsOn; onActivated: page.press(startButton) }
+    Shortcut { sequences: ["P", "Shift+P"]; enabled: page.shortcutsOn; onActivated: page.press(pauseButton) }
+    Shortcut { sequences: ["X", "Shift+X"]; enabled: page.shortcutsOn; onActivated: page.press(stopButton) }
+    Shortcut { sequence: "/"; enabled: page.shortcutsOn; onActivated: projectField.forceActiveFocus() }
     Instantiator {
         model: 6
         delegate: Shortcut {
             required property int index
             sequence: String(index + 1)
-            enabled: page.visible && !page.busy
+            enabled: page.shortcutsOn && !page.busy
             onActivated: {
                 const types = page.status ? page.status.chips.types : []
                 if (index < types.length)
@@ -188,12 +217,24 @@ ScrollView {
                         Layout.fillWidth: true
                         spacing: 0
                         Label {
-                            text: !page.status ? qsTr("Loading…")
+                            text: !page.status && !page.queued
+                                  ? (page.unreachableAtStart ? qsTr("Not connected") : qsTr("Loading…"))
                                   : page.timerState === "working" ? qsTr("Working")
                                   : page.timerState === "break" ? qsTr("On break") : qsTr("Stopped")
                             color: page.tone
                             font.pixelSize: 18
                             font.weight: Font.Bold
+                        }
+                        Label {   // why the numbers below may be old
+                            visible: page.stale || page.unreachableAtStart
+                            text: page.queued ? qsTr("Waiting for the server · queued at %1").arg(page.impliedSince)
+                                  : page.status ? qsTr("Offline · last update %1").arg(page.lastUpdate)
+                                  : qsTr("Offline · no data yet")
+                            color: Api.warnColor
+                            font.pixelSize: 12
+                            font.weight: Font.DemiBold
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
                         }
                         Label {
                             text: page.timerState === "stopped" ? "—" : Api.fmtClock(page.liveSec)
@@ -202,11 +243,12 @@ ScrollView {
                             font.features: { "tnum": 1 }
                         }
                         Label {
-                            text: page.timerState === "stopped"
-                                  ? qsTr("Nothing running. Pick a type and tap Start.")
-                                  : "<b>" + Api.esc(page.runningBlock?.type ?? "") + "</b>"
+                            text: page.unreachableAtStart ? qsTr("Could not load the status: %1").arg(Api.statusError)
+                                  : page.timerState === "stopped"
+                                  ? (page.queued ? qsTr("Stopped, not yet sent") : qsTr("Nothing running. Pick a type and tap Start."))
+                                  : "<b>" + Api.esc(page.runningBlock?.type || qsTr("default")) + "</b>"
                                     + (page.runningBlock?.project ? " · " + Api.esc(page.runningBlock.project) : "")
-                                    + " · " + qsTr("since %1").arg(page.status?.since ?? "")
+                                    + " · " + qsTr("since %1").arg(page.queued ? page.impliedSince : (page.status?.since ?? ""))
                                     + (page.over ? " · " + qsTr("past your %1 stop by %2")
                                                    .arg(page.status.hard_stop).arg(Api.fmtHM(page.pastStopMin / 60)) : "")
                             textFormat: Text.StyledText
@@ -214,9 +256,16 @@ ScrollView {
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
+                        Button {
+                            visible: page.unreachableAtStart
+                            text: qsTr("Retry")
+                            flat: true
+                            onClicked: page.reload()
+                        }
                     }
                     ColumnLayout {
                         spacing: 0
+                        opacity: page.stale ? 0.5 : 1   // totals from the last answer, not live
                         Layout.alignment: Qt.AlignTop
                         Label {
                             text: qsTr("TODAY") + (page.todayExpH > 0 ? "  · " + Api.leftOrExtra(page.todayH, page.todayExpH) : "")
@@ -247,6 +296,7 @@ ScrollView {
 
                 RowLayout {
                     spacing: 32
+                    opacity: page.stale ? 0.5 : 1
                     visible: !!page.status
                     Counter {
                         caption: page.status ? qsTr("Week %1").arg(page.status.week.key.slice(5).replace(/^W/, "")) : ""
@@ -287,14 +337,14 @@ ScrollView {
                     ActionButton {
                         id: pauseButton
                         text: page.timerState === "break" ? qsTr("Change") : qsTr("Pause")
-                        subtext: page.pendingBreak || "eat"
+                        subtext: page.breakType
                         fill: Api.breakColor
                         ink: Api.breakFg
                         enabled: !page.busy && (page.timerState === "working"
-                                                || (page.timerState === "break" && page.pendingBreak !== page.runningBlock?.type))
+                                                || (page.timerState === "break" && page.breakType !== page.runningBlock?.type))
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
-                        onClicked: page.action("/api/pause", { type: page.pendingBreak || "eat" })
+                        onClicked: page.action("/api/pause", { type: page.breakType })
                     }
                     ActionButton {
                         id: stopButton
@@ -324,7 +374,7 @@ ScrollView {
 
         // ---- notices ----------------------------------------------------------
         Repeater {
-            model: (page.error ? [{ text: qsTr("Error: %1").arg(page.error), level: "error" }] : [])
+            model: (page.error && !page.offline ? [{ text: qsTr("Error: %1").arg(page.error), level: "error" }] : [])
                    .concat(Api.queue.length ? [{ text: qsTr("%n action(s) waiting for the server", "", Api.queue.length), level: "warn" }] : [])
                    .concat(page.status ? page.status.notices.map(t => ({ text: t, level: "warn" })) : [])
                    .concat(page.status ? Api.overlapItems(page.status).map(o => ({ text: o.text, level: "warn", date: o.date })) : [])
@@ -392,7 +442,7 @@ ScrollView {
                 label: qsTr("Break")
                 Layout.topMargin: 4
                 model: page.status ? page.status.chips.break_types : []
-                current: page.timerState === "break" ? (page.runningBlock?.type ?? "") : page.pendingBreak
+                current: page.timerState === "break" ? (page.runningBlock?.type ?? "") : page.breakType
                 onPicked: value => {
                     page.pendingBreak = value
                     if (page.timerState === "break" && value !== page.runningBlock.type)
@@ -404,6 +454,7 @@ ScrollView {
         // ---- totals: today / week / balance -----------------------------------
         GridLayout {
             visible: !!page.status
+            opacity: page.stale ? 0.5 : 1
             columns: page.wide ? 3 : 2
             columnSpacing: 12
             rowSpacing: 12
@@ -419,7 +470,7 @@ ScrollView {
                 Layout.fillHeight: true
                 Layout.preferredWidth: 1
                 badge: Label {
-                    visible: page.timerState === "working"
+                    visible: page.timerState === "working" && !page.stale
                     text: "● " + qsTr("live")
                     color: Api.workColor
                     font.pixelSize: 11
@@ -562,6 +613,8 @@ ScrollView {
                 Material.elevation: 1
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Add block")
+                Accessible.name: qsTr("Add block")
+                Accessible.role: Accessible.Button
                 onClicked: blockDialog.newBlock(page.status ? page.status.date : Api.today())
             }
 
@@ -574,7 +627,7 @@ ScrollView {
                 onBillableToggled: (b, next) => Api.request("PUT", "/api/blocks/" + b.id, { billable: next }, null, e => page.error = e)
                 onFillGap: (start, end, asBreak) => {
                     const body = { date: page.status.date, start: start, end: end }
-                    const t = asBreak ? (page.pendingBreak || "eat") : page.pendingType
+                    const t = asBreak ? page.breakType : page.pendingType
                     if (t)
                         body.type = t
                     Api.request("POST", "/api/blocks", body, null, e => page.error = e)

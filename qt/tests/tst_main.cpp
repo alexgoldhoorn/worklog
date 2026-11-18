@@ -17,6 +17,7 @@ public:
         // never touch the user's real saved URL and login (registry on Windows)
         QCoreApplication::setOrganizationName("worklog-test");
         QCoreApplication::setApplicationName("WorkLogAppTest");
+        QCoreApplication::setApplicationVersion(QStringLiteral(WORKLOG_VERSION));
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_dir.path());
         QQuickStyle::setStyle("Material");

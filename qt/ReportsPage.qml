@@ -14,12 +14,18 @@ ScrollView {
     property string invoiceMonth: Api.today().slice(0, 7)
     property var invoice: []
     property string error: ""
+    property string heatError: ""
     property string exportMessage: ""
     property bool exportOk: true
 
     readonly property bool wide: availableWidth >= 760
     readonly property var rows: summary ? summary.rows : []
-    readonly property string currentKey: group === "week" ? Api.weekKey(Api.today()) : ""
+    // the period that is still running, as the server keys it: "2026-43", "2026-10", "2026-Q4", "2026"
+    readonly property string currentKey: {
+        const t = Api.today()
+        return group === "week" ? Api.weekKey(t) : group === "month" ? t.slice(0, 7)
+             : group === "quarter" ? t.slice(0, 4) + "-Q" + (Math.floor((Number(t.slice(5, 7)) - 1) / 3) + 1) : t.slice(0, 4)
+    }
     readonly property real altWeek: summary && summary.alt_week_h ? summary.alt_week_h : 40
     readonly property bool priced: !!summary && summary.rate_h !== null
 
@@ -41,17 +47,76 @@ ScrollView {
     }
     function inProgress(key) { return key === currentKey ? " " + qsTr("(in progress)") : "" }
 
+    // Every request takes a number; an answer whose number is no longer the latest is dropped, so a quick
+    // switch of the grouping, range or month never shows the older answer.
+    property int summaryReq: 0
+    property int heatReq: 0
+    property int invoiceReq: 0
+
     function reload() {
         const range = { start: start, end: end }
+        const sid = ++summaryReq, hid = ++heatReq
         Api.request("GET", "/api/summary?" + Api.query(Object.assign({ group: group }, range)), undefined, function (d) {
+            if (sid !== page?.summaryReq)
+                return
             page.summary = d
             page.error = ""
-        }, e => page.error = e)
-        Api.request("GET", "/api/heatmap?" + Api.query(range), undefined, h => page.heat = h, () => page.heat = null)
+        }, function (e) {
+            if (sid === page?.summaryReq)
+                page.error = e
+        })
+        Api.request("GET", "/api/heatmap?" + Api.query(range), undefined, function (h) {
+            if (hid !== page?.heatReq)
+                return
+            page.heat = h
+            page.heatError = ""
+        }, function (e) {
+            if (hid !== page?.heatReq)
+                return
+            page.heat = null
+            page.heatError = e
+        })
         loadInvoice()
     }
     function loadInvoice() {
-        Api.request("GET", "/api/invoice?month=" + invoiceMonth, undefined, r => page.invoice = r, e => page.error = e)
+        const id = ++invoiceReq
+        Api.request("GET", "/api/invoice?month=" + invoiceMonth, undefined, function (r) {
+            if (id === page?.invoiceReq)
+                page.invoice = r
+        }, function (e) {
+            if (id === page?.invoiceReq)
+                page.error = e
+        })
+    }
+
+    // ---- range presets ---------------------------------------------------------------------
+    readonly property var presets: [qsTr("All"), qsTr("This year"), qsTr("Last 12 weeks"), qsTr("Last 6 months")]
+    function presetRange(name) {
+        const today = Api.now()
+        if (name === presets[0])
+            return { start: "", end: "" }
+        if (name === presets[1])
+            return { start: today.getFullYear() + "-01-01", end: "" }
+        if (name === presets[2])
+            return { start: Api.addDays(Api.isoDate(today), -83), end: "" }
+        return { start: Api.isoDate(new Date(today.getFullYear(), today.getMonth() - 5, 1)), end: "" }
+    }
+    // the preset the dates match, "" when they were typed by hand
+    readonly property string activePreset: {
+        for (const n of presets) {
+            const r = presetRange(n)
+            if (r.start === start && r.end === end)
+                return n
+        }
+        return ""
+    }
+    property string pickTarget: "start"
+    function applyDates(s, e) {
+        if (s === start && e === end)
+            return
+        start = s
+        end = e
+        reload()
     }
     function shiftInvoice(n) {
         const d = Api.parseDate(invoiceMonth + "-01")
@@ -67,12 +132,13 @@ ScrollView {
     }
 
     onInvoiceMonthChanged: loadInvoice()
-    Component.onCompleted: reload()
+    Component.onCompleted: if (visible) reload()
     onVisibleChanged: if (visible) reload()
     Connections {
         target: Api
-        function onChanged() { page.reload() }
-        function onServerChanged() { page.reload() }
+        // a hidden page reloads when its tab is shown
+        function onChanged() { if (page.visible) page.reload() }
+        function onServerChanged() { if (page.visible) page.reload() }
     }
 
     // ---- chart data ----------------------------------------------------------------
@@ -162,18 +228,11 @@ ScrollView {
             }
             ChipRow {
                 label: qsTr("Range")
-                model: [qsTr("All"), qsTr("This year"), qsTr("Last 12 weeks"), qsTr("Last 6 months")]
-                current: page.start === "" && page.end === "" ? qsTr("All") : ""
+                model: page.presets
+                current: page.activePreset
                 onPicked: value => {
-                    const today = Api.now()
-                    if (value === qsTr("All"))
-                        page.setRange("", "")
-                    else if (value === qsTr("This year"))
-                        page.setRange(today.getFullYear() + "-01-01", "")
-                    else if (value === qsTr("Last 12 weeks"))
-                        page.setRange(Api.addDays(Api.isoDate(today), -83), "")
-                    else
-                        page.setRange(Api.isoDate(new Date(today.getFullYear(), today.getMonth() - 5, 1)), "")
+                    const r = page.presetRange(value)
+                    page.setRange(r.start, r.end)
                 }
             }
             RowLayout {
@@ -184,14 +243,28 @@ ScrollView {
                     placeholderText: qsTr("From (first log)")
                     validator: RegularExpressionValidator { regularExpression: /^(\d{4}-\d{2}-\d{2})?$/ }
                     Layout.fillWidth: true
+                    Accessible.name: qsTr("From date")
                     onEditingFinished: if (acceptableInput && text !== page.start) { page.start = text; page.reload() }
+                }
+                ToolButton {
+                    text: qsTr("Pick")
+                    Accessible.name: qsTr("Pick the from date")
+                    Accessible.role: Accessible.Button
+                    onClicked: { page.pickTarget = "start"; datePicker.openFor(startField.text) }
                 }
                 TextField {
                     id: endField
                     placeholderText: qsTr("To (today)")
                     validator: RegularExpressionValidator { regularExpression: /^(\d{4}-\d{2}-\d{2})?$/ }
                     Layout.fillWidth: true
+                    Accessible.name: qsTr("To date")
                     onEditingFinished: if (acceptableInput && text !== page.end) { page.end = text; page.reload() }
+                }
+                ToolButton {
+                    text: qsTr("Pick")
+                    Accessible.name: qsTr("Pick the to date")
+                    Accessible.role: Accessible.Button
+                    onClicked: { page.pickTarget = "end"; datePicker.openFor(endField.text) }
                 }
             }
             Label {
@@ -207,6 +280,24 @@ ScrollView {
             visible: page.error !== ""
             text: qsTr("Error: %1").arg(page.error)
             level: "error"
+        }
+        NoticeBanner {
+            visible: page.heatError !== ""
+            text: qsTr("Heatmap: %1").arg(page.heatError)
+            level: "error"
+        }
+
+        DatePicker {
+            id: datePicker
+            onPicked: iso => {
+                if (page.pickTarget === "start") {
+                    startField.text = iso
+                    page.applyDates(iso, page.end)
+                } else {
+                    endField.text = iso
+                    page.applyDates(page.start, iso)
+                }
+            }
         }
 
         // charts
@@ -224,7 +315,7 @@ ScrollView {
                 Layout.rightMargin: 0
                 Layout.preferredWidth: 1
                 Caption { text: qsTr("per period, vs expected"); font.capitalization: Font.MixedCase; font.letterSpacing: 0 }
-                ColumnChart { rows: page.extraRows; signedAxis: true }
+                ColumnChart { rows: page.extraRows; signedAxis: true; title: qsTr("Extra hours per period") }
             }
             Card {
                 title: qsTr("Balance")
@@ -237,7 +328,7 @@ ScrollView {
                     font.capitalization: Font.MixedCase
                     font.letterSpacing: 0
                 }
-                ColumnChart { rows: page.balanceRows; line: true; signedAxis: true }
+                ColumnChart { rows: page.balanceRows; line: true; signedAxis: true; title: qsTr("Balance, cumulative extra hours") }
             }
             Card {
                 title: qsTr("Hours by type")
@@ -245,7 +336,7 @@ ScrollView {
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
                 Caption { text: qsTr("work only; breaks excluded"); font.capitalization: Font.MixedCase; font.letterSpacing: 0 }
-                ColumnChart { rows: page.typeRows; implicitHeight: 200 }
+                ColumnChart { rows: page.typeRows; implicitHeight: 200; title: qsTr("Hours by type per period") }
                 Flow {   // legend
                     spacing: 12
                     Layout.fillWidth: true
@@ -273,7 +364,7 @@ ScrollView {
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
                 Caption { text: qsTr("top project notes in the selected range · work only"); font.capitalization: Font.MixedCase; font.letterSpacing: 0 }
-                RankedBars { items: page.projectItems }
+                RankedBars { items: page.projectItems; title: qsTr("Hours by project") }
             }
             Card {
                 title: qsTr("When I work")
@@ -339,12 +430,24 @@ ScrollView {
         Card {
             title: qsTr("Invoice")
             actions: RowLayout {
-                ToolButton { text: "‹"; font.pixelSize: 18; onClicked: page.shiftInvoice(-1) }
+                ToolButton {
+                    text: "‹"
+                    font.pixelSize: 18
+                    Accessible.name: qsTr("Previous month")
+                    Accessible.role: Accessible.Button
+                    onClicked: page.shiftInvoice(-1)
+                }
                 Label {
                     text: Api.parseDate(page.invoiceMonth + "-01").toLocaleDateString(Qt.locale(), "MMM yyyy")
                     font.weight: Font.DemiBold
                 }
-                ToolButton { text: "›"; font.pixelSize: 18; onClicked: page.shiftInvoice(1) }
+                ToolButton {
+                    text: "›"
+                    font.pixelSize: 18
+                    Accessible.name: qsTr("Next month")
+                    Accessible.role: Accessible.Button
+                    onClicked: page.shiftInvoice(1)
+                }
             }
 
             DataTable {

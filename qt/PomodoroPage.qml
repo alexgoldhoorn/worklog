@@ -20,10 +20,13 @@ ScrollView {
     property real nowMs: Date.now()
     property int gen: 0          // bumped on every state change; a card built for an older state is dropped
     property var card: null      // {question, why, buttons: [{text, primary, fn}]}
-    property var logStatus: null
-    property real logFetchedAt: 0
-    property bool logReachable: true
-    property string error: ""
+    // the shared status (Api); null while the server is unreachable, so the card says so
+    readonly property var logStatus: Api.online ? Api.status : null
+    readonly property real logFetchedAt: Api.statusAt
+    readonly property bool logReachable: Api.online
+    property string error: ""   // a failed log action (start / pause); cleared by the next one that works
+    // a failed status fetch is Api's to remember: it clears itself as soon as the server answers again
+    readonly property string shownError: error || Api.statusError
     property bool flashing: false
 
     Settings {
@@ -166,16 +169,10 @@ ScrollView {
     // ---- log link --------------------------------------------------------------------
 
     function refreshLog(then) {
-        Api.request("GET", "/api/status", undefined, function (s) {
-            page.logStatus = s
-            page.logFetchedAt = Date.now()
-            page.logReachable = true
+        Api.refreshStatus(function (s, e) {
+            if (!page)
+                return   // the page went away while the shared request was out
             if (then) then(s)
-        }, function (e) {
-            page.logStatus = null
-            page.logReachable = false
-            page.error = e
-            if (then) then(null)
         })
     }
 
@@ -263,13 +260,8 @@ ScrollView {
         if (isAwaiting(st))   // the app closed while a card was pending: show it again
             showCard(st.phase === "awaiting_break" ? "work_end" : "break_end")
     }
-    Connections {
-        target: Api
-        function onChanged() { page.refreshLog() }
-        function onServerChanged() { page.refreshLog() }
-    }
+    // Api refreshes the shared status itself (after mutations, on a new server, every 30 s)
     Timer { interval: 1000; running: true; repeat: true; onTriggered: page.tick() }
-    Timer { interval: 60000; running: true; repeat: true; onTriggered: page.refreshLog() }
     Timer { id: flashTimer; interval: 2400; onTriggered: page.flashing = false }
 
     SoundEffect {
@@ -402,8 +394,8 @@ ScrollView {
         }
 
         NoticeBanner {
-            visible: page.error !== ""
-            text: qsTr("Error: %1").arg(page.error)
+            visible: page.shownError !== ""
+            text: qsTr("Error: %1").arg(page.shownError)
             level: "error"
         }
 

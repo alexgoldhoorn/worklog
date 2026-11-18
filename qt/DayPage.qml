@@ -9,36 +9,40 @@ ScrollView {
     id: page
     property string date: Api.today()
     property var day: null
-    property var chips: []
+    readonly property var chips: Api.status ? Api.status.chips.types.concat(Api.status.chips.break_types) : []
     property string error: ""
     readonly property bool isToday: date === Api.today()
+
+    property alias dialog: blockDialog   // for tests
+    property alias picker: datePicker
 
     contentWidth: availableWidth
 
     function reload() {
         Api.request("GET", "/api/day/" + date, undefined, function (d) {
-            if (d.date !== page.date)
+            if (d.date !== page?.date)
                 return  // a slower answer for a day we already left
             page.day = d
             page.error = ""
         }, e => page.error = e)
-        Api.request("GET", "/api/status", undefined,
-                    s => page.chips = s.chips.types.concat(s.chips.break_types), null)
     }
 
     onDateChanged: {
         day = null
         reload()
     }
-    Component.onCompleted: reload()
+    Component.onCompleted: if (visible) reload()
     onVisibleChanged: if (visible) reload()
     // ← / → step a day, as on the web (a focused text field keeps its arrow keys)
-    Shortcut { sequence: "Left"; enabled: page.visible; onActivated: page.date = Api.addDays(page.date, -1) }
-    Shortcut { sequence: "Right"; enabled: page.visible; onActivated: page.date = Api.addDays(page.date, 1) }
+    // not while a dialog or the calendar is open
+    readonly property bool shortcutsOn: visible && !blockDialog.visible && !datePicker.visible
+    Shortcut { sequence: "Left"; enabled: page.shortcutsOn; onActivated: page.date = Api.addDays(page.date, -1) }
+    Shortcut { sequence: "Right"; enabled: page.shortcutsOn; onActivated: page.date = Api.addDays(page.date, 1) }
     Connections {
         target: Api
-        function onChanged() { page.reload() }
-        function onServerChanged() { page.reload() }
+        // a hidden page reloads when its tab is shown
+        function onChanged() { if (page.visible) page.reload() }
+        function onServerChanged() { if (page.visible) page.reload() }
     }
 
     component Stat: ColumnLayout {
@@ -87,11 +91,19 @@ ScrollView {
                         text: "‹"
                         font.pixelSize: 24
                         implicitWidth: 48
+                        Accessible.name: qsTr("Previous day")
+                        Accessible.role: Accessible.Button
                         onClicked: page.date = Api.addDays(page.date, -1)
                     }
-                    ColumnLayout {
+                    ColumnLayout {   // tap the date to pick any day
+                        id: dateHeader
                         spacing: 0
                         Layout.fillWidth: true
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("Pick a date, now %1").arg(page.date)
+                        Accessible.onPressAction: datePicker.openFor(page.date)
+                        TapHandler { onTapped: datePicker.openFor(page.date) }
+                        HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Label {
                             text: Api.parseDate(page.date).toLocaleDateString(Qt.locale(), "dddd")
                             font.pixelSize: 12
@@ -111,6 +123,8 @@ ScrollView {
                         text: "›"
                         font.pixelSize: 24
                         implicitWidth: 48
+                        Accessible.name: qsTr("Next day")
+                        Accessible.role: Accessible.Button
                         onClicked: page.date = Api.addDays(page.date, 1)
                     }
                 }
@@ -157,6 +171,8 @@ ScrollView {
                 Material.elevation: 1
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Add block")
+                Accessible.name: qsTr("Add block")
+                Accessible.role: Accessible.Button
                 onClicked: blockDialog.newBlock(page.date)
             }
 
@@ -167,9 +183,8 @@ ScrollView {
                 onBillableToggled: (b, next) => Api.request("PUT", "/api/blocks/" + b.id, { billable: next }, null, e => page.error = e)
                 onFillGap: (start, end, asBreak) => {
                     const body = { date: page.date, start: start, end: end }
-                    const t = asBreak ? ("eat") : ""
-                    if (t)
-                        body.type = t
+                    if (asBreak)
+                        body.type = Api.defaultBreak()
                     Api.request("POST", "/api/blocks", body, null, e => page.error = e)
                 }
             }
@@ -246,6 +261,12 @@ ScrollView {
         blocks: page.day ? page.day.blocks : []
         onOffer: (text, action) => snackbar.show(text, action, qsTr("Move it too"))
         onDeleted: (text, undo) => snackbar.show(text, undo)
+    }
+
+    DatePicker {
+        id: datePicker
+        date: page.date
+        onPicked: iso => page.date = iso
     }
 
     Snackbar { id: snackbar }

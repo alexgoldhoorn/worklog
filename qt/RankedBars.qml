@@ -7,6 +7,11 @@ import QtQuick.Layouts
 ColumnLayout {
     id: root
     property var items: []
+    property string title
+
+    Accessible.role: Accessible.List
+    Accessible.name: title !== "" ? title : qsTr("Ranking")
+    Accessible.description: items.map(i => i.name + " " + i.text).join("; ")
     readonly property real maxV: Math.max(1e-9, ...items.map(i => i.value))
 
     spacing: 2

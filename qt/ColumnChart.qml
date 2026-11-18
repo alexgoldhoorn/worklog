@@ -11,6 +11,12 @@ Item {
     property bool line: false
     property bool signedAxis: false
     property color lineColor: Api.accent
+    property string title
+
+    // a text version of the chart for screen readers: each period with its total
+    Accessible.role: Accessible.Chart
+    Accessible.name: title !== "" ? title : qsTr("Chart")
+    Accessible.description: rows.map(r => r.label + " " + Api.fmtNum(r.parts.reduce((a, p) => a + p.v, 0), 1)).join(", ")
 
     implicitHeight: 180
     Layout.fillWidth: true

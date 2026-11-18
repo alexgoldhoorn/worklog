@@ -1,6 +1,8 @@
 <?xml version="1.0"?>
 <!-- Qt's template (android/templates/AndroidManifest.xml) with the app's name and icon filled in, and
-     cleartext HTTP allowed so a LAN server like http://192.168.0.10:8503 works next to the HTTPS one. -->
+     cleartext HTTP allowed so a LAN server like http://192.168.0.10:8503 works next to the HTTPS one.
+     Backups are off: the encrypted password is useless without its Keystore key (which is not restored),
+     and the widget's cached URL/user/status/queue are device state. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="net.goldhoorn.worklog"
     android:installLocation="auto"
@@ -14,6 +16,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <!-- Android 17 asks before an app may reach a LAN address (a server like http://192.168.0.10:8503);
+         requested at run time only for such a server (PomodoroAlarm.requestPermission) -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- the optional fingerprint/face unlock (Biometric.java) -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- %%INSERT_FEATURES -->
@@ -28,6 +33,9 @@
         android:label="Worklog"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/no_backup_rules"
         android:enableOnBackInvokedCallback="true">
         <activity
             android:name="org.qtproject.qt.android.bindings.QtActivity"

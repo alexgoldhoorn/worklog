@@ -45,12 +45,33 @@ public class PomodoroAlarm extends BroadcastReceiver {
         ((NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE)).cancel(ID);
     }
 
-    // Android 13+ asks the user once before an app may post notifications
+    // a server on the LAN (a private address, localhost, a single-label or .local name)
+    static boolean isLocalHost(String url) {
+        try {
+            String h = new java.net.URI(url).getHost();
+            if (h == null)
+                return false;
+            h = h.toLowerCase(java.util.Locale.ROOT);
+            return h.equals("localhost") || h.endsWith(".local") || h.indexOf('.') < 0
+                    || h.matches("10\\..*|192\\.168\\..*|169\\.254\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*");
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Asks once, in one dialog: Android 13+ before notifications may be posted, Android 17+ before a LAN
+    // server may be reached (only when the saved server is one; a public https server needs neither)
     public static void requestPermission(Activity activity) {
+        java.util.ArrayList<String> need = new java.util.ArrayList<>();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && activity.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
-            activity.runOnUiThread(() ->
-                    activity.requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, ID));
+            need.add(Manifest.permission.POST_NOTIFICATIONS);
+        String lan = "android.permission.ACCESS_LOCAL_NETWORK";
+        if (Build.VERSION.SDK_INT >= 37 && activity.checkSelfPermission(lan) != PackageManager.PERMISSION_GRANTED
+                && isLocalHost(WorklogClient.prefs(activity).getString("url", "")))
+            need.add(lan);
+        if (!need.isEmpty())
+            activity.runOnUiThread(() -> activity.requestPermissions(need.toArray(new String[0]), ID));
     }
 
     @Override

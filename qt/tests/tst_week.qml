@@ -66,4 +66,53 @@ TestCase {
         p.showOutlook()
         tryVerify(() => p.outlook !== "", 5000)
     }
+
+    function test_reject_offers_undo_that_restores_the_block() {
+        const p = load()
+        const day = p.weekData.days[1]
+        let made = null
+        Api.request("POST", "/api/balance/blocks",
+                    { date: day, start: "18:00", end: "19:00", kind: "family", title: "Qt undo block" },
+                    d => made = d, e => fail(e))
+        tryVerify(() => made !== null, 5000)
+        tryVerify(() => p.agenda[1].items.some(i => i.text === "Qt undo block"), 5000)
+        p.decide(made.id, "reject")
+        tryVerify(() => !p.agenda[1].items.some(i => i.text === "Qt undo block"), 5000)
+        tryVerify(() => p.snackbar.undoFn !== null, 5000)
+        p.snackbar.undoFn()
+        tryVerify(() => p.agenda[1].items.some(i => i.text === "Qt undo block"), 5000)
+        compare(p.agenda[1].items.find(i => i.text === "Qt undo block").block.state, "approved")
+    }
+
+    function test_block_form_validation() {
+        const p = load()
+        compare(p.blockProblem("2026-11-04", "700", "8.30", "x"), "")
+        compare(p.blockProblem("2026-11-04", "19h00", "20:00", " x "), "")
+        verify(p.blockProblem("2026-13-04", "07:00", "08:00", "x") !== "")
+        verify(p.blockProblem("2026-02-30", "07:00", "08:00", "x") !== "")
+        verify(p.blockProblem("2026-11-04", "7", "08:00", "x") !== "")
+        verify(p.blockProblem("2026-11-04", "09:00", "08:00", "x") !== "")
+        verify(p.blockProblem("2026-11-04", "09:00", "09:00", "x") !== "")
+        verify(p.blockProblem("2026-11-04", "09:00", "10:00", "  ") !== "")
+    }
+
+    function test_add_form_normalises_times_and_enables_save() {
+        const p = load()
+        p.adding = true
+        p.dateFieldItem.text = p.todayIso
+        p.fromFieldItem.text = "700"
+        p.toFieldItem.text = "7.30"
+        p.titleFieldItem.text = "Qt form block"
+        compare(p.formProblem, "")
+        p.addBlock()
+        tryVerify(() => p.agenda.some(d => d.items.some(i => i.text === "Qt form block" && i.time === "07:00–07:30")), 5000)
+    }
+
+    function test_server_words_are_translated_names() {
+        const p = load()
+        compare(p.stateName("proposed"), qsTr("proposed"))
+        compare(p.colourName("green"), qsTr("green"))
+        compare(p.colourName("odd"), "odd")
+        compare(p.colourName(undefined), "")
+    }
 }

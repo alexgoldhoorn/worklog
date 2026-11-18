@@ -9,7 +9,7 @@ ApplicationWindow {
     height: 820
     minimumWidth: 320
     minimumHeight: 480
-    visible: true
+    visible: false   // WindowState shows it once the saved geometry is applied (and not for --minimized)
     title: qsTr("Worklog")
 
     Material.theme: Material.System
@@ -34,6 +34,15 @@ ApplicationWindow {
         source: "TrayController.qml"
         onLoaded: window.trayCtl.window = window
     }
+    // Declared after the tray loader: its start-up logic needs to know whether a tray exists
+    WindowState {
+        appWindow: window
+        startHidden: Autostart.startMinimized && window.hidesToTray
+    }
+    IdleWatcher {   // Windows: "you were away, log it as a break?"
+        appWindow: window
+        tray: window.trayCtl
+    }
 
     // Android draws the app under the status and navigation bars: keep the tabs and pages clear of them
     readonly property var safe: SafeArea.margins
@@ -54,6 +63,7 @@ ApplicationWindow {
         TabButton { text: qsTr("Pomodoro"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Log"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Week"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
+        TabButton { text: qsTr("Find"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Reports"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Days"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
         TabButton { text: qsTr("Settings"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
@@ -69,6 +79,10 @@ ApplicationWindow {
         }
     }
     readonly property Flickable tabStrip: tabs.contentItem as Flickable
+    // tab positions, in the order of the TabBar and the StackLayout; update these when a tab is inserted
+    readonly property int tabPomodoro: 1
+    readonly property int tabLog: 2
+    readonly property int tabSettings: tabs.count - 1
 
     // scroll hints: a fade with an arrow on the side where more tabs are hidden
     component TabFade: Rectangle {
@@ -99,10 +113,10 @@ ApplicationWindow {
     }
 
     // no login yet (first start): the tabs past "Days" are off-screen on a phone, so go straight to Settings
-    Component.onCompleted: if (Api.username === "") tabs.currentIndex = tabs.count - 1
+    Component.onCompleted: if (Api.username === "") tabs.currentIndex = window.tabSettings
     Connections {
         target: Api
-        function onSettingsRequested() { tabs.currentIndex = tabs.count - 1 }
+        function onSettingsRequested() { tabs.currentIndex = window.tabSettings }
     }
 
     StackLayout {
@@ -117,17 +131,18 @@ ApplicationWindow {
         TimerPage {
             onOpenDay: date => {
                 logPage.date = date
-                tabs.currentIndex = 2
+                tabs.currentIndex = window.tabLog
             }
         }
         PomodoroPage {
             onAttention: {
-                tabs.currentIndex = 1
+                tabs.currentIndex = window.tabPomodoro
                 window.alert(0)   // flash the taskbar entry until the window is activated
             }
         }
         DayPage { id: logPage }
         WeekPage {}
+        FindPage {}
         ReportsPage {}
         ExpectedPage {}
         SettingsPage {}
@@ -148,6 +163,13 @@ ApplicationWindow {
             Biometric.authenticate(qsTr("Unlock Worklog"), qsTr("Opens the saved login"))
         }
         Component.onCompleted: if (Api.locked) ask()
+        Connections {
+            target: Api
+            function onLockedChanged() {   // locked again after the app was away
+                if (Api.locked)
+                    lockScreen.ask()
+            }
+        }
         Connections {
             target: Biometric
             function onResult(ok, error) {

@@ -28,16 +28,17 @@ public class TimerTile extends TileService {
         new Handler(Looper.getMainLooper()).post(this::draw);
     }
 
+    // The worker asks the server what runs now and decides start or stop from that, not from the cached
+    // status (which can be 10 minutes old: a timer started on the web would be split by a Start). The cache
+    // decides only when the server cannot be reached; the action is then queued.
     @Override
     public void onClick() {
-        JSONObject st = WorklogClient.cached(this);
-        String state = st == null ? "stopped" : st.optString("state", "stopped");
         Tile tile = getQsTile();
         if (tile != null) {   // show the change at once; the answer redraws it
             tile.setState(Tile.STATE_UNAVAILABLE);
             tile.updateTile();
         }
-        TimerWidget.run(this, "working".equals(state) ? TimerWidget.ACTION_STOP : TimerWidget.ACTION_START, this::redraw);
+        TimerWidget.run(this, TimerWidget.ACTION_TOGGLE, this::redraw);
     }
 
     private void draw() {
@@ -52,7 +53,10 @@ public class TimerTile extends TileService {
         tile.setState("working".equals(state) ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             String sub = TimerWidget.label(state);
-            if (!error.isEmpty())
+            String waiting = WorklogClient.queued(this) > 0 ? WorklogClient.queued(this) + " waiting" : "";
+            if (!waiting.isEmpty())
+                sub = waiting;
+            else if (!error.isEmpty())
                 sub = "Offline";
             else if (st != null && !st.isNull("project") && !"stopped".equals(state))
                 sub += " · " + st.optString("project");

@@ -9,6 +9,19 @@ Item {
     property var cells: []    // 7 × 24 hours
     property int days: 0
 
+    // the busiest weekday and hour, for screen readers
+    readonly property string peakText: {
+        let best = 0, bd = 0, bh = 0
+        for (let d = 0; d < cells.length; ++d)
+            for (let h = 0; h < 24; ++h)
+                if (cells[d][h] > best) { best = cells[d][h]; bd = d; bh = h }
+        return best > 0 ? qsTr("Busiest: %1 at %2:00, %3 h").arg(weekdays[bd]).arg(Api.pad(bh)).arg(Api.fmtNum(best, 1))
+                        : qsTr("No data")
+    }
+    Accessible.role: Accessible.Graphic
+    Accessible.name: qsTr("Work hours by weekday and hour")
+    Accessible.description: peakText
+
     readonly property var weekdays: [qsTr("Mon"), qsTr("Tue"), qsTr("Wed"), qsTr("Thu"), qsTr("Fri"), qsTr("Sat"), qsTr("Sun")]
     readonly property real maxV: cells.length ? Math.max(0, ...cells.map(r => Math.max(...r))) : 0
     readonly property bool hasHour: maxV > 0
