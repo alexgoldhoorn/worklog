@@ -617,21 +617,13 @@ function showUndo(text, onUndo) {
   undoTimer = setTimeout(hide, 8000);
 }
 
+// a new row starts where the day's last block ended (or now) and is left open, like the Qt app;
+// the server refuses it while another block is running, and showError reports that
 function addRow() {
-  const blocks = timer.day.blocks;
-  const lastEnd = blocks.map((b) => b.end).filter(Boolean).sort().pop();
-  const now = nowHHMM();
-  const start = lastEnd || now;
-  let end;
-  if (timer.date === todayIso() && now > start) {
-    end = now;
-  } else {
-    const [h, m] = start.split(":").map(Number);
-    const total = Math.min(h * 60 + m + 30, 23 * 60 + 59);
-    end = `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
-  }
+  const lastEnd = timer.day.blocks.map((b) => b.end).filter(Boolean).sort().pop();
+  const start = lastEnd || nowHHMM();
   // type and client defaults are applied by the API
-  mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end }));
+  mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end: null }));
 }
 
 function addProposal(p) {
