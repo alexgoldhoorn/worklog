@@ -22,7 +22,8 @@ It is sideloaded only and does no background work: it fetches when the glance or
 
 The server side is `?brief=1` on `GET /api/status` and `POST /api/start|pause|stop`
 (`worklog/web/api.py`, `_brief`). Its payload is
-`{state, date, since, elapsed_s, type, project, today_work_h, resume, breaks}`. `resume` is the latest
+`{state, date, since, elapsed_s, now, type, project, today_work_h, resume, breaks}`. `now` is the server's
+wall clock; the watch does not use it (the Android widget does, for actions it queues offline). `resume` is the latest
 work block today, else the latest of the previous 14 days: Start sends its type and project, so starting
 after a break (or the next morning) continues the same project. `breaks` lists the break types (eat first,
 then by recent use); Pause opens a second menu with them and sends the picked one.

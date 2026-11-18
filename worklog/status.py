@@ -84,6 +84,8 @@ def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     running = live_min(st, now, now.date())
     last = last_work_block(conn, now, bt)
     return {"state": st["state"], "date": st["date"], "since": st["since"], "elapsed_s": st["elapsed_s"],
+            # the server's wall clock, so a client can stamp `at` on actions it queues while offline
+            "now": now.replace(microsecond=0).isoformat(),
             "type": blk["type"] if blk else None, "project": blk["project"] if blk else None,
             "today_work_h": round(reports.day_totals(conn, today, bt)["work_h"] + running / 60, 2),
             "resume": {"type": last.type, "project": last.project} if last else None,

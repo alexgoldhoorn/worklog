@@ -278,6 +278,19 @@ def test_needs_review_lists_auto_closed_until_fixed(client, app):
     assert client.get("/api/status").json()["needs_review"] == []
 
 
+def test_saving_the_same_end_confirms_an_auto_closed_block(client, app):
+    """The clients' "Confirm": the automatic end was right, so it is saved unchanged."""
+    client.post("/api/start", json={})
+    app.state.clock = lambda: datetime(2026, 10, 21, 9, 0)
+    assert len(client.get("/api/status").json()["needs_review"]) == 1
+    b = client.get("/api/day/2026-10-20").json()["blocks"][0]
+    assert b["auto_closed"] is True
+    assert client.put(f"/api/blocks/{b['id']}", json={"end": b["end"]}).status_code == 200
+    assert client.get("/api/status").json()["needs_review"] == []
+    after = client.get("/api/day/2026-10-20").json()["blocks"][0]
+    assert after["end"] == b["end"] and after["auto_closed"] is False
+
+
 def test_holiday_cache_without_current_year_notice(tmp_path):
     import json
     hp = tmp_path / "h.json"
@@ -523,7 +536,7 @@ def test_brief_status_stopped(client):
     assert r.pop("breaks")[0] == "eat"
     assert r == {
         "state": "stopped", "date": "2026-10-20", "since": None, "elapsed_s": None,
-        "type": None, "project": None, "today_work_h": 0.0, "resume": None}
+        "now": "2026-10-20T09:00:00", "type": None, "project": None, "today_work_h": 0.0, "resume": None}
 
 
 def test_brief_actions_and_resume(client, app):
@@ -533,7 +546,8 @@ def test_brief_actions_and_resume(client, app):
     r = client.post("/api/pause?brief=1", json={}).json()
     assert (r["state"], r["type"], r["today_work_h"]) == ("break", "eat", 1.5)
     assert r["resume"] == {"type": "dev", "project": "acme"}
-    assert set(r) == {"state", "date", "since", "elapsed_s", "type", "project", "today_work_h", "resume", "breaks"}
+    assert r["now"] == "2026-10-20T10:30:00"
+    assert set(r) == {"state", "date", "since", "elapsed_s", "now", "type", "project", "today_work_h", "resume", "breaks"}
     assert client.post("/api/stop?brief=1", json={}).json()["state"] == "stopped"
 
 
@@ -721,7 +735,8 @@ def test_brief_resume_falls_back_to_previous_days(client, app):
     client.post("/api/blocks", json={"date": "2026-10-19", "start": "09:00", "end": "09:30", "type": "eat"})
     r = client.get("/api/status?brief=1").json()
     assert r["resume"] == {"type": "dev", "project": "acme"}
-    assert set(r) == {"state", "date", "since", "elapsed_s", "type", "project", "today_work_h", "resume", "breaks"}
+    assert r["now"] == "2026-10-20T09:00:00"
+    assert set(r) == {"state", "date", "since", "elapsed_s", "now", "type", "project", "today_work_h", "resume", "breaks"}
     assert r["breaks"][0] == "eat" and r["today_work_h"] == 0.0
 
 
