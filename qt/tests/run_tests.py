@@ -30,7 +30,8 @@ def main() -> int:
     if not args:
         print(__doc__)
         return 2
-    build, extra = Path(args[0]), (args[args.index("--") + 1:] if "--" in args else [])
+    # resolved: the test exe is started from its own directory, where a relative path would no longer fit
+    build, extra = Path(args[0]).resolve(), (args[args.index("--") + 1:] if "--" in args else [])
     exe = next((p for p in (build / "tests" / "tst_worklog.exe", build / "tests" / "tst_worklog",
                             build / "tst_worklog.exe", build / "tst_worklog") if p.exists()), None)
     if exe is None:
