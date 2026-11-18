@@ -383,7 +383,11 @@ function blockRow(b) {
     cell("project", b.project, "ell"), cell("client", b.client, b.client ? "" : "muted"),
     el("td", { class: `bill ${bill[0]}`, "data-field": "billable", text: bill[1], title: "Billable: tap to cycle", onclick: () => cycleBillable(b) }),
     el("td", b.end ? { class: "num dur", text: dur } : { class: "num dur", text: dur, "data-open": `${b.date} ${b.start} ${b.id}` }),
-    el("td", { class: "num" }, el("button", { type: "button", class: "ghost x", text: "×", "aria-label": "Delete row", onclick: () => deleteBlock(b) })));
+    el("td", { class: "num" },
+      // closed by the server because it was left running: ✓ saves the end as it is, which clears the review notice
+      b.auto_closed && b.end ? el("button", { type: "button", class: "ghost x", text: "✓", title: `Closed automatically at ${b.end}: confirm this end time (or edit it)`,
+        "aria-label": "Confirm the automatic end time", onclick: () => mutate(() => api("PUT", `/api/blocks/${b.id}`, { end: b.end })) }) : null,
+      el("button", { type: "button", class: "ghost x", text: "×", "aria-label": "Delete row", onclick: () => deleteBlock(b) })));
   return tr;
 }
 
@@ -539,7 +543,9 @@ function editBlockCell(td, block) {
     if (cancelled) return;
     let v = input.value.trim();
     if (isTime && v) v = normTime(v);
-    if (v === original) { renderBlocks(); return; }
+    // an auto-closed block stays "to review" until its end is saved again: Enter on the unchanged end confirms it
+    const confirms = field === "end" && block.auto_closed && v !== "";
+    if (v === original && !confirms) { renderBlocks(); return; }
     mutate(async () => {
       await api("PUT", `/api/blocks/${block.id}`, { [field]: v === "" && field === "end" ? null : v });
       if (isTime) timer.followup = neighbourFollowup(block, field, original, v);
