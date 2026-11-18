@@ -26,7 +26,9 @@ TestCase {
     }
 
     function load(comp) {
-        failOnWarning(/.*/)
+        // QML warnings name their file and line ("qrc:/…/Page.qml:60: TypeError…"). Qt Multimedia's own
+        // complaints on a machine without an audio device (CI) are not the page's fault.
+        failOnWarning(/\.qml:\d+/)
         const p = createTemporaryObject(comp, tc, { width: tc.width, height: tc.height })
         verify(p, "page did not instantiate")
         wait(800)   // the page's first requests
