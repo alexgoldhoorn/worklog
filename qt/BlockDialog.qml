@@ -84,23 +84,14 @@ Dialog {
         open()
     }
 
-    // a new row starts where the day's last block ended and runs to now (or for half an hour)
+    // a new row starts where the day's last block ended (or now) and is left open: empty end = running
     function newBlock(d) {
         block = null
         date = d
         const lastEnd = blocks.map(b => b.end).filter(e => !!e).sort().pop()
-        const now = Api.nowHHMM()
-        const start = lastEnd || now
-        let end = ""
-        if (d === Api.today() && now > start) {
-            end = now
-        } else {
-            const p = start.split(":").map(Number)
-            const t = Math.min(p[0] * 60 + p[1] + 30, 23 * 60 + 59)
-            end = Api.pad(Math.floor(t / 60)) + ":" + Api.pad(t % 60)
-        }
+        const start = lastEnd || Api.nowHHMM()
         startField.text = start
-        endField.text = end
+        endField.text = ""
         typeField.editText = ""
         projectField.text = ""
         clientField.text = ""
@@ -145,6 +136,12 @@ Dialog {
         }
     }
 
+    // Enter/Return in any field saves (when the form is valid); Esc still cancels (closePolicy)
+    function saveIfValid() {
+        if (valid)
+            accept()
+    }
+
     function fail(msg) {
         error = msg
         open()  // keep the user's input on screen
@@ -176,6 +173,10 @@ Dialog {
         anchors.left: parent.left
         anchors.right: parent.right
         spacing: 8
+        // TextFields ignore Return after emitting editingFinished (which normalises the time),
+        // so the key reaches here; an open ComboBox popup takes it first
+        Keys.onReturnPressed: dlg.saveIfValid()
+        Keys.onEnterPressed: dlg.saveIfValid()
 
         Caption {
             text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")

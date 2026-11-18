@@ -20,15 +20,21 @@ ColumnLayout {
     }
 
     ListView {
+        id: list
         orientation: ListView.Horizontal
         spacing: 6
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         model: root.model
         Layout.fillWidth: true
-        implicitHeight: 34
-        // on a touch screen the bar would sit on top of the chips; the cut-off last chip shows it scrolls
-        ScrollBar.horizontal: ScrollBar { policy: Qt.platform.os === "android" ? ScrollBar.AlwaysOff : ScrollBar.AsNeeded }
+        // the bar sits along the bottom edge: grow by its height so it runs below the chips, not over them
+        implicitHeight: 34 + (bar.visible ? bar.height + 2 : 0)
+        // not on touch screens: the cut-off last chip shows it scrolls
+        ScrollBar.horizontal: ScrollBar {
+            id: bar
+            visible: Qt.platform.os !== "android" && list.contentWidth > list.width
+            policy: ScrollBar.AlwaysOn
+        }
 
         delegate: AbstractButton {
             id: chip
