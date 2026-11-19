@@ -19,6 +19,7 @@ TestCase {
     Component { id: pomodoroPage; PomodoroPage {} }
     Component { id: settingsPage; SettingsPage {} }
     Component { id: findPage; FindPage {} }
+    Component { id: todayPage; TodayPage {} }
 
     function initTestCase() {
         Api.serverUrl = testServer
@@ -46,4 +47,28 @@ TestCase {
     function test_pomodoro_page() { load(pomodoroPage) }
     function test_settings_page() { load(settingsPage) }
     function test_find_page() { compare(load(findPage).error, "") }
+
+    // the Today screen is the Timer on today and the Log on any other day
+    function test_today_screen_switches_between_timer_and_log() {
+        const p = load(todayPage)
+        compare(p.viewDate, "")
+        verify(p.timer.visible, "the Timer shows on today")
+        verify(!p.log.visible, "the Log is hidden on today")
+        verify(p.heading.indexOf("Today") === 0)
+        const yesterday = Api.addDays(p.today, -1)
+        p.step(-1)
+        compare(p.date, yesterday)
+        compare(p.log.date, yesterday)
+        verify(p.log.visible && !p.timer.visible)
+        tryVerify(() => p.log.day !== null && p.log.day.date === yesterday, 3000)
+        p.log.date = Api.addDays(yesterday, -1)   // the Log's own picker or arrow keys move the screen along
+        compare(p.viewDate, Api.addDays(yesterday, -1))
+        p.log.date = p.today                      // its "Back to today"
+        verify(p.isToday && p.timer.visible)
+        p.show(yesterday)
+        p.show("")
+        verify(p.isToday)
+        p.timer.openDay(yesterday)                // a tap on a notice or a week bar
+        compare(p.viewDate, yesterday)
+    }
 }

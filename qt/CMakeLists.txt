@@ -34,6 +34,7 @@ set_source_files_properties(Api.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 set(WL_QML_FILES
     Main.qml
     Api.qml
+    TodayPage.qml
     TimerPage.qml
     DayPage.qml
     WeekPage.qml

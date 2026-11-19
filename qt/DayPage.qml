@@ -13,6 +13,9 @@ ScrollView {
     property string error: ""
     readonly property bool isToday: date === Api.today()
 
+    property bool showArrows: true   // off inside the Today screen: its header steps the day
+    property bool navEnabled: true   // off while the Today screen's own calendar is open
+
     property alias dialog: blockDialog   // for tests
     property alias picker: datePicker
 
@@ -35,7 +38,7 @@ ScrollView {
     onVisibleChanged: if (visible) reload()
     // ← / → step a day, as on the web (a focused text field keeps its arrow keys)
     // not while a dialog or the calendar is open
-    readonly property bool shortcutsOn: visible && !blockDialog.visible && !datePicker.visible
+    readonly property bool shortcutsOn: visible && navEnabled && !blockDialog.visible && !datePicker.visible
     Shortcut { sequence: "Left"; enabled: page.shortcutsOn; onActivated: page.date = Api.addDays(page.date, -1) }
     Shortcut { sequence: "Right"; enabled: page.shortcutsOn; onActivated: page.date = Api.addDays(page.date, 1) }
     Connections {
@@ -88,6 +91,7 @@ ScrollView {
                 RowLayout {
                     Layout.fillWidth: true
                     ToolButton {
+                        visible: page.showArrows
                         text: "‹"
                         font.pixelSize: 24
                         implicitWidth: 48
@@ -120,6 +124,7 @@ ScrollView {
                         }
                     }
                     ToolButton {
+                        visible: page.showArrows
                         text: "›"
                         font.pixelSize: 24
                         implicitWidth: 48

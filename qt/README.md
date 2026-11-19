@@ -8,18 +8,19 @@ The web UI (`worklog/web/static/`) is the reference for behaviour. The app mirro
 
 ## What it does
 
-| Tab | What you get |
+| Screen | What you get |
 |---|---|
-| **Timer** | Start, Switch, Pause and Stop; type, project and break chips; today, week and balance tiles; today's blocks with gaps to fill |
-| **Pomodoro** | A countdown per device that offers to pause or resume the log at each interval and never acts on its own |
-| **Log** | Any day's blocks and totals; add, edit, delete (with Undo) and move blocks; calendar proposals. Tap the date for a calendar |
+| **Today** | Start, Switch, Pause and Stop; type, project and break chips; today, week and balance tiles; the work calendar's meetings to add; today's blocks with gaps to fill. The arrows and the date in the header go to any other day: its blocks and totals, with add, edit, delete (with Undo) and move |
 | **Week** | The planner's week: meetings, personal events, proposed and approved blocks, the capacity gate, goals |
-| **Find** | "Where does this fit": pick a length, travel time and target, get the best slot per day, put it in |
-| **Reports** | Summary per week, month, quarter or year; charts; weekly stats; the monthly invoice; CSV/XLSX export |
-| **Days** | Expected and sick hours per day |
-| **Settings** | Server and login, week length, rate, and the options below |
+| **Focus** | A Pomodoro countdown per device that offers to pause or resume the log at each interval and never acts on its own |
+| More › **Reports** | Summary per week, month, quarter or year; charts; weekly stats; the monthly invoice; CSV/XLSX export |
+| More › **Expected hours** | Expected and sick hours per day |
+| More › **Find a free date** | "Where does this fit": pick a length, travel time and target, get the best slot per day, put it in |
+| More › **Settings** | Server and login, week length, rate, and the options below |
 
-Week and Find need the server's planner (`BALANCE_DB`, `BALANCE_STATE_DIR`, `DAY_RULES`; see
+Today, Week and Focus are the buttons at the bottom; the rest is under the ⋮ menu in the header.
+
+Week and Find a free date need the server's planner (`BALANCE_DB`, `BALANCE_STATE_DIR`, `DAY_RULES`; see
 [docs/host-integration.md](../docs/host-integration.md)). Without it they show the server's message.
 
 **Offline.** Start, Pause and Stop tapped while the server cannot be reached are kept, in order, with
@@ -32,8 +33,9 @@ actions imply and marks it as waiting. Edits to blocks are not queued.
   unreachable; its menu starts, pauses (per break type) and stops.
 - A global hotkey (default Ctrl+Alt+W) toggles between work and break. A balloon says what happened.
 - "Start with Windows" starts it minimised to the tray.
-- After 10 minutes (configurable) without keyboard or mouse input during a work block, it asks on
-  your return whether that time was a break.
+- After 60 minutes (configurable) without keyboard or mouse input during a work block, it asks on
+  your return whether that time was a break. A tray message announces the question; the window only
+  comes to the front if you switch that on.
 - Starting it a second time brings the running copy to the front.
 - The password is kept in the Windows Credential Manager.
 

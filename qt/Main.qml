@@ -21,6 +21,12 @@ ApplicationWindow {
     readonly property var trayCtl: trayLoader.item
     readonly property bool hidesToTray: Api.trayCapable && Api.trayKeep && !!trayCtl && trayCtl.available
     onClosing: close => {
+        // Android's back key: from a screen of the More menu it leads back to Today first
+        if (Qt.platform.os === "android" && window.inMore) {
+            close.accepted = false
+            window.current = window.navToday
+            return
+        }
         if (hidesToTray) {
             close.accepted = false
             window.hide()
@@ -47,76 +53,174 @@ ApplicationWindow {
     // Android draws the app under the status and navigation bars: keep the tabs and pages clear of them
     readonly property var safe: SafeArea.margins
 
-    header: Item {
-        implicitHeight: tabs.implicitHeight
+    // ---- navigation -----------------------------------------------------------
+    // Positions in the StackLayout below. The first three have a button at the bottom; the rest are
+    // reached through the header's More menu and get a back arrow. Update these when a page is inserted.
+    readonly property int navToday: 0
+    readonly property int navWeek: 1
+    readonly property int navFocus: 2
+    readonly property int navReports: 3
+    readonly property int navExpected: 4
+    readonly property int navFind: 5
+    readonly property int navSettings: 6
+    property int current: navToday
+    readonly property bool inMore: current > navFocus
+    readonly property var titles: [qsTr("Today"), qsTr("Week"), qsTr("Focus"), qsTr("Reports"),
+                                   qsTr("Expected hours"), qsTr("Find a free date"), qsTr("Settings")]
 
-    TabBar {
-        id: tabs
-        anchors.fill: parent
-        Material.background: Api.card
-        topPadding: window.safe.top
-        leftPadding: window.safe.left
-        rightPadding: window.safe.right
-        Accessible.role: Accessible.PageTabList
-        Accessible.name: qsTr("Sections")
-        TabButton { text: qsTr("Timer"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Pomodoro"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Log"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Week"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Find"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Reports"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Days"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-        TabButton { text: qsTr("Settings"); width: implicitWidth; Accessible.name: text; Accessible.role: Accessible.PageTab }
-    }
-        TabFade {
-            atRight: true
-            shown: window.tabStrip !== null
-                   && window.tabStrip.contentX + window.tabStrip.width < window.tabStrip.contentWidth - 2
-        }
-        TabFade {
-            atRight: false
-            shown: window.tabStrip !== null && window.tabStrip.contentX > 2
-        }
-    }
-    readonly property Flickable tabStrip: tabs.contentItem as Flickable
-    // tab positions, in the order of the TabBar and the StackLayout; update these when a tab is inserted
-    readonly property int tabPomodoro: 1
-    readonly property int tabLog: 2
-    readonly property int tabSettings: tabs.count - 1
+    header: Rectangle {
+        color: Api.card
+        implicitHeight: bar.implicitHeight + window.safe.top
 
-    // scroll hints: a fade with an arrow on the side where more tabs are hidden
-    component TabFade: Rectangle {
-        id: fade
-        property bool atRight: true
-        property bool shown: false
-        width: 36
-        visible: shown
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.right: atRight ? parent.right : undefined
-        anchors.left: atRight ? undefined : parent.left
-        gradient: Gradient {
-            orientation: Gradient.Horizontal
-            GradientStop { position: 0; color: fade.atRight ? Qt.alpha(Api.card, 0) : Api.card }
-            GradientStop { position: 1; color: fade.atRight ? Api.card : Qt.alpha(Api.card, 0) }
+        RowLayout {
+            id: bar
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: window.safe.left + 4
+            anchors.rightMargin: window.safe.right + 4
+            spacing: 0
+
+            ToolButton {
+                visible: window.inMore
+                text: "‹"
+                font.pixelSize: 24
+                implicitWidth: 48
+                Accessible.name: qsTr("Back to Today")
+                Accessible.role: Accessible.Button
+                onClicked: window.current = window.navToday
+            }
+            // the Today screen: step a day, or tap the date for the calendar
+            ToolButton {
+                visible: window.current === window.navToday
+                text: "‹"
+                font.pixelSize: 24
+                implicitWidth: 48
+                Accessible.name: qsTr("Previous day")
+                Accessible.role: Accessible.Button
+                onClicked: todayScreen.step(-1)
+            }
+            ToolButton {
+                visible: window.current === window.navToday
+                text: todayScreen.heading
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                font.capitalization: Font.MixedCase
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Pick a date, now %1").arg(todayScreen.date)
+                Accessible.role: Accessible.Button
+                onClicked: todayScreen.pickDate()
+            }
+            ToolButton {
+                visible: window.current === window.navToday
+                text: "›"
+                font.pixelSize: 24
+                implicitWidth: 48
+                Accessible.name: qsTr("Next day")
+                Accessible.role: Accessible.Button
+                onClicked: todayScreen.step(1)
+            }
+            Label {
+                visible: window.current !== window.navToday
+                text: window.titles[window.current] || ""
+                font.pixelSize: 16
+                font.weight: Font.DemiBold
+                color: Api.fg
+                elide: Text.ElideRight
+                leftPadding: window.inMore ? 4 : 12
+                Layout.fillWidth: true
+            }
+            ToolButton {
+                text: "⋮"
+                font.pixelSize: 22
+                implicitWidth: 48
+                Accessible.name: qsTr("More screens")
+                Accessible.role: Accessible.ButtonMenu
+                onClicked: moreMenu.open()
+                Menu {
+                    id: moreMenu
+                    y: parent.height
+                    MenuItem { text: window.titles[window.navReports]; onTriggered: window.current = window.navReports }
+                    MenuItem { text: window.titles[window.navExpected]; onTriggered: window.current = window.navExpected }
+                    MenuItem { text: window.titles[window.navFind]; onTriggered: window.current = window.navFind }
+                    MenuSeparator {}
+                    MenuItem { text: window.titles[window.navSettings]; onTriggered: window.current = window.navSettings }
+                }
+            }
         }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.right: fade.atRight ? parent.right : undefined
-            anchors.left: fade.atRight ? undefined : parent.left
-            anchors.margins: 4
-            text: fade.atRight ? "›" : "‹"
-            color: Api.muted
-            font.pixelSize: 22
-            font.bold: true
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Api.line }
+    }
+
+    footer: Rectangle {
+        color: Api.card
+        implicitHeight: navRow.implicitHeight + window.safe.bottom
+
+        Rectangle { width: parent.width; height: 1; color: Api.line }
+        RowLayout {
+            id: navRow
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: window.safe.left
+            anchors.rightMargin: window.safe.right
+            spacing: 0
+            NavButton {
+                text: window.titles[window.navToday]
+                active: window.current === window.navToday
+                onClicked: {
+                    todayScreen.show("")   // a second tap comes back from another day
+                    window.current = window.navToday
+                }
+            }
+            NavButton {
+                text: window.titles[window.navWeek]
+                active: window.current === window.navWeek
+                onClicked: window.current = window.navWeek
+            }
+            NavButton {
+                text: window.titles[window.navFocus]
+                active: window.current === window.navFocus
+                onClicked: window.current = window.navFocus
+            }
         }
     }
 
-    // no login yet (first start): the tabs past "Days" are off-screen on a phone, so go straight to Settings
-    Component.onCompleted: if (Api.username === "") tabs.currentIndex = window.tabSettings
+    // one of the bottom buttons: a label under a marker that shows where you are
+    component NavButton: AbstractButton {
+        id: nav
+        property bool active: false
+        implicitHeight: 52
+        Layout.fillWidth: true
+        Layout.preferredWidth: 1
+        Accessible.name: text
+        Accessible.role: Accessible.PageTab
+        contentItem: Label {
+            text: nav.text
+            color: nav.active ? Api.accent : Api.muted
+            font.pixelSize: 14
+            font.weight: nav.active ? Font.Bold : Font.Normal
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+        }
+        background: Rectangle {
+            color: nav.down ? Qt.alpha(Api.accent, 0.14) : nav.hovered ? Qt.alpha(Api.accent, 0.06) : "transparent"
+            Rectangle {
+                visible: nav.active
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width * 0.4
+                height: 3
+                radius: 1.5
+                color: Api.accent
+            }
+        }
+    }
+
+    // no login yet (first start): go straight to Settings
+    Component.onCompleted: if (Api.username === "") window.current = window.navSettings
     Connections {
         target: Api
-        function onSettingsRequested() { tabs.currentIndex = window.tabSettings }
+        function onSettingsRequested() { window.current = window.navSettings }
     }
 
     StackLayout {
@@ -124,27 +228,20 @@ ApplicationWindow {
         anchors.fill: parent
         anchors.leftMargin: window.safe.left
         anchors.rightMargin: window.safe.right
-        anchors.bottomMargin: window.safe.bottom
-        currentIndex: tabs.currentIndex
+        currentIndex: window.current
         // a hidden page's text field keeps the focus and would swallow the next page's shortcuts
         onCurrentIndexChanged: stack.forceActiveFocus()
-        TimerPage {
-            onOpenDay: date => {
-                logPage.date = date
-                tabs.currentIndex = window.tabLog
-            }
-        }
+        TodayPage { id: todayScreen }
+        WeekPage {}
         PomodoroPage {
             onAttention: {
-                tabs.currentIndex = window.tabPomodoro
+                window.current = window.navFocus
                 window.alert(0)   // flash the taskbar entry until the window is activated
             }
         }
-        DayPage { id: logPage }
-        WeekPage {}
-        FindPage {}
         ReportsPage {}
         ExpectedPage {}
+        FindPage {}
         SettingsPage {}
     }
 
