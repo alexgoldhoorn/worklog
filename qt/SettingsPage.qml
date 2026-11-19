@@ -73,10 +73,16 @@ ScrollView {
                 page.hoursMessage = ""
             if (page.rateMessage === qsTr("Saved"))
                 page.rateMessage = ""
+            if (page.defaultsMessage === qsTr("Saved"))
+                page.defaultsMessage = ""
         }
     }
 
     contentWidth: availableWidth
+
+    // the server's defaults for Start and Pause (a server from before them does not send any)
+    readonly property bool hasDefaults: !!settings && settings.default_type !== undefined
+    property string defaultsMessage: ""
 
     function reload() {
         connected = null
@@ -89,6 +95,13 @@ ScrollView {
             weekField.text = String(s.week_basis_h)
             rateField.text = s.rate === null ? "" : String(s.rate)
             unitBox.currentIndex = Math.max(0, unitBox.model.indexOf(s.rate_unit))
+            if (page.hasDefaults) {
+                typeField.text = s.default_type
+                clientField.text = s.default_client || ""
+                breakBox.currentIndex = s.break_types.indexOf(s.default_break_type)
+                closeField.text = s.auto_close_time
+                autoAddSwitch.checked = s.calendar_auto_add
+            }
         }, function (e) {
             page.connected = false
             page.serverMessage = e
@@ -308,6 +321,21 @@ ScrollView {
                     Accessible.name: qsTr("Minutes away before asking")
                 }
             }
+            Switch {
+                text: qsTr("Bring the window to the front to ask")
+                visible: IdleMonitor.available
+                enabled: Api.idleOn
+                checked: Api.idleRaise
+                onToggled: Api.idleRaise = checked
+            }
+            Caption {
+                visible: IdleMonitor.available
+                text: qsTr("Off: a tray message tells you, and the question waits in the window")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
         }
 
         Card {
@@ -367,6 +395,74 @@ ScrollView {
                       .filter(x => x).join(" · ")
                 visible: text !== ""
                 opacity: 0.7
+            }
+        }
+
+        Card {
+            title: qsTr("Defaults")
+            visible: page.hasDefaults
+            enabled: page.connected === true
+
+            Caption { text: qsTr("Work type when none is picked") }
+            TextField {
+                id: typeField
+                maximumLength: 40
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Default work type")
+                onTextEdited: page.defaultsMessage = ""
+            }
+            Caption { text: qsTr("Client (empty = none)") }
+            TextField {
+                id: clientField
+                maximumLength: 100
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Default client")
+                onTextEdited: page.defaultsMessage = ""
+            }
+            Caption { text: qsTr("Break type for Pause") }
+            ComboBox {
+                id: breakBox
+                model: page.hasDefaults ? page.settings.break_types : []
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Default break type")
+            }
+            Caption { text: qsTr("Close a forgotten block at (HH:MM)") }
+            TextField {
+                id: closeField
+                inputMethodHints: Qt.ImhTime
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Auto-close time")
+                onTextEdited: page.defaultsMessage = ""
+            }
+            Switch {
+                id: autoAddSwitch
+                text: qsTr("Add finished meetings on their own")
+                Layout.fillWidth: true
+            }
+            Caption {
+                text: qsTr("A work-calendar meeting that is over and falls inside logged time becomes a meeting block")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Label {
+                    text: page.defaultsMessage
+                    opacity: 0.7
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Button {
+                    text: qsTr("Save")
+                    enabled: typeField.text.trim() !== "" && breakBox.currentIndex >= 0
+                             && /^\d{1,2}[:.h]?\d{2}$/.test(closeField.text.trim())
+                    onClicked: page.save({ default_type: typeField.text.trim(), default_client: clientField.text.trim() || null,
+                                           default_break_type: breakBox.currentText,
+                                           auto_close_time: Api.normTime(closeField.text),
+                                           calendar_auto_add: autoAddSwitch.checked }, m => page.defaultsMessage = m)
+                }
             }
         }
 

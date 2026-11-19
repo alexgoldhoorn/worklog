@@ -16,16 +16,20 @@ QtObject {
         property alias hotkeyOn: api.hotkeyOn
         property alias hotkeySeq: api.hotkeySeq
         property alias idleOn: api.idleOn
-        property alias idleMinutes: api.idleMinutes
+        property alias idleAfterMinutes: api.idleMinutes   // renamed from idleMinutes: the old default of 10 was saved everywhere
+        property alias idleRaise: api.idleRaise
         property alias requireUnlock: api.requireUnlock
     }
     // Windows desktop: keep running in the tray when the window closes, and the global start/pause hotkey
     property bool trayKeep: true
     property bool hotkeyOn: true
     property string hotkeySeq: "Ctrl+Alt+W"
-    // Windows: ask whether to log the time as a break when you come back after being away this long
+    // Windows: ask whether to log the time as a break when you come back after being away this long.
+    // Long on purpose: reading, a call or a meeting without touching the keyboard is still work.
     property bool idleOn: true
-    property int idleMinutes: 10
+    property int idleMinutes: 60
+    // false: the question waits in the window and a tray balloon announces it; true: the window comes to the front
+    property bool idleRaise: false
     property bool hotkeyCapturing: false   // the Settings field is waiting for a key: release the hotkey so it can be pressed
     property string hotkeyError: ""   // set by TrayController when the hotkey could not be registered
     readonly property bool trayCapable: Qt.platform.os === "windows"

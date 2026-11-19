@@ -80,6 +80,20 @@ TestCase {
         verify(isNaN(p.weekHours))
     }
 
+    function test_defaults_load_and_save() {
+        const p = load()
+        tryVerify(() => p.hasDefaults, 5000)
+        const before = p.settings.default_type
+        verify(p.settings.break_types.indexOf(p.settings.default_break_type) >= 0)
+        p.save({ default_type: "prep", calendar_auto_add: true }, m => p.defaultsMessage = m)
+        tryVerify(() => p.settings.default_type === "prep" && p.settings.calendar_auto_add === true, 5000)
+        compare(p.defaultsMessage, qsTr("Saved"))
+        p.save({ default_type: "eat" }, m => p.defaultsMessage = m)   // a break type: refused
+        tryVerify(() => p.defaultsMessage.indexOf("Error") === 0, 5000)
+        p.save({ default_type: before, calendar_auto_add: false }, m => p.defaultsMessage = m)
+        tryVerify(() => p.settings.default_type === before && p.settings.calendar_auto_add === false, 5000)
+    }
+
     function test_saved_message_goes_away() {
         const p = load()
         p.flash(m => p.hoursMessage = m)

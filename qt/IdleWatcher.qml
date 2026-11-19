@@ -105,9 +105,15 @@ Item {
         onTriggered: root.poll()
     }
 
+    // Without Api.idleRaise the question does not take the focus: it waits in the window and the tray
+    // balloon says so. With no tray to say it, the window has to come forward.
+    function raises(wanted, trayAvailable) {
+        return wanted || !trayAvailable
+    }
     function announce(span) {
         const win = root.appWindow
-        if (win) {
+        const quiet = !raises(Api.idleRaise, !!root.tray && root.tray.available)
+        if (win && !quiet) {
             if (win.visibility === Window.Minimized)
                 win.showNormal()
             else
@@ -116,7 +122,8 @@ Item {
             win.requestActivate()
         }
         if (root.tray)
-            root.tray.notify(qsTr("Worklog"), root.question(span), false)
+            root.tray.notify(qsTr("Worklog"), quiet ? qsTr("%1 Open Worklog to answer.").arg(root.question(span))
+                                                    : root.question(span), false)
         dialog.open()
     }
 

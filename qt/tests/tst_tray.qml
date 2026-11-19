@@ -73,6 +73,12 @@ TestCase {
         verify(w.shouldAsk(true, "working", 600, 0, 10, false))     // exactly the threshold
     }
 
+    function test_idle_question_only_takes_focus_when_asked_or_without_tray() {
+        const w = createTemporaryObject(idle, tc)
+        verify(!w.raises(false, true))   // the default: a tray message, the window stays where it is
+        verify(w.raises(true, true))
+        verify(w.raises(false, false))   // nothing else could tell the user
+    }
     function test_idle_sleep_gap() {
         const w = createTemporaryObject(idle, tc)
         compare(w.effectivePrevIdle(5, 10), 5)         // a normal poll
