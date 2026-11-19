@@ -19,10 +19,14 @@
 </div>
 <section class="card week" id="week"></section>
 <div class="actions">
-  <button id="propose" type="button">Propose blocks for this week</button>
-  <button id="outlook" type="button">Outlook list</button>
-  <button id="add" type="button">Add a block</button>
+  <button id="propose" type="button" title="Suggests runs and hard stops for the rest of this week. Nothing counts until you approve it.">Propose blocks</button>
+  <button id="add" type="button" title="Protect a time yourself: family, a run, a stop. It is approved at once.">Add a block</button>
+  <button id="outlook" type="button" title="Your approved blocks as text, to paste into Outlook as busy time.">Outlook list</button>
+  <a class="btn" id="add-cal" href="/find?mode=add" title="A meeting or appointment at a time you know, or find a free time for it.">Add to calendar</a>
 </div>
+<p class="hint actions-hint"><b>Propose blocks</b> suggests runs and hard stops for the rest of this week; nothing counts until you approve it.
+  <b>Add a block</b> protects a time yourself. <b>Outlook list</b> gives your approved blocks as text to paste into Outlook as busy time.
+  <b>Add to calendar</b> is for a meeting or appointment.</p>
 <pre class="card paste" id="paste" hidden></pre>
 <form class="card addform" id="addform" hidden>
   <h3>Add a block</h3>

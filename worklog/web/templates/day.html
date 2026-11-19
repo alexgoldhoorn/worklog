@@ -12,7 +12,8 @@
       <button id="day-today" class="small ghost" type="button">Today</button>
       <button id="day-next" class="small ghost arrow" type="button" aria-label="Next day">›</button>
       <button id="day-refresh" class="small ghost" type="button" title="Ask the host sync to refresh the snapshots">Refresh</button>
-      <a id="day-find" class="small btn" href="/find">Find a date</a>
+      <a id="day-add" class="small btn" href="/find?mode=add" title="A meeting or appointment at a time you know">Add</a>
+      <a id="day-find" class="small btn" href="/find" title="Let it look for a free time">Find a date</a>
     </div>
   </div>
   <div class="capacity" id="capacity" hidden></div>
@@ -76,4 +77,7 @@
     <a href="/week">Week view</a>
   </div>
 </div>
+<dialog id="find-dialog" class="sheet">
+{% set dialog = true %}{% include "_find.html" %}
+</dialog>
 {% endblock %}

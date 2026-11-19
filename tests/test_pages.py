@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 
@@ -5,7 +7,9 @@ import pytest
     ("/timer", ["btn-start", "btn-pause", "btn-stop", "blocks", "proposals", "totals",
            "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint",
            "defaults", "def-type", "def-client", "def-break", "def-close", "def-autoadd", "def-save"]),
-    ("/", ["day-chips", "day-start", "timeline", "top3"]),
+    ("/", ["day-chips", "day-start", "timeline", "top3", "day-add", "day-find", "find-dialog", "find-form", "find-close", "f-date"]),
+    ("/find", ["find-form", "f-what", "f-date", "f-start", "f-end", "find-submit", "options", "put-btn", "find-notices"]),
+    ("/week", ["propose", "outlook", "add", "add-cal"]),
     ("/reports", ["group", "start", "end", "invoice", "rate", "rate-unit", "rate-hint", "charts", "basis", "basis-seg", "basis-hint"]),
     ("/days", ["days"]),
     ("/pomodoro", ["pomo-clock", "pomo-phase", "pomo-bar", "pomo-start", "pomo-pause", "pomo-plus", "pomo-reset", "pomo-log",
@@ -61,7 +65,12 @@ def test_timer_page_is_old_index(client):
 
 def test_day_page_nav_marks_day(client):
     r = client.get("/")
-    assert '<a href="/" class="on">Day</a>' in r.text
+    assert re.search(r'<a href="/" class="on"><svg[^>]*>.*?</svg>Day</a>', r.text)
+
+
+def test_nav_has_the_app_order_and_names(client):
+    nav = client.get("/timer").text.split("<nav>")[1].split("</nav>")[0]
+    assert re.findall(r"</svg>([^<]+)</a>", nav) == ["Timer", "Week", "Pomodoro", "Day", "Reports", "Expected hours"]
 
 
 def test_timer_navigation_stays_on_timer(client):
