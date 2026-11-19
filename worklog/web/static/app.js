@@ -655,7 +655,35 @@ function shortcut(e) {
   }
 }
 
+// the Defaults card of the Timer page: the settings behind Start, Pause, auto-close and auto-add
+async function loadDefaults() {
+  if (!$("defaults")) return;
+  try {
+    const st = await api("GET", "/api/settings");
+    $("def-type").value = st.default_type;
+    $("def-client").value = st.default_client || "";
+    $("def-break").replaceChildren(...st.break_types.map((t) => el("option", { value: t, text: t })));
+    $("def-break").value = st.default_break_type;
+    $("def-close").value = st.auto_close_time;
+    $("def-autoadd").checked = st.calendar_auto_add;
+  } catch (err) { $("def-msg").textContent = `Error: ${err.message}`; }
+}
+
+async function saveDefaults() {
+  const msg = $("def-msg");
+  try {
+    await api("PUT", "/api/settings", {
+      default_type: $("def-type").value.trim(), default_client: $("def-client").value.trim() || null,
+      default_break_type: $("def-break").value, auto_close_time: $("def-close").value,
+      calendar_auto_add: $("def-autoadd").checked });
+    msg.textContent = "Saved";
+    setTimeout(() => { if (msg.textContent === "Saved") msg.textContent = ""; }, 4000);
+    await refreshAll();
+  } catch (err) { msg.textContent = `Error: ${err.message}`; }
+}
+
 async function initTimer() {
+  if ($("def-save")) { $("def-save").addEventListener("click", saveDefaults); loadDefaults(); }
   try { syncClock(await api("GET", "/api/status")); } catch (_) { /* the first refreshAll reports it */ }
   timer.date = timerDate();
   const today = todayIso();

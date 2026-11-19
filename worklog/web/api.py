@@ -48,6 +48,7 @@ class Ctx:
         """Close forgotten blocks before reading. Routes call this first so every client sees
         the same corrected data, whichever endpoint it hits first in the morning."""
         timer.auto_close(self.conn, self.now)
+        _auto_add_meetings(self)
         return self
 
 
@@ -318,8 +319,17 @@ def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
     today, hhmm = c.today.isoformat(), c.now.strftime("%H:%M")
     if date > today or (date == today and start > hhmm):
         raise ApiError("meeting has not started yet")
-    in_progress = date == today and start <= hhmm < end
-    client = db.setting(c.conn, "default_client")
+    same = [b for b in db.blocks_on(c.conn, date)
+            if b.source == "calendar" and (b.start, b.project) == (start, title) and b.end in (end, None)]
+    if same:
+        return _derived(c, same[0])   # added a moment ago (auto-add, or a second tap): not twice
+    return _derived(c, _add_meeting(c, date, start, end, title))
+
+
+def _add_meeting(c: Ctx, date: str, start: str, end: str, title: str | None) -> Block:
+    """Log a calendar meeting that has started: the blocks at that time make room for it."""
+    in_progress = date == c.today.isoformat() and start <= c.now.strftime("%H:%M") < end
+    client = db.setting(c.conn, "default_client") or None
     with _LOCK:
         _cut_out_of_closed_blocks(c.conn, date, start, end)
         ob = db.open_block(c.conn)
@@ -339,7 +349,28 @@ def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
             # The timer was never stopped: resume what was running, from the meeting's end.
             db.insert_block(c.conn, Block(None, date, end, None, ob.project, ob.type, ob.client,
                                           ob.billable, "timer"))
-    return _derived(c, db.get_block(c.conn, b.id))
+    return db.get_block(c.conn, b.id)
+
+
+def _auto_add_meetings(c: Ctx) -> None:
+    """With the `calendar_auto_add` setting: today's meetings that are over and fall inside logged
+    time (a work or break block, or the running one) become meeting blocks, as if Add was pressed.
+    Each is also marked dismissed, so deleting such a block is final and it is never added twice."""
+    if db.setting(c.conn, "calendar_auto_add") != "1" or not c.settings.calendar_db_path:
+        return
+    date, hhmm = c.today.isoformat(), c.now.strftime("%H:%M")
+    while True:
+        blocks = db.blocks_on(c.conn, date)
+        found, _ = wcal.meetings(c.settings.calendar_db_path, date, blocks)
+        dismissed = db.dismissed_on(c.conn, date)
+        due = next((m for m in found
+                    if not m["logged"] and m["end"] <= hhmm and (m["start"], m["title"] or "") not in dismissed
+                    and any(not wcal.is_meeting(b) and b.start < m["end"] and (b.end or hhmm) > m["start"]
+                            for b in blocks)), None)
+        if due is None:
+            return
+        db.dismiss_proposal(c.conn, date, due["start"], due["title"])
+        _add_meeting(c, date, due["start"], due["end"], due["title"])
 
 
 def _dismiss_args(body: dict) -> tuple[str, str, str | None]:
@@ -396,7 +427,20 @@ def _settings(conn) -> dict:
             "rate_h": reports.rate_per_h(conn),
             "default_expected_h": float(db.setting(conn, "default_expected_h")),
             "week_basis_h": float(db.setting(conn, "base_week_h")),
-            "alt_week_h": float(db.setting(conn, "alt_week_h"))}
+            "alt_week_h": float(db.setting(conn, "alt_week_h")),
+            "default_type": db.setting(conn, "default_type"),
+            "default_client": db.setting(conn, "default_client") or None,
+            "default_break_type": db.setting(conn, "default_break_type"),
+            "auto_close_time": db.setting(conn, "auto_close_time"),
+            "calendar_auto_add": db.setting(conn, "calendar_auto_add") == "1",
+            "break_types": sorted(db.break_types(conn))}
+
+
+def _type_name(body: dict, key: str) -> str:
+    v = body[key]
+    if not isinstance(v, str) or not v.strip() or len(v.strip()) > 40:
+        raise ApiError(f"{key} must be a name of 1 to 40 characters")
+    return v.strip()
 
 
 @router.get("/api/settings")
@@ -424,6 +468,29 @@ def put_settings(body: dict = Body(...), c: Ctx = Depends(ctx)):
         db.set_setting(c.conn, "base_week_h", str(float(v)))
         db.set_setting(c.conn, "default_expected_h", str(float(v) / 5))
         db.set_setting(c.conn, "alt_week_h", "35.0" if abs(float(v) - 40) < 1e-9 else "40.0")
+    # what Start and Pause use when nothing is picked. All are checked before any is stored.
+    todo = {}
+    if "default_type" in body:
+        todo["default_type"] = _type_name(body, "default_type")
+        if todo["default_type"] in db.break_types(c.conn):
+            raise ApiError("default_type must be a work type, not a break type")
+    if "default_break_type" in body:
+        todo["default_break_type"] = v = _type_name(body, "default_break_type")
+        if v not in db.break_types(c.conn):
+            raise ApiError(f"default_break_type must be one of {', '.join(sorted(db.break_types(c.conn)))}")
+    if "default_client" in body:
+        v = _opt_str(body, "default_client")
+        if v is not None and len(v.strip()) > 100:
+            raise ApiError("default_client is too long")
+        todo["default_client"] = (v or "").strip()
+    if "auto_close_time" in body:
+        todo["auto_close_time"] = loose_time(body["auto_close_time"], "auto_close_time")
+    if "calendar_auto_add" in body:
+        if not isinstance(body["calendar_auto_add"], bool):
+            raise ApiError("calendar_auto_add must be true or false")
+        todo["calendar_auto_add"] = "1" if body["calendar_auto_add"] else ""
+    for k, v in todo.items():
+        db.set_setting(c.conn, k, v)
     return _settings(c.conn)
 
 

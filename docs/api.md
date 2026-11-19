@@ -46,7 +46,7 @@ time anything reads the timer. Such blocks are flagged `auto_closed` and listed 
 | `GET /api/days?start=&end=` | Expected and sick hours per day. |
 | `PUT /api/days/{date}` | Body: `expected_h`, optional `sick_h`, `reason`. |
 | `DELETE /api/days/{date}` | Back to the default (holiday, weekday or weekend). |
-| `GET` / `PUT /api/settings` | `rate`, `rate_unit` (`h` or `day`), `week_basis_h`. |
+| `GET` / `PUT /api/settings` | `rate`, `rate_unit` (`h` or `day`), `week_basis_h`; the defaults `default_type` (a work type), `default_client` (or null), `default_break_type` (one of `break_types`, read-only in the answer), `auto_close_time` (`HH:MM`); and `calendar_auto_add` (true: a meeting of today that is over and falls inside logged time is added as a meeting block on the next request, once). |
 | `GET /api/export.csv`, `/api/export.xlsx` | `start`, `end` optional; defaults to the first logged day until today. |
 | `POST /api/import` | Multipart: `file` (`.xlsx` or `.csv`), `mode` (`merge` or `replace`), `dry_run=1` to preview, `workdays=1` to import expected days too. `replace` deletes existing blocks in the file's date range. |
 

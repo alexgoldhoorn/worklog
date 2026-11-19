@@ -349,8 +349,8 @@ def test_rate_setting_prices_summary_and_invoice(client):
     assert client.get("/api/summary", params={"group": "week"}).json()["rate_h"] is None
     assert "amount" not in {k for k, v in client.get("/api/summary", params={"group": "week"}).json()["rows"][0].items() if v is not None}
     st = client.put("/api/settings", json={"rate": 80, "rate_unit": "h"}).json()
-    assert st == {"rate": 80.0, "rate_unit": "h", "rate_h": 80.0, "default_expected_h": 7.0,
-                  "week_basis_h": 35.0, "alt_week_h": 40.0}
+    assert {k: st[k] for k in ("rate", "rate_unit", "rate_h", "default_expected_h", "week_basis_h", "alt_week_h")} == {
+        "rate": 80.0, "rate_unit": "h", "rate_h": 80.0, "default_expected_h": 7.0, "week_basis_h": 35.0, "alt_week_h": 40.0}
     r = client.get("/api/summary", params={"group": "week"}).json()
     assert r["rate_h"] == 80.0 and r["rows"][0]["billable_h"] == 8.0 and r["rows"][0]["amount"] == 640.0
     day = next(d for d in client.get("/api/invoice", params={"month": "2026-10"}).json() if d["date"] == "2026-10-19")

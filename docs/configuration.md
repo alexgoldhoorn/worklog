@@ -66,10 +66,12 @@ or the API.
 
 - **Timer** (`PUT /api/settings`, see [api.md](api.md)): `rate`, `rate_unit` (`h` or `day`)
   and `week_basis_h`. Setting `week_basis_h` also sets the default workday to a fifth of it.
-  Other keys (`default_type`, `default_client`, `default_break_type`, `auto_close_time`)
-  have defaults seeded on first start and no API; change them with `sqlite3` if you must.
-  `auto_close_time` (default `18:00`) is where a block that was left running overnight is
-  closed.
+  The defaults `default_type`, `default_client`, `default_break_type` and `auto_close_time`
+  are seeded on first start and changed in the Defaults card of the Timer page (or the app's
+  Settings). `auto_close_time` (default `18:00`) is where a block that was left running
+  overnight is closed. `calendar_auto_add` (off by default) adds a work-calendar meeting of
+  today as a meeting block once it is over, if it falls inside logged time; deleting such a
+  block is final, it is not added again.
 - **Planner** (`GET`/`PUT /api/balance/settings`, the Week page): `hard_stop` (`18:00`),
   `run_slot` (`07:30`), `run_alt_slots`, `week_hours_min`, `week_hours_max`,
   `gcal_calendar` (the calendar the approved blocks are mirrored to, default `Agent`),

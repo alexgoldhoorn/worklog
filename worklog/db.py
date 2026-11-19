@@ -85,7 +85,13 @@ def _seed_v4(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT OR IGNORE INTO break_types(name) VALUES ('pomo')")
 
 
-MIGRATIONS = [(1, _V1, _seed_v1), (2, "", _seed_v2), (3, _V3, _seed_noop), (4, "", _seed_v4)]
+def _seed_v5(conn: sqlite3.Connection) -> None:
+    # "1": a finished calendar meeting inside logged time becomes a meeting block on its own.
+    conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES ('calendar_auto_add', '')")
+
+
+MIGRATIONS = [(1, _V1, _seed_v1), (2, "", _seed_v2), (3, _V3, _seed_noop), (4, "", _seed_v4),
+              (5, "", _seed_v5)]
 
 
 def migrate(conn: sqlite3.Connection) -> None:

@@ -275,6 +275,11 @@ details.card summary { cursor: pointer; padding: 12px 0; font-weight: 600; list-
 details.card summary::before { content: "▸"; color: var(--muted); font-size: .8rem; transition: transform .15s; }
 details.card[open] summary::before { transform: rotate(90deg); }
 details.card summary small { color: var(--muted); font-weight: 400; }
+.defaults { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 14px; padding: 0 0 14px; font-size: .9rem; }
+.defaults label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.defaults label.check { display: block; grid-column: 1 / -1; color: var(--fg); }
+.defaults label.check small { display: block; color: var(--muted); margin-left: 22px; }
+.defaults .row { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; }
 .import { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: end; padding-bottom: 14px; }
 .import label { display: flex; flex-direction: column; gap: 3px; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; }
 .import label input, .import label select { font-size: .9rem; min-height: 36px; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--fg); }

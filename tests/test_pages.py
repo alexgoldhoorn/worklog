@@ -3,7 +3,8 @@ import pytest
 
 @pytest.mark.parametrize("path,ids", [
     ("/timer", ["btn-start", "btn-pause", "btn-stop", "blocks", "proposals", "totals",
-           "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint"]),
+           "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint",
+           "defaults", "def-type", "def-client", "def-break", "def-close", "def-autoadd", "def-save"]),
     ("/", ["day-chips", "day-start", "timeline", "top3"]),
     ("/reports", ["group", "start", "end", "invoice", "rate", "rate-unit", "rate-hint", "charts", "basis", "basis-seg", "basis-hint"]),
     ("/days", ["days"]),
