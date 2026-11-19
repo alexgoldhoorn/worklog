@@ -248,7 +248,10 @@ table.grid { border-collapse: separate; border-spacing: 0; width: 100%; backgrou
 .proposals li { display: flex; justify-content: space-between; align-items: center; gap: 8px; background: var(--card);
   border: 1px dashed var(--line); border-radius: var(--r-sm); padding: 6px 6px 6px 12px; font-size: .9rem; }
 .proposals li .t { color: var(--muted); margin-right: 6px; }
-.proposals li .btns { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.proposals li .btns { display: inline-flex; gap: 4px; flex-shrink: 0; align-items: center; }
+.proposals li.done, .proposals li.off { border-style: solid; color: var(--muted); }
+.proposals li .mark { color: var(--muted); font-size: .82rem; padding: 0 6px; flex-shrink: 0; }
+.proposals li.done .mark { color: var(--work); }
 #proposals-sec:not(.has) { display: none; }
 
 /* ---- filters / segmented -------------------------------------------------- */

@@ -129,6 +129,24 @@ def test_calendar_add_finished_meeting_resumes_the_running_block(client, app):
     assert blocks[2]["client"] == blocks[0]["client"] and blocks[2]["billable"] == blocks[0]["billable"]
 
 
+def test_back_to_back_meetings_can_both_be_added(tmp_path):
+    # the block resumed after the first meeting starts where the second begins: it must not hide it
+    c_ = cal(tmp_path, [("2026-10-20", "10:30", "11:00", "review", "confirmed"),
+                        ("2026-10-20", "11:00", "11:20", "huddle", "confirmed")])
+    app = create_app(Settings(db_path=str(tmp_path / "t.db"), calendar_db_path=c_, holidays_path=None))
+    app.state.clock = lambda: datetime(2026, 10, 20, 9, 0)
+    c = TestClient(app)
+    c.post("/api/start", json={"type": "dev"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 12, 0)
+    c.post("/api/calendar/add", json={"date": "2026-10-20", "start": "10:30", "end": "11:00", "title": "review"})
+    assert [p["title"] for p in c.get("/api/day/2026-10-20").json()["proposals"]] == ["huddle"]
+    c.post("/api/calendar/add", json={"date": "2026-10-20", "start": "11:00", "end": "11:20", "title": "huddle"})
+    day = c.get("/api/day/2026-10-20").json()
+    assert [(b["start"], b["end"], b["type"]) for b in day["blocks"]] == [
+        ("09:00", "10:30", "dev"), ("10:30", "11:00", "meet"), ("11:00", "11:20", "meet"), ("11:20", None, "dev")]
+    assert day["proposals"] == []
+
+
 def test_days_put_and_delete(client):
     assert client.put("/api/days/2026-10-23", json={"expected_h": 3.5, "reason": "half day"}).json()["source"] == "manual"
     rows = client.get("/api/days", params={"start": "2026-10-22", "end": "2026-10-24"}).json()

@@ -195,11 +195,14 @@ def get_day(date: str, c: Ctx = Depends(ctx)):
     blocks = db.blocks_on(c.conn, date)
     fl = model.flags(blocks)
     items = [{**model.with_derived(b, bt), "flags": fl[b.id]} for b in blocks]
-    props, warn = wcal.proposals(c.settings.calendar_db_path, date, blocks)  # the open block counts too
+    meetings, warn = wcal.meetings(c.settings.calendar_db_path, date, blocks)  # the open block counts too
     dismissed = db.dismissed_on(c.conn, date)
-    props = [p for p in props if (p["start"], p["title"] or "") not in dismissed]
+    for m in meetings:
+        m["dismissed"] = not m["logged"] and (m["start"], m["title"] or "") in dismissed
+    props = [{"start": m["start"], "end": m["end"], "title": m["title"]}
+             for m in meetings if not m["logged"] and not m["dismissed"]]
     return {"date": date, "blocks": items, "totals": reports.day_totals(c.conn, date, bt),
-            "proposals": props, "overlaps": status.overlap_notices(blocks),
+            "proposals": props, "meetings": meetings, "overlaps": status.overlap_notices(blocks),
             "overlap_details": status.overlap_details(blocks),
             "notices": c.notices + ([warn] if warn else [])}
 
@@ -287,6 +290,24 @@ def delete_block(block_id: int, c: Ctx = Depends(ctx)):
     return {"ok": True}
 
 
+def _cut_out_of_closed_blocks(conn, date, start, end):
+    """Make room for a meeting: the closed work and break blocks of the day lose the part it
+    covers (trimmed, split in two, or removed). Meeting blocks are left as they are."""
+    for b in db.blocks_on(conn, date):
+        if b.end is None or wcal.is_meeting(b) or not b.start < b.end or not (b.start < end and b.end > start):
+            continue
+        head, tail = b.start < start, b.end > end
+        if head and tail:
+            db.insert_block(conn, Block(None, date, end, b.end, b.project, b.type, b.client, b.billable,
+                                        b.source, b.auto_closed))
+        if head:
+            db.update_block(conn, b.id, end=start, auto_closed=b.auto_closed and not tail)
+        elif tail:
+            db.update_block(conn, b.id, start=end)
+        else:
+            db.delete_block(conn, b.id)
+
+
 @router.post("/api/calendar/add")
 def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
     c.auto_close()
@@ -300,6 +321,7 @@ def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
     in_progress = date == today and start <= hhmm < end
     client = db.setting(c.conn, "default_client")
     with _LOCK:
+        _cut_out_of_closed_blocks(c.conn, date, start, end)
         ob = db.open_block(c.conn)
         # The meeting cuts the running block when it reaches past the block's start; a meeting
         # wholly before the block leaves it alone. Never more than one open block results.
@@ -310,7 +332,7 @@ def calendar_add(body: dict = Body(...), c: Ctx = Depends(ctx)):
                 db.delete_block(c.conn, ob.id)   # nothing of the running block is left
             else:
                 db.update_block(c.conn, ob.id, end=cut)
-        b = Block(None, date, start, None if in_progress else end, title, "meet", client,
+        b = Block(None, date, start, None if in_progress else end, title, wcal.MEET_TYPE, client,
                   _client_default(c.conn, client), "calendar")
         b.id = db.insert_block(c.conn, b)
         if interrupted and not in_progress:

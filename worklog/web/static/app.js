@@ -436,14 +436,18 @@ function renderBlocks() {
 
 function renderProposals() {
   const ul = $("proposals");
-  const props = timer.day.proposals || [];
+  // every meeting of the day: one without a block can be added (the server cuts it out of what was
+  // logged there) or dismissed; logged and dismissed ones stay listed, dimmed
+  const props = timer.day.meetings || timer.day.proposals || [];
   $("proposals-sec").classList.toggle("has", props.length > 0);
-  ul.replaceChildren(...props.map((p) => el("li", {},
+  ul.replaceChildren(...props.map((p) => el("li", { class: p.logged ? "done" : p.dismissed ? "off" : "" },
     el("span", {}, el("span", { class: "t", text: `${p.start}–${p.end}` }), p.title || ""),
-    el("span", { class: "btns" },
-      el("button", { type: "button", class: "small", text: "Add", onclick: () => addProposal(p) }),
-      el("button", { type: "button", class: "small ghost", text: "✕", "aria-label": "Dismiss for today",
-        onclick: () => dismissProposal(p) })))));
+    p.logged ? el("span", { class: "mark", text: "✓ logged" }) : el("span", { class: "btns" },
+      el("button", { type: "button", class: p.dismissed ? "small ghost" : "small", text: "Add",
+        title: "Add as a meeting block; work logged at that time makes room for it", onclick: () => addProposal(p) }),
+      p.dismissed ? el("span", { class: "mark", text: "dismissed" })
+        : el("button", { type: "button", class: "small ghost", text: "✕", "aria-label": "Dismiss for today",
+          onclick: () => dismissProposal(p) })))));
 }
 
 function dismissProposal(p) {

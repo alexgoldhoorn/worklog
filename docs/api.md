@@ -25,11 +25,11 @@ Conventions:
 | `POST /api/start` | Body (all optional): `type`, `project`, `client`. Closes the open block and opens a work block. A break type is refused (use pause). Starting the same work again is a no-op. |
 | `POST /api/pause` | Body (optional): `type`, a break type such as `eat`. |
 | `POST /api/stop` | Closes the open block. A block of zero minutes is deleted. |
-| `GET /api/day/{date}` | Blocks of one day with derived fields and flags, totals, meeting proposals, overlap notices. |
+| `GET /api/day/{date}` | Blocks of one day with derived fields and flags, totals, overlap notices, and the work calendar: `meetings` (every meeting of the day, with `logged` and `dismissed`) and `proposals` (those neither logged nor dismissed). A meeting counts as logged when a meeting block (source `calendar` or type `meet`) covers it; work or a break over it does not. |
 | `POST /api/blocks` | Add a block: `date`, `start`, optional `end`, `type`, `project`, `client`, `billable`. |
 | `PUT /api/blocks/{id}` | Edit a block. `"require_open": true` fails with 409 if it already ended. |
 | `DELETE /api/blocks/{id}` | Delete a block. |
-| `POST /api/calendar/add` | Turn a meeting proposal into a block (`date`, `start`, `end`, `title`). The meeting must have started. If a block was running, it is split around the meeting. |
+| `POST /api/calendar/add` | Turn a meeting into a block (`date`, `start`, `end`, `title`). The meeting must have started. Work and break blocks at that time make room: closed ones are trimmed, split or removed, a running one is split around the meeting. Other meeting blocks are left alone. |
 | `POST` / `DELETE /api/calendar/dismiss` | Hide or restore a proposal (`date`, `start`, `title`). |
 
 A block left running past midnight is closed automatically at `auto_close_time` the next

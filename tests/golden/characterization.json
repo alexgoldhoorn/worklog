@@ -91,6 +91,7 @@
    }
   ],
   "date": "2026-10-12",
+  "meetings": [],
   "notices": [],
   "overlap_details": [],
   "overlaps": [],
@@ -186,6 +187,7 @@
    }
   ],
   "date": "2026-10-14",
+  "meetings": [],
   "notices": [],
   "overlap_details": [],
   "overlaps": [],
@@ -259,6 +261,7 @@
    }
   ],
   "date": "2026-10-19",
+  "meetings": [],
   "notices": [],
   "overlap_details": [
    {
@@ -315,6 +318,22 @@
    }
   ],
   "date": "2026-10-20",
+  "meetings": [
+   {
+    "dismissed": false,
+    "end": "10:30",
+    "logged": false,
+    "start": "10:15",
+    "title": "weekly sync"
+   },
+   {
+    "dismissed": false,
+    "end": "16:00",
+    "logged": false,
+    "start": "15:00",
+    "title": "review"
+   }
+  ],
   "notices": [],
   "overlap_details": [],
   "overlaps": [],
