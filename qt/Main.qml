@@ -24,7 +24,7 @@ ApplicationWindow {
         // Android's back key: from a screen of the More menu it leads back to Today first
         if (Qt.platform.os === "android" && window.inMore) {
             close.accepted = false
-            window.current = window.navToday
+            window.current = window.navTimer
             return
         }
         if (hidesToTray) {
@@ -56,17 +56,19 @@ ApplicationWindow {
     // ---- navigation -----------------------------------------------------------
     // Positions in the StackLayout below. The first three have a button at the bottom; the rest are
     // reached through the header's More menu and get a back arrow. Update these when a page is inserted.
-    readonly property int navToday: 0
+    readonly property int navTimer: 0
     readonly property int navWeek: 1
-    readonly property int navFocus: 2
+    readonly property int navPomodoro: 2
     readonly property int navReports: 3
     readonly property int navExpected: 4
     readonly property int navFind: 5
     readonly property int navSettings: 6
-    property int current: navToday
-    readonly property bool inMore: current > navFocus
-    readonly property var titles: [qsTr("Today"), qsTr("Week"), qsTr("Focus"), qsTr("Reports"),
-                                   qsTr("Expected hours"), qsTr("Find a free date"), qsTr("Settings")]
+    property int current: navTimer
+    readonly property bool inMore: current > navPomodoro
+    // the same names, in the same order, as the web's navigation
+    readonly property var titles: [qsTr("Timer"), qsTr("Week"), qsTr("Pomodoro"), qsTr("Reports"),
+                                   qsTr("Expected hours"), qsTr("Add or find a date"), qsTr("Settings")]
+    readonly property var icons: ["timer", "week", "pomodoro", "reports", "expected", "find", "settings"]
 
     header: Rectangle {
         color: Api.card
@@ -86,13 +88,13 @@ ApplicationWindow {
                 text: "‹"
                 font.pixelSize: 24
                 implicitWidth: 48
-                Accessible.name: qsTr("Back to Today")
+                Accessible.name: qsTr("Back to the Timer")
                 Accessible.role: Accessible.Button
-                onClicked: window.current = window.navToday
+                onClicked: window.current = window.navTimer
             }
             // the Today screen: step a day, or tap the date for the calendar
             ToolButton {
-                visible: window.current === window.navToday
+                visible: window.current === window.navTimer
                 text: "‹"
                 font.pixelSize: 24
                 implicitWidth: 48
@@ -101,7 +103,7 @@ ApplicationWindow {
                 onClicked: todayScreen.step(-1)
             }
             ToolButton {
-                visible: window.current === window.navToday
+                visible: window.current === window.navTimer
                 text: todayScreen.heading
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
@@ -112,7 +114,7 @@ ApplicationWindow {
                 onClicked: todayScreen.pickDate()
             }
             ToolButton {
-                visible: window.current === window.navToday
+                visible: window.current === window.navTimer
                 text: "›"
                 font.pixelSize: 24
                 implicitWidth: 48
@@ -121,7 +123,7 @@ ApplicationWindow {
                 onClicked: todayScreen.step(1)
             }
             Label {
-                visible: window.current !== window.navToday
+                visible: window.current !== window.navTimer
                 text: window.titles[window.current] || ""
                 font.pixelSize: 16
                 font.weight: Font.DemiBold
@@ -140,11 +142,11 @@ ApplicationWindow {
                 Menu {
                     id: moreMenu
                     y: parent.height
-                    MenuItem { text: window.titles[window.navReports]; onTriggered: window.current = window.navReports }
-                    MenuItem { text: window.titles[window.navExpected]; onTriggered: window.current = window.navExpected }
-                    MenuItem { text: window.titles[window.navFind]; onTriggered: window.current = window.navFind }
+                    MoreItem { text: window.titles[window.navReports]; iconName: window.icons[window.navReports]; onTriggered: window.current = window.navReports }
+                    MoreItem { text: window.titles[window.navExpected]; iconName: window.icons[window.navExpected]; onTriggered: window.current = window.navExpected }
+                    MoreItem { text: window.titles[window.navFind]; iconName: window.icons[window.navFind]; onTriggered: window.current = window.navFind }
                     MenuSeparator {}
-                    MenuItem { text: window.titles[window.navSettings]; onTriggered: window.current = window.navSettings }
+                    MoreItem { text: window.titles[window.navSettings]; iconName: window.icons[window.navSettings]; onTriggered: window.current = window.navSettings }
                 }
             }
         }
@@ -165,42 +167,67 @@ ApplicationWindow {
             anchors.rightMargin: window.safe.right
             spacing: 0
             NavButton {
-                text: window.titles[window.navToday]
-                active: window.current === window.navToday
+                text: window.titles[window.navTimer]
+                iconName: window.icons[window.navTimer]
+                active: window.current === window.navTimer
                 onClicked: {
                     todayScreen.show("")   // a second tap comes back from another day
-                    window.current = window.navToday
+                    window.current = window.navTimer
                 }
             }
             NavButton {
                 text: window.titles[window.navWeek]
+                iconName: window.icons[window.navWeek]
                 active: window.current === window.navWeek
                 onClicked: window.current = window.navWeek
             }
             NavButton {
-                text: window.titles[window.navFocus]
-                active: window.current === window.navFocus
-                onClicked: window.current = window.navFocus
+                text: window.titles[window.navPomodoro]
+                iconName: window.icons[window.navPomodoro]
+                active: window.current === window.navPomodoro
+                onClicked: window.current = window.navPomodoro
             }
         }
     }
 
-    // one of the bottom buttons: a label under a marker that shows where you are
+    // an entry of the More menu, with its icon
+    component MoreItem: MenuItem {
+        id: more
+        property string iconName
+        contentItem: RowLayout {
+            spacing: 12
+            NavIcon { name: more.iconName; color: Api.muted; size: 20 }
+            Label { text: more.text; color: Api.fg; Layout.fillWidth: true }
+        }
+    }
+
+    // one of the bottom buttons: an icon and a label under a marker that shows where you are
     component NavButton: AbstractButton {
         id: nav
         property bool active: false
-        implicitHeight: 52
+        property string iconName
+        implicitHeight: 56
         Layout.fillWidth: true
         Layout.preferredWidth: 1
         Accessible.name: text
         Accessible.role: Accessible.PageTab
-        contentItem: Label {
-            text: nav.text
-            color: nav.active ? Api.accent : Api.muted
-            font.pixelSize: 14
-            font.weight: nav.active ? Font.Bold : Font.Normal
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+        contentItem: Item {
+            Column {
+                anchors.centerIn: parent
+                spacing: 2
+                NavIcon {
+                    name: nav.iconName
+                    color: nav.active ? Api.accent : Api.muted
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+                Label {
+                    text: nav.text
+                    color: nav.active ? Api.accent : Api.muted
+                    font.pixelSize: 12
+                    font.weight: nav.active ? Font.Bold : Font.Normal
+                    anchors.horizontalCenter: parent.horizontalCenter
+                }
+            }
         }
         background: Rectangle {
             color: nav.down ? Qt.alpha(Api.accent, 0.14) : nav.hovered ? Qt.alpha(Api.accent, 0.06) : "transparent"
@@ -232,16 +259,21 @@ ApplicationWindow {
         // a hidden page's text field keeps the focus and would swallow the next page's shortcuts
         onCurrentIndexChanged: stack.forceActiveFocus()
         TodayPage { id: todayScreen }
-        WeekPage {}
+        WeekPage {
+            onAddToCalendar: {
+                findPage.mode = "add"
+                window.current = window.navFind
+            }
+        }
         PomodoroPage {
             onAttention: {
-                window.current = window.navFocus
+                window.current = window.navPomodoro
                 window.alert(0)   // flash the taskbar entry until the window is activated
             }
         }
         ReportsPage {}
         ExpectedPage {}
-        FindPage {}
+        FindPage { id: findPage }
         SettingsPage {}
     }
 

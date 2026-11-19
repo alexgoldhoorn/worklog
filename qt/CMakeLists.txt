@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 
 option(WORKLOG_TESTS "Build the Qt Quick tests (tests/); they need a running server, see tests/run_tests.py" OFF)
 
-project(WorkLogApp VERSION 0.3 LANGUAGES CXX)
+project(WorkLogApp VERSION 0.5 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,7 @@ set(WL_QML_FILES
     SettingsPage.qml
     BlockList.qml
     BlockDialog.qml
+    NavIcon.qml
     ProposalCard.qml
     DatePicker.qml
     QueueState.qml

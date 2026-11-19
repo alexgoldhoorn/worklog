@@ -4,10 +4,11 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Find a date (the web's /find page): say what, how long, travel, when and where it goes; the server
-// ranks free slots (/api/day/slots), you pick one and it is put in (/api/day/find). Needs the
-// planner's balance store on the server; without it Find shows the server's 503 message.
-// Left out as browser-only: the ?what= prefill and the "Back to the day" link.
+// Add or find a date (the web's Add / Find a date dialog): say what and where it goes. "Find a time"
+// has the server rank free slots (/api/day/slots) for you to pick; "I know when" takes the date and
+// the times as typed. Either way it is put in with /api/day/find. Needs the planner's balance store
+// on the server; without it the page shows the server's 503 message.
+// Left out as browser-only: the ?what= prefill.
 ScrollView {
     id: page
 
@@ -24,6 +25,16 @@ ScrollView {
                                     { v: "training", t: qsTr("Training block"), where: qsTr("an approved training block") },
                                     { v: "todoist", t: qsTr("Todoist task"), where: qsTr("a Todoist task") }]
     readonly property var priorities: [{ v: 4, t: "P1" }, { v: 3, t: "P2" }, { v: 2, t: "P3" }, { v: 1, t: "P4" }]
+
+    property string mode: "find"          // "find": the server looks for a time; "add": the date and times are typed
+    readonly property var modes: [{ v: "add", t: qsTr("I know when") }, { v: "find", t: qsTr("Find a time") }]
+    property string addDate: Api.today()
+    property string addStart: ""
+    property string addEnd: ""
+    // the typed times as "HH:MM", "" while they are not times
+    readonly property string startHM: page.hhmm(addStart)
+    readonly property string endHM: page.hhmm(addEnd)
+    readonly property bool canAdd: what.trim() !== "" && startHM !== "" && endHM !== "" && startHM < endHM
 
     property string what: ""
     property int minutes: 45
@@ -54,9 +65,30 @@ ScrollView {
     function dayLabel(iso) { return Api.parseDate(iso).toLocaleDateString(Qt.locale(), "ddd d MMM") }
     function targetText(v) { return (targets.find(x => x.v === v) || { where: "" }).where }
 
+    function hhmm(text) {
+        const t = Api.normTime(text)
+        return /^([01]\d|2[0-3]):[0-5]\d$/.test(t) ? t : ""
+    }
+    function minutesBetween(a, b) {
+        return (Number(b.slice(0, 2)) * 60 + Number(b.slice(3))) - (Number(a.slice(0, 2)) * 60 + Number(a.slice(3)))
+    }
+    // "I know when": no search, the typed date and times go straight in
+    function add() {
+        if (!canAdd) {
+            error = what.trim() === "" ? qsTr("Say what it is first.") : qsTr("Give a start and a later end time, like 14:00 and 15:00.")
+            return
+        }
+        chosen = { date: addDate, start: startHM, end: endHM }
+        putDone = false
+        put()
+    }
+
     // what the server is asked to place; the kind decides which rules apply to it
     function itemFromForm() {
         const kind = target === "training" ? "gym" : target === "work" ? "work" : "personal"
+        if (mode === "add")
+            return { title: what.trim(), minutes: Math.max(5, minutesBetween(startHM, endHM)), kind: kind,
+                     travel_before: 0, travel_after: 0, prefer: [] }
         return { title: what.trim(), minutes: minutes, kind: kind, travel_before: travel, travel_after: travel, prefer: prefer.slice() }
     }
 
@@ -157,7 +189,7 @@ ScrollView {
         spacing: 12
 
         Label {
-            text: qsTr("Find a date")
+            text: page.mode === "add" ? qsTr("Add to a calendar") : qsTr("Find a date")
             font.pixelSize: 18
             font.weight: Font.Bold
             Layout.topMargin: 12
@@ -166,7 +198,8 @@ ScrollView {
             Layout.fillWidth: true
         }
         Label {
-            text: qsTr("Dentist, gym, a run, a call: say what, it finds when")
+            text: page.mode === "add" ? qsTr("A meeting or appointment at a time you already know")
+                                      : qsTr("Dentist, gym, a run, a call: say what, it finds when")
             color: Api.muted
             wrapMode: Text.Wrap
             Layout.leftMargin: 12
@@ -188,6 +221,14 @@ ScrollView {
         }
 
         Card {
+            ChipRow {
+                model: page.labels(page.modes)
+                current: page.labelOf(page.modes, page.mode)
+                onPicked: v => {
+                    page.mode = page.valueOf(page.modes, v)
+                    page.clearResults()
+                }
+            }
             TextField {
                 placeholderText: qsTr("What, e.g. Dentist check-up")
                 maximumLength: 200
@@ -195,27 +236,63 @@ ScrollView {
                 Layout.fillWidth: true
                 Accessible.name: qsTr("What")
                 onTextEdited: page.what = text
-                onAccepted: page.find()
+                onAccepted: page.mode === "add" ? page.add() : page.find()
+            }
+            // ---- "I know when": the date and the times
+            RowLayout {
+                visible: page.mode === "add"
+                spacing: 8
+                Layout.fillWidth: true
+                Button {
+                    text: page.dayLabel(page.addDate)
+                    flat: true
+                    Accessible.name: qsTr("Date, now %1").arg(page.addDate)
+                    Accessible.role: Accessible.Button
+                    onClicked: addPicker.openFor(page.addDate)
+                }
+                TextField {
+                    placeholderText: qsTr("From")
+                    text: page.addStart
+                    inputMethodHints: Qt.ImhTime
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: qsTr("Start time")
+                    onTextEdited: page.addStart = text
+                }
+                TextField {
+                    placeholderText: qsTr("To")
+                    text: page.addEnd
+                    inputMethodHints: Qt.ImhTime
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: qsTr("End time")
+                    onTextEdited: page.addEnd = text
+                    onAccepted: page.add()
+                }
             }
             ChipRow {
+                visible: page.mode === "find"
                 label: qsTr("Length (min)")
                 model: page.labels(page.lengths)
                 current: page.labelOf(page.lengths, page.minutes)
                 onPicked: v => page.minutes = page.valueOf(page.lengths, v)
             }
             ChipRow {
+                visible: page.mode === "find"
                 label: qsTr("Travel each way (min)")
                 model: page.labels(page.travels)
                 current: page.labelOf(page.travels, page.travel)
                 onPicked: v => page.travel = page.valueOf(page.travels, v)
             }
             ChipRow {
+                visible: page.mode === "find"
                 label: qsTr("When")
                 model: page.labels(page.whens)
                 current: page.labelOf(page.whens, page.days)
                 onPicked: v => page.days = page.valueOf(page.whens, v)
             }
             ChipMulti {
+                visible: page.mode === "find"
                 label: qsTr("Prefer")
                 model: page.prefers
                 selected: page.prefer
@@ -250,6 +327,7 @@ ScrollView {
                 }
             }
             Button {
+                visible: page.mode === "find"
                 text: page.busy ? qsTr("Finding…") : qsTr("Find")
                 enabled: !page.busy
                 highlighted: true
@@ -258,9 +336,38 @@ ScrollView {
                 Accessible.role: Accessible.Button
                 onClicked: page.find()
             }
+            Label {
+                visible: page.mode === "add"
+                text: qsTr("Goes into %1").arg(page.targetText(page.target))
+                color: Api.muted
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Button {
+                visible: page.mode === "add"
+                text: qsTr("Add")
+                enabled: page.canAdd && !page.putDone
+                highlighted: true
+                Layout.alignment: Qt.AlignRight
+                Accessible.name: qsTr("Add to the calendar")
+                Accessible.role: Accessible.Button
+                onClicked: page.add()
+            }
+            TextArea {
+                visible: page.mode === "add" && page.paste !== ""
+                text: page.paste
+                readOnly: true
+                selectByMouse: true
+                font.family: "monospace"
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Line to paste into Outlook")
+            }
         }
 
         Card {
+            visible: page.mode === "find"
             title: qsTr("Best options")
             Label {
                 text: qsTr("ranked by what they cost you: nothing moved, run kept, child care covered, hours band kept")
@@ -387,5 +494,14 @@ ScrollView {
         }
 
         Item { implicitHeight: 12 }
+    }
+
+    DatePicker {
+        id: addPicker
+        date: page.addDate
+        onPicked: iso => {
+            page.addDate = iso
+            page.putDone = false
+        }
     }
 }

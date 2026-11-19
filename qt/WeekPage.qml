@@ -8,6 +8,7 @@ import QtQuick.Layouts
 // planned blocks (approve / reject), then the load gate, work goals and the 28-day gate history.
 ScrollView {
     id: page
+    signal addToCalendar()   // a meeting or appointment, not a protected block: Main opens Add or find a date
     property string start: ""        // Monday of the shown week; "" = this week
     property var weekData: null       // the /api/balance/week answer
     property string error: ""
@@ -309,35 +310,56 @@ ScrollView {
             }
         }
 
-        RowLayout {
+        // what you can do with the week; each action says what it is for
+        Card {
             visible: page.weekData !== null
-            spacing: 8
-            Layout.fillWidth: true
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
-            Button {
-                text: qsTr("Propose")
+            title: qsTr("Protected time")
+
+            component Act: RowLayout {
+                id: act
+                property string label
+                property string hint
+                signal clicked()
+                spacing: 12
                 Layout.fillWidth: true
-                Accessible.name: qsTr("Propose blocks for this week")
-                Accessible.role: Accessible.Button
+                Button {
+                    text: act.label
+                    Layout.preferredWidth: 150
+                    Accessible.name: act.label
+                    Accessible.description: act.hint
+                    Accessible.role: Accessible.Button
+                    onClicked: act.clicked()
+                }
+                Label {
+                    text: act.hint
+                    color: Api.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+            Act {
+                label: qsTr("Propose blocks")
+                hint: qsTr("Suggests runs and hard stops for the rest of this week. Nothing counts until you approve it.")
                 onClicked: page.propose()
             }
-            Button {
-                text: qsTr("Outlook")
-                Layout.fillWidth: true
-                Accessible.name: qsTr("Outlook list")
-                Accessible.role: Accessible.Button
-                onClicked: page.showOutlook()
-            }
-            Button {
-                text: qsTr("Add")
-                Layout.fillWidth: true
-                Accessible.name: qsTr("Add a block")
-                Accessible.role: Accessible.Button
+            Act {
+                label: qsTr("Add a block")
+                hint: qsTr("Protect a time yourself: family, a run, a stop. It is approved at once.")
                 onClicked: {
                     dateField.text = page.todayIso
                     page.adding = !page.adding
                 }
+            }
+            Act {
+                label: qsTr("Outlook list")
+                hint: qsTr("Your approved blocks as text, to paste into Outlook as busy time.")
+                onClicked: page.showOutlook()
+            }
+            Act {
+                label: qsTr("Add to calendar")
+                hint: qsTr("A meeting or appointment at a time you know, or find a free time for it.")
+                onClicked: page.addToCalendar()
             }
         }
 

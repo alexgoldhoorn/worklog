@@ -10,17 +10,18 @@ The web UI (`worklog/web/static/`) is the reference for behaviour. The app mirro
 
 | Screen | What you get |
 |---|---|
-| **Today** | Start, Switch, Pause and Stop; type, project and break chips; today, week and balance tiles; the work calendar's meetings to add; today's blocks with gaps to fill. The arrows and the date in the header go to any other day: its blocks and totals, with add, edit, delete (with Undo) and move |
+| **Timer** | Start, Switch, Pause and Stop; type, project and break chips; today, week and balance tiles; the work calendar's meetings to add; today's blocks with gaps to fill. The arrows and the date in the header go to any other day: its blocks and totals, with add, edit, delete (with Undo) and move |
 | **Week** | The planner's week: meetings, personal events, proposed and approved blocks, the capacity gate, goals |
-| **Focus** | A Pomodoro countdown per device that offers to pause or resume the log at each interval and never acts on its own |
+| **Pomodoro** | A countdown per device that offers to pause or resume the log at each interval and never acts on its own |
 | More › **Reports** | Summary per week, month, quarter or year; charts; weekly stats; the monthly invoice; CSV/XLSX export |
 | More › **Expected hours** | Expected and sick hours per day |
-| More › **Find a free date** | "Where does this fit": pick a length, travel time and target, get the best slot per day, put it in |
-| More › **Settings** | Server and login, week length, rate, and the options below |
+| More › **Add or find a date** | Put a meeting or appointment in a calendar at a time you know, or let it find the best free slot per day ("where does this fit") |
+| More › **Settings** | Server and login, week length, rate, the server's defaults, and the options below |
 
-Today, Week and Focus are the buttons at the bottom; the rest is under the ⋮ menu in the header.
+Timer, Week and Pomodoro are the buttons at the bottom; the rest is under the ⋮ menu in the header.
+The names, their order and the icons are the same as in the web's navigation.
 
-Week and Find a free date need the server's planner (`BALANCE_DB`, `BALANCE_STATE_DIR`, `DAY_RULES`; see
+Week and Add or find a date need the server's planner (`BALANCE_DB`, `BALANCE_STATE_DIR`, `DAY_RULES`; see
 [docs/host-integration.md](../docs/host-integration.md)). Without it they show the server's message.
 
 **Offline.** Start, Pause and Stop tapped while the server cannot be reached are kept, in order, with

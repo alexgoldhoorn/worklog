@@ -90,6 +90,35 @@ TestCase {
         Api.request("POST", "/api/balance/blocks/" + b.id + "/reject", undefined, () => {}, e => fail(e))
     }
 
+    // "I know when": no search, the typed date and times go straight in
+    function test_add_at_a_set_time() {
+        const p = load()
+        p.mode = "add"
+        p.target = "training"
+        const date = Api.addDays(Api.today(), 2)
+        p.addDate = date
+        p.addStart = "1400"
+        verify(!p.canAdd)                 // no title, no end
+        p.what = "Qt add test"
+        p.addEnd = "13:00"
+        verify(!p.canAdd)                 // ends before it starts
+        p.add()
+        verify(p.error !== "")
+        p.addEnd = "15.30"
+        verify(p.canAdd)
+        compare(p.itemFromForm().minutes, 90)
+        p.add()
+        tryVerify(() => p.putDone || p.error.indexOf("Could not") === 0, 5000)
+        verify(p.putDone, p.error)
+        let week = null
+        Api.request("GET", "/api/balance/week?" + Api.query({ start: date }), undefined, d => week = d, e => fail(e))
+        tryVerify(() => week !== null, 5000)
+        const b = week.blocks.find(x => x.title === "Qt add test" && x.date === date)
+        verify(b, "the block is not in the week")
+        compare(b.start + "-" + b.end, "14:00-15:30")
+        Api.request("POST", "/api/balance/blocks/" + b.id + "/reject", undefined, () => {}, e => fail(e))
+    }
+
     // work: nothing is stored here, the line to paste into Outlook comes back
     function test_work_target_pastes() {
         const p = load()
