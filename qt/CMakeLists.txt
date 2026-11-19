@@ -42,6 +42,7 @@ set(WL_QML_FILES
     SettingsPage.qml
     BlockList.qml
     BlockDialog.qml
+    ProposalCard.qml
     DatePicker.qml
     QueueState.qml
     ChipRow.qml

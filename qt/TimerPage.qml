@@ -603,6 +603,14 @@ ScrollView {
             }
         }
 
+        // ---- calendar proposals (today's meetings without a block), as on the web's Timer page
+        ProposalCard {
+            visible: rows.length > 0 && !page.stale
+            date: page.day ? page.day.date : ""
+            meetings: page.day ? page.day.proposals : []
+            onFailed: e => page.error = e
+        }
+
         // ---- today ------------------------------------------------------------
         Card {
             title: qsTr("Today")

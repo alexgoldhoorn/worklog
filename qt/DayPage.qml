@@ -191,65 +191,11 @@ ScrollView {
         }
 
         // ---- calendar proposals -----------------------------------------------
-        Card {
-            visible: !!page.day && page.day.proposals.length > 0
-            title: qsTr("Calendar proposals")
-
-            Caption {
-                text: qsTr("Meetings without a block")
-                font.capitalization: Font.MixedCase
-                font.letterSpacing: 0
-            }
-
-            Repeater {
-                model: page.day ? page.day.proposals : []
-                delegate: ColumnLayout {
-                    id: proposal
-                    required property var modelData
-                    required property int index
-                    spacing: 4
-                    Layout.fillWidth: true
-
-                    Rectangle {
-                        visible: proposal.index > 0
-                        implicitHeight: 1
-                        color: proposal.Material.dividerColor
-                        Layout.fillWidth: true
-                    }
-                    RowLayout {
-                        spacing: 12
-                        Layout.fillWidth: true
-                        Label {
-                            text: proposal.modelData.start + "–" + proposal.modelData.end
-                            font.features: { "tnum": 1 }
-                            Layout.preferredWidth: 96
-                        }
-                        Label {
-                            text: proposal.modelData.title || qsTr("(no title)")
-                            font.weight: Font.DemiBold
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                    }
-                    RowLayout {
-                        Layout.alignment: Qt.AlignRight
-                        Button {
-                            text: qsTr("Dismiss")
-                            flat: true
-                            onClicked: Api.request("POST", "/api/calendar/dismiss",
-                                                   { date: page.date, start: proposal.modelData.start, title: proposal.modelData.title },
-                                                   null, e => page.error = e)
-                        }
-                        Button {
-                            text: qsTr("Add as meeting")
-                            highlighted: true
-                            onClicked: Api.request("POST", "/api/calendar/add",
-                                                   { date: page.date, start: proposal.modelData.start, end: proposal.modelData.end, title: proposal.modelData.title },
-                                                   null, e => page.error = e)
-                        }
-                    }
-                }
-            }
+        ProposalCard {
+            date: page.date
+            showAll: true
+            meetings: page.day ? page.day.meetings || page.day.proposals : []
+            onFailed: e => page.error = e
         }
         Item { implicitHeight: 8 }
     }

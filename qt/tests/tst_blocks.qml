@@ -23,6 +23,22 @@ TestCase {
         Api.username = ""
     }
 
+    // ---- ProposalCard: which meetings it lists ----------------------------------
+    Component { id: proposalComp; ProposalCard {} }
+    function test_proposalCard_rows() {
+        const all = [{ start: "09:00", end: "09:30", title: "open" },
+                     { start: "10:00", end: "10:30", title: "done", logged: true, dismissed: false },
+                     { start: "11:00", end: "11:30", title: "no", logged: false, dismissed: true }]
+        const card = createTemporaryObject(proposalComp, tc, { meetings: all })
+        compare(card.rows.map(m => m.title), ["open"])   // the Timer: only what still needs an answer
+        verify(card.visible)
+        card.showAll = true                                // the Log: everything, marked
+        compare(card.rows.map(m => m.title), ["open", "done", "no"])
+        card.showAll = false
+        card.meetings = all.slice(1)
+        verify(!card.visible)
+    }
+
     // ---- Api.normTime ----------------------------------------------------------
     function test_normTime_data() {
         return [
