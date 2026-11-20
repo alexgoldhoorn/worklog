@@ -29,6 +29,9 @@ ScrollView {
     property string mode: "find"          // "find": the server looks for a time; "add": the date and times are typed
     readonly property var modes: [{ v: "add", t: qsTr("I know when") }, { v: "find", t: qsTr("Find a time") }]
     property string addDate: Api.today()
+    property bool addDateChosen: false    // picked in the calendar: stays; otherwise it follows today
+    // the app lives in the tray for days: a page nobody touched moves its default date to today
+    onVisibleChanged: if (visible && !addDateChosen) addDate = Api.today()
     property string addStart: ""
     property string addEnd: ""
     // the typed times as "HH:MM", "" while they are not times
@@ -49,7 +52,8 @@ ScrollView {
     property var options: []              // best slot per day, from slotsData
     property var chosen: null
     property bool busy: false
-    property bool putDone: false
+    property bool putDone: false          // what is shown has been put in; any edit makes a new entry possible
+    property bool putting: false          // a put is on its way: a second tap or Enter is ignored
     property string error: ""
     property string info: ""
     property string paste: ""
@@ -62,7 +66,7 @@ ScrollView {
     function labels(list) { return list.map(x => x.t) }
     function valueOf(list, text) { const m = list.find(x => x.t === text); return m ? m.v : undefined }
     function labelOf(list, v) { const m = list.find(x => x.v === v); return m ? m.t : "" }
-    function dayLabel(iso) { return Api.parseDate(iso).toLocaleDateString(Qt.locale(), "ddd d MMM") }
+    function dayLabel(iso) { return Api.parseDate(iso).toLocaleDateString(Api.locale, "ddd d MMM") }
     function targetText(v) { return (targets.find(x => x.v === v) || { where: "" }).where }
 
     function hhmm(text) {
@@ -78,8 +82,9 @@ ScrollView {
             error = what.trim() === "" ? qsTr("Say what it is first.") : qsTr("Give a start and a later end time, like 14:00 and 15:00.")
             return
         }
+        if (putting || putDone)
+            return
         chosen = { date: addDate, start: startHM, end: endHM }
-        putDone = false
         put()
     }
 
@@ -145,14 +150,19 @@ ScrollView {
     }
 
     function put() {
-        if (!chosen)
+        if (!chosen || putting || putDone)
             return
+        putting = true
+        const my = seq
         const s = chosen
         const item = itemFromForm()
         const body = { item: item, date: s.date, start: s.start, end: s.end, target: target }
         if (target === "todoist")
             body.todoist = { project: project.trim(), priority: priority, due_string: s.date }
         Api.request("POST", "/api/day/find", body, function (out) {
+            if (!page || my !== page.seq)
+                return
+            page.putting = false
             const bits = []
             if (out.queued.length)
                 bits.push(qsTr("queued for the next sync (within 2 minutes)"))
@@ -163,13 +173,19 @@ ScrollView {
                         + (bits.length ? " " + bits.join(", ") + "." : "")
             page.paste = out.paste || ""
             page.putDone = true
-        }, e => page.error = qsTr("Could not put it in: %1").arg(e))
+        }, function (e) {
+            if (!page || my !== page.seq)
+                return
+            page.putting = false
+            page.error = qsTr("Could not put it in: %1").arg(e)
+        })
     }
 
     // the results belong to the server they came from
     function clearResults() {
         seq++
         busy = false
+        putting = false
         slotsData = null
         options = []
         chosen = null
@@ -235,7 +251,10 @@ ScrollView {
                 text: page.what
                 Layout.fillWidth: true
                 Accessible.name: qsTr("What")
-                onTextEdited: page.what = text
+                onTextEdited: {
+                    page.what = text
+                    page.putDone = false
+                }
                 onAccepted: page.mode === "add" ? page.add() : page.find()
             }
             // ---- "I know when": the date and the times
@@ -257,7 +276,7 @@ ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("Start time")
-                    onTextEdited: page.addStart = text
+                    onTextEdited: { page.addStart = text; page.putDone = false }
                 }
                 TextField {
                     placeholderText: qsTr("To")
@@ -266,7 +285,7 @@ ScrollView {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("End time")
-                    onTextEdited: page.addEnd = text
+                    onTextEdited: { page.addEnd = text; page.putDone = false }
                     onAccepted: page.add()
                 }
             }
@@ -347,7 +366,7 @@ ScrollView {
             Button {
                 visible: page.mode === "add"
                 text: qsTr("Add")
-                enabled: page.canAdd && !page.putDone
+                enabled: page.canAdd && !page.putDone && !page.putting
                 highlighted: true
                 Layout.alignment: Qt.AlignRight
                 Accessible.name: qsTr("Add to the calendar")
@@ -474,7 +493,7 @@ ScrollView {
             Button {
                 visible: page.chosen !== null
                 text: qsTr("Put it in")
-                enabled: !page.putDone
+                enabled: !page.putDone && !page.putting
                 highlighted: true
                 Layout.alignment: Qt.AlignRight
                 Accessible.name: qsTr("Put it in")
@@ -501,6 +520,7 @@ ScrollView {
         date: page.addDate
         onPicked: iso => {
             page.addDate = iso
+            page.addDateChosen = true
             page.putDone = false
         }
     }

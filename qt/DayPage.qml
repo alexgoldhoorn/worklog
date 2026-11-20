@@ -39,6 +39,7 @@ ScrollView {
     // ← / → step a day, as on the web (a focused text field keeps its arrow keys)
     // not while a dialog or the calendar is open
     readonly property bool shortcutsOn: visible && navEnabled && !blockDialog.visible && !datePicker.visible
+                                        && Api.keyShortcuts && Api.focusFree(Window.window ? Window.window.activeFocusItem : null)
     Shortcut { sequence: "Left"; enabled: page.shortcutsOn; onActivated: page.date = Api.addDays(page.date, -1) }
     Shortcut { sequence: "Right"; enabled: page.shortcutsOn; onActivated: page.date = Api.addDays(page.date, 1) }
     Connections {
@@ -109,14 +110,14 @@ ScrollView {
                         TapHandler { onTapped: datePicker.openFor(page.date) }
                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                         Label {
-                            text: Api.parseDate(page.date).toLocaleDateString(Qt.locale(), "dddd")
+                            text: Api.parseDate(page.date).toLocaleDateString(Api.locale, "dddd")
                             font.pixelSize: 12
                             opacity: 0.7
                             horizontalAlignment: Text.AlignHCenter
                             Layout.fillWidth: true
                         }
                         Label {
-                            text: Api.parseDate(page.date).toLocaleDateString(Qt.locale(), "d MMMM yyyy")
+                            text: Api.parseDate(page.date).toLocaleDateString(Api.locale, "d MMMM yyyy")
                             font.pixelSize: 20
                             font.bold: true
                             horizontalAlignment: Text.AlignHCenter
@@ -188,7 +189,7 @@ ScrollView {
                 onBillableToggled: (b, next) => Api.request("PUT", "/api/blocks/" + b.id, { billable: next }, null, e => page.error = e)
                 onFillGap: (start, end, asBreak) => {
                     const body = { date: page.date, start: start, end: end }
-                    if (asBreak)
+                    if (asBreak && Api.defaultBreak())
                         body.type = Api.defaultBreak()
                     Api.request("POST", "/api/blocks", body, null, e => page.error = e)
                 }

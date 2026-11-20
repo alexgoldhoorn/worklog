@@ -8,13 +8,8 @@ static const char *kRunKey = "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\C
 
 Autostart::Autostart(QObject *parent) : QObject(parent)
 {
+    // The Run entry is only ever written by setEnabled(): a build-directory exe must not repoint it.
     refresh();
-    // the exe may have moved since the entry was written: keep it pointing at this one
-    if (m_enabled) {
-        QSettings run(kRunKey, QSettings::NativeFormat);
-        if (run.value(valueName()).toString() != command())
-            run.setValue(valueName(), command());
-    }
 }
 
 bool Autostart::startMinimized() const

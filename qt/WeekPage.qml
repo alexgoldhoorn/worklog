@@ -15,6 +15,8 @@ ScrollView {
     property string info: ""
     property string outlook: ""
     property bool adding: false
+    property string addError: ""     // why adding a block failed, shown inside the form
+    property int confirmId: -1       // an approved block the user is asked about removing
 
     readonly property var kinds: ["family", "run", "stop", "other"]
     readonly property var kindModel: kinds.map(k => ({ value: k, text: kindName(k) }))
@@ -42,7 +44,7 @@ ScrollView {
     function kindName(k) { return kindNames[k] || k }
 
     function gateColor(c) { return c === "green" ? Api.workColor : c === "amber" ? Api.breakColor : c === "red" ? Api.errorColor : Api.muted }
-    function dayLabel(iso) { return Api.parseDate(iso).toLocaleDateString(Qt.locale(), "ddd d MMM") }
+    function dayLabel(iso) { return Api.parseDate(iso).toLocaleDateString(Api.locale, "ddd d MMM") }
     function fmt(v, unit) { return v === null || v === undefined ? "–" : v + (unit || "") }
     function range(s, e) { return e ? s + "–" + e : s }
 
@@ -67,15 +69,15 @@ ScrollView {
     }
 
     readonly property var gateRows: [
-        [qsTr("Work, last 7 days"), fmt(nums.hours_7d, " h")],
-        [qsTr("Work, 3-week average"), fmt(nums.hours_21d_week_avg, " h/wk")],
-        [qsTr("Evenings past the stop"), fmt(nums.evenings_7d)],
+        [qsTr("Work last 7 days"), fmt(nums.hours_7d, " h")],
+        [qsTr("Work, 3-week average"), fmt(nums.hours_21d_week_avg, " h/week")],
+        [qsTr("Evenings past the stop (7 d)"), fmt(nums.evenings_7d)],
         [qsTr("Resting HR (7 d / usual)"), fmt(nums.rhr_7d) + " / " + fmt(nums.rhr_base)],
         [qsTr("HRV (7 d / usual)"), fmt(nums.hrv_7d, " ms") + " / " + fmt(nums.hrv_base, " ms")],
         [qsTr("Sleep (7 d)"), fmt(nums.sleep_7d_h, " h")],
         [qsTr("Stress (7 d / usual)"), fmt(nums.stress_7d) + " / " + fmt(nums.stress_base)],
         [qsTr("Runs done / planned (14 d)"), fmt(nums.runs_done_14d) + " / " + fmt(nums.runs_planned_14d)],
-        [qsTr("Heavy days tapped (7 d)"), fmt(nums.felt_heavy_7d)]
+        [qsTr("Heavy days you tapped (7 d)"), fmt(nums.felt_heavy_7d)]
     ]
 
     property int requestId: 0
@@ -99,11 +101,18 @@ ScrollView {
     // A block only has a state (proposed / approved / rejected) that the server flips; the calendar sync job
     // follows it. So the way back from a reject is to approve the block again: that restores an approved
     // block exactly. A proposed one cannot go back to "proposed" (no route sets it), so Undo approves it.
+    // ✗ on a block: an approved one is asked about first (it is on the calendar), a proposed one goes at once
+    function reject(block) {
+        if (block.state === "approved")
+            confirmId = block.id
+        else
+            decide(block.id, "reject")
+    }
     function decide(id, action) {
         const was = weekData ? weekData.blocks.find(b => b.id === id) : null
         Api.request("POST", "/api/balance/blocks/" + id + "/" + action, undefined, function () {
             if (action === "approve") {
-                page.info = qsTr("Approved.")
+                page.info = qsTr("Approved. Google Calendar catches up within 15 minutes.")
                 return
             }
             page.info = ""
@@ -122,7 +131,7 @@ ScrollView {
             return
         }
         Api.request("POST", "/api/balance/propose", { start: from, end: weekData.end }, function (r) {
-            page.info = r.created.length ? qsTr("%1 block(s) proposed.").arg(r.created.length)
+            page.info = r.created.length ? qsTr("%1 block(s) proposed.").arg(r.created.length) + " " + qsTr("Tick the ones you want.")
                                          : qsTr("Nothing to propose: every day already has its blocks, or no runs are planned.")
         }, e => page.error = e)
     }
@@ -165,9 +174,10 @@ ScrollView {
                     { date: dateField.text.trim(), start: Api.normTime(fromField.text), end: Api.normTime(toField.text),
                       kind: kindBox.currentValue, title: titleField.text.trim() }, function () {
             page.adding = false
+            page.addError = ""
             titleField.text = ""
             page.info = qsTr("Block saved and approved.")
-        }, e => page.error = e)
+        }, e => page.addError = e)
     }
 
     // "monospace" does not resolve on Windows: take the first fixed-width family this system has
@@ -184,7 +194,10 @@ ScrollView {
         snack.show(qsTr("Copied to the clipboard"))
     }
 
-    onStartChanged: reload()
+    onStartChanged: {
+        outlook = ""   // the list belongs to the week it was made for
+        reload()
+    }
     Component.onCompleted: if (visible) reload()
     onVisibleChanged: if (visible) reload()
     Connections {
@@ -348,6 +361,7 @@ ScrollView {
                 hint: qsTr("Protect a time yourself: family, a run, a stop. It is approved at once.")
                 onClicked: {
                     dateField.text = page.todayIso
+                    page.addError = ""
                     page.adding = !page.adding
                 }
             }
@@ -408,8 +422,10 @@ ScrollView {
                         placeholderText: qsTr("Date YYYY-MM-DD")
                         validator: RegularExpressionValidator { regularExpression: /^[0-9-]{0,10}$/ }
                         inputMethodHints: Qt.ImhDigitsOnly
+                        readOnly: true   // the date is chosen in the calendar
                         Layout.fillWidth: true
                         Accessible.name: qsTr("Date")
+                        MouseArea { anchors.fill: parent; onClicked: datePicker.openFor(dateField.text) }
                     }
                     Button {
                         text: qsTr("Pick")
@@ -462,6 +478,13 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
+            Label {
+                visible: page.addError !== ""
+                text: qsTr("Could not save: %1").arg(page.addError)
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
             Button {
                 text: qsTr("Save as approved")
                 enabled: page.formProblem === ""
@@ -475,7 +498,6 @@ ScrollView {
             id: datePicker
             onPicked: iso => dateField.text = iso
         }
-
         Repeater {
             model: page.agenda
             delegate: Card {
@@ -532,7 +554,7 @@ ScrollView {
                             text: "✗"
                             Accessible.name: qsTr("Reject %1").arg(row.modelData.text)
                             Accessible.role: Accessible.Button
-                            onClicked: page.decide(row.modelData.block.id, "reject")
+                            onClicked: page.reject(row.modelData.block)
                         }
                     }
                 }
@@ -620,5 +642,22 @@ ScrollView {
         }
 
         Item { implicitHeight: 12 }
+    }
+
+    Dialog {
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        visible: page.confirmId >= 0
+        title: qsTr("Remove this approved block?")
+        width: Math.min(parent ? parent.width - 32 : 320, 400)
+        standardButtons: Dialog.Yes | Dialog.Cancel
+        Material.accent: Api.accent
+        contentItem: Label {
+            text: qsTr("It is taken off the calendar. You can approve it again with Undo.")
+            wrapMode: Text.Wrap
+        }
+        onAccepted: { const id = page.confirmId; page.confirmId = -1; page.decide(id, "reject") }
+        onRejected: page.confirmId = -1
     }
 }

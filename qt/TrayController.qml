@@ -18,12 +18,20 @@ Item {
     readonly property bool available: !!trayItem && trayItem.available
 
     readonly property var status: Api.status
-    readonly property string timerState: status ? status.state : "stopped"
+    QueueState { id: queueState }
+    // The state the timer is in once the queued actions are applied: what the menu, the labels and the
+    // hotkey decide from, so two offline hotkey presses do not queue two pauses.
+    function stateFor(st, queue) {
+        const q = queueState.implied(queue)
+        return q ? q.state : (st ? st.state : "stopped")
+    }
+    readonly property string timerState: stateFor(status, Api.queue)
     readonly property var breakTypes: status && status.chips ? status.chips.break_types : []
 
     // "Working · 1:05 · dev", "Break · 0:12 · eat" or "Worklog · stopped"; " · server unreachable" when offline
-    function tooltipFor(st, now, fetched, online) {
-        const off = online === false ? " · " + qsTr("server unreachable") : ""
+    function tooltipFor(st, now, fetched, online, waiting) {
+        const off = (online === false ? " · " + qsTr("server unreachable") : "")
+                    + (waiting > 0 ? " · " + qsTr("%n action(s) waiting", "", waiting) : "")
         if (!st)
             return qsTr("Worklog") + off
         if (st.state !== "working" && st.state !== "break")
@@ -40,10 +48,10 @@ Item {
             return "offline"
         return st && (st.state === "working" || st.state === "break") ? st.state : "stopped"
     }
-    // the hotkey: working -> pause, anything else -> start / resume
+    // the hotkey: working -> pause, anything else -> start / resume the last work block's type and project
     function toggleRequestFor(state, breakType) {
-        return state === "working" ? { path: "/api/pause", body: { type: breakType || "eat" } }
-                                   : { path: "/api/start", body: {} }
+        return state === "working" ? { path: "/api/pause", body: Api.pauseBody(breakType) }
+                                   : { path: "/api/start", body: Api.startBody("", "") }
     }
     // the balloon after a successful action; `data` is the server's new status
     function doneText(path, data) {
@@ -65,19 +73,26 @@ Item {
     function send(path, body, announce) {
         root.busy = true
         Api.timerAction(path, body, function (data) {
+            if (!root)
+                return
             root.busy = false
             if (announce)
                 root.notify(qsTr("Worklog"), root.doneText(path, data), false)
         }, function (e) {
+            if (!root)
+                return
             root.busy = false
             root.notify(qsTr("Worklog: action failed"), e, true)
         }, function () {
+            if (!root)
+                return
             root.busy = false
             root.notify(qsTr("Worklog"), qsTr("Saved offline, will be sent when the server answers"), false)
         })
     }
-    function startOrResume() { send("/api/start", {}, false) }
-    function pause(type) { send("/api/pause", { type: type || Api.defaultBreak() }, false) }
+    // Switch while working keeps the server's own choice; Start / Resume continues the last work block
+    function startOrResume() { send("/api/start", root.timerState === "working" ? {} : Api.startBody("", ""), false) }
+    function pause(type) { send("/api/pause", Api.pauseBody(type), false) }
     function stop() { send("/api/stop", {}, false) }
 
     // The hotkey decides from a fresh status: one that is up to 30 s old would turn "start" into a Switch
@@ -85,6 +100,11 @@ Item {
     function toggle() {
         if (root.busy)
             return
+        if (Api.queue.length > 0) {   // the queue says where the timer is going: no fresh status can improve on that
+            const r = root.toggleRequestFor(root.timerState, Api.defaultBreak())
+            root.send(r.path, r.body, true)
+            return
+        }
         root.busy = true
         Api.refreshStatus(function (s, e) {
             if (!s && Api.online) {   // the server answered with an error (login, ...): don't guess
@@ -93,7 +113,7 @@ Item {
                 return
             }
             const st = s || Api.status
-            const r = root.toggleRequestFor(st ? st.state : "stopped", Api.defaultBreak())
+            const r = root.toggleRequestFor(root.stateFor(st, Api.queue), Api.defaultBreak())
             root.send(r.path, r.body, true)
         })
     }
@@ -141,7 +161,7 @@ Item {
             id: tray
             visible: true
             icon.source: Qt.resolvedUrl("icons/tray-" + root.iconName(root.status, Api.online) + ".png")
-            tooltip: root.tooltipFor(root.status, root.nowMs, Api.statusAt, Api.online)
+            tooltip: root.tooltipFor(root.status, root.nowMs, Api.statusAt, Api.online, Api.queue.length)
             onActivated: reason => {
                 if (reason === Platform.SystemTrayIcon.Trigger)
                     root.toggleWindow()

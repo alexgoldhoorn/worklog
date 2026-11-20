@@ -50,6 +50,10 @@ ScrollView {
     readonly property real weekH: status ? status.week.worked_h + liveRunH : 0
     readonly property real monthH: status ? status.month.worked_h + liveRunH : 0
 
+    // the server's notices for the status and for the day (as on the web), each once
+    readonly property var serverNotices: [...new Set((page.status ? page.status.notices || [] : [])
+                                                     .concat(page.day ? page.day.notices || [] : []))]
+
     // minutes past the hard stop (balance settings) while today's work block runs. The server
     // sends past_stop_min only then (null otherwise); the clock here keeps it live between reloads.
     readonly property int pastStopMin: {
@@ -67,6 +71,7 @@ ScrollView {
     readonly property color toneBg: over ? Api.warnBg : timerState === "working" ? Api.workBg
                                   : timerState === "break" ? Api.breakBg : Api.card
     readonly property bool wide: availableWidth >= 720
+    readonly property bool narrow: availableWidth < 360   // the Today figure goes below the clock
 
     contentWidth: availableWidth
 
@@ -146,7 +151,9 @@ ScrollView {
     // keyboard shortcuts, as on the web's Timer page. A focused text field eats plain keys,
     // so they never fire while typing; the buttons' own enabled state covers busy and state.
     // not while a dialog is open: the window shortcuts would otherwise fire behind it
-    readonly property bool shortcutsOn: visible && !blockDialog.visible
+    // (also not while a text field, ComboBox or SpinBox has the focus, or when the Settings switch is off)
+    readonly property bool shortcutsOn: visible && !blockDialog.visible && Api.keyShortcuts
+                                        && Api.focusFree(page.Window.window ? page.Window.window.activeFocusItem : null)
     function press(button) {
         if (button.enabled)
             button.clicked()
@@ -176,13 +183,13 @@ ScrollView {
         spacing: 0
         Caption { text: parent.caption; font.weight: Font.DemiBold }
         Label {
-            text: Api.fmtH(parent.worked)
+            text: Api.fmtH1(parent.worked)
             font.pixelSize: 18
             font.weight: Font.Bold
             font.features: { "tnum": 1 }
         }
         Label {
-            text: Api.leftOrExtra(parent.worked, parent.expected) || qsTr("nothing expected")
+            text: Api.leftOrExtra(parent.worked, parent.expected, true) || qsTr("nothing expected")
             color: parent.worked - parent.expected > 0.005 ? Api.workColor : Api.muted
             font.pixelSize: 12
         }
@@ -211,8 +218,11 @@ ScrollView {
                 anchors.right: parent.right
                 spacing: 4
 
-                RowLayout {
+                GridLayout {
                     Layout.fillWidth: true
+                    columns: page.narrow ? 1 : 2
+                    columnSpacing: 8
+                    rowSpacing: 8
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 0
@@ -266,13 +276,13 @@ ScrollView {
                     ColumnLayout {
                         spacing: 0
                         opacity: page.stale ? 0.5 : 1   // totals from the last answer, not live
-                        Layout.alignment: Qt.AlignTop
+                        Layout.alignment: page.narrow ? Qt.AlignLeft | Qt.AlignTop : Qt.AlignRight | Qt.AlignTop
                         Label {
-                            text: qsTr("TODAY") + (page.todayExpH > 0 ? "  · " + Api.leftOrExtra(page.todayH, page.todayExpH) : "")
+                            text: qsTr("TODAY") + (page.todayExpH > 0 ? "  · " + Api.leftOrExtra(page.todayH, page.todayExpH, true) : "")
                             color: page.timerState === "stopped" ? Api.muted : page.tone
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
-                            Layout.alignment: Qt.AlignRight
+                            Layout.alignment: page.narrow ? Qt.AlignLeft : Qt.AlignRight
                         }
                         Label {
                             text: Api.fmtHM(page.todayH)
@@ -281,7 +291,7 @@ ScrollView {
                             font.pixelSize: 24
                             font.weight: Font.Bold
                             font.features: { "tnum": 1 }
-                            Layout.alignment: Qt.AlignRight
+                            Layout.alignment: page.narrow ? Qt.AlignLeft : Qt.AlignRight
                         }
                     }
                 }
@@ -304,7 +314,7 @@ ScrollView {
                         expected: page.status ? page.status.week.expected_h : 0
                     }
                     Counter {
-                        caption: page.status ? Api.parseDate(page.status.month.key + "-01").toLocaleDateString(Qt.locale(), "MMM") : ""
+                        caption: page.status ? Api.parseDate(page.status.month.key + "-01").toLocaleDateString(Api.locale, "MMM") : ""
                         worked: page.monthH
                         expected: page.status ? page.status.month.expected_h : 0
                     }
@@ -326,12 +336,8 @@ ScrollView {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         onClicked: {
-                            const body = {}
-                            if (page.pendingType)
-                                body.type = page.pendingType
-                            if (projectField.text.trim())
-                                body.project = projectField.text.trim()
-                            page.action("/api/start", body)
+                            // nothing picked and no project: continue the last work block (status.resume)
+                            page.action("/api/start", Api.startBody(page.pendingType, projectField.text.trim()))
                         }
                     }
                     ActionButton {
@@ -340,11 +346,11 @@ ScrollView {
                         subtext: page.breakType
                         fill: Api.breakColor
                         ink: Api.breakFg
-                        enabled: !page.busy && (page.timerState === "working"
-                                                || (page.timerState === "break" && page.breakType !== page.runningBlock?.type))
+                        // a break can start from stopped too, as on the web
+                        enabled: !page.busy && (page.timerState !== "break" || page.breakType !== page.runningBlock?.type)
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
-                        onClicked: page.action("/api/pause", { type: page.breakType })
+                        onClicked: page.action("/api/pause", Api.pauseBody(page.breakType))
                     }
                     ActionButton {
                         id: stopButton
@@ -376,7 +382,7 @@ ScrollView {
         Repeater {
             model: (page.error && !page.offline ? [{ text: qsTr("Error: %1").arg(page.error), level: "error" }] : [])
                    .concat(Api.queue.length ? [{ text: qsTr("%n action(s) waiting for the server", "", Api.queue.length), level: "warn" }] : [])
-                   .concat(page.status ? page.status.notices.map(t => ({ text: t, level: "warn" })) : [])
+                   .concat(page.serverNotices.map(t => ({ text: t, level: "warn" })))
                    .concat(page.status ? Api.overlapItems(page.status).map(o => ({ text: o.text, level: "warn", date: o.date })) : [])
                    .concat(page.status && page.status.needs_review.length
                            ? [{ text: qsTr("%n auto-closed block(s) to review: %1", "", page.status.needs_review.length)
@@ -607,7 +613,7 @@ ScrollView {
         ProposalCard {
             visible: rows.length > 0 && !page.stale
             date: page.day ? page.day.date : ""
-            meetings: page.day ? page.day.proposals : []
+            meetings: page.day ? page.day.meetings || page.day.proposals : []
             onFailed: e => page.error = e
         }
 

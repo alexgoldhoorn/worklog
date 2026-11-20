@@ -30,13 +30,13 @@ TestCase {
                      { start: "10:00", end: "10:30", title: "done", logged: true, dismissed: false },
                      { start: "11:00", end: "11:30", title: "no", logged: false, dismissed: true }]
         const card = createTemporaryObject(proposalComp, tc, { meetings: all })
-        compare(card.rows.map(m => m.title), ["open"])   // the Timer: only what still needs an answer
+        compare(card.rows.map(m => m.title), ["open", "done", "no"])   // Timer and Log alike: everything, marked
         verify(card.visible)
-        card.showAll = true                                // the Log: everything, marked
-        compare(card.rows.map(m => m.title), ["open", "done", "no"])
-        card.showAll = false
+        card.showAll = false                               // only what still needs an answer
+        compare(card.rows.map(m => m.title), ["open"])
         card.meetings = all.slice(1)
         verify(!card.visible)
+        compare(card.title, "Work calendar · the day's meetings")
     }
 
     // ---- Api.normTime ----------------------------------------------------------

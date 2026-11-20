@@ -21,15 +21,29 @@ ScrollView {
         const m = /^(?:[a-z][a-z0-9+.-]*:\/\/)?(?:[^@\/]*@)?(\[[^\]]*\]|[^:\/?#]*)/i.exec(url.trim())
         return m ? m[1].replace(/^\[|\]$/g, "").toLowerCase() : ""
     }
-    // localhost, loopback, private ranges, *.local and a bare hostname (no dot): a LAN server
+    // "10.1.2.3" -> [10, 1, 2, 3]; null when it is not a dotted IPv4 address (so "10.example.com" is not one)
+    function ipv4Octets(h) {
+        const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h)
+        if (!m)
+            return null
+        const o = m.slice(1).map(Number)
+        return o.every(x => x <= 255) ? o : null
+    }
+    // A LAN server (the password may travel over http): localhost and 127/8, 10/8, 172.16/12, 192.168/16,
+    // link-local 169.254/16, carrier-grade NAT 100.64/10 (Tailscale and the like), IPv6 loopback, fc00::/7
+    // and fe80::/10, *.local, and a bare hostname (no dot). Names are matched as names, never by prefix.
     function isLocalHost(host) {
-        const h = host.toLowerCase()
+        const h = host.toLowerCase().replace(/\.$/, "")
         if (h === "")
             return false
-        if (h.indexOf(":") >= 0)   // IPv6: loopback, link-local, unique-local
-            return h === "::1" || /^fe80:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h)
-        return h === "localhost" || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)
-               || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /\.local$/.test(h) || h.indexOf(".") < 0
+        if (h.indexOf(":") >= 0)
+            return /^(0{1,4}:){7}0{0,3}1$/.test(h) || h === "::1" || /^fe[89ab][0-9a-f]:/.test(h) || /^f[cd][0-9a-f]{2}:/.test(h)
+        const o = ipv4Octets(h)
+        if (o)
+            return o[0] === 10 || o[0] === 127 || (o[0] === 172 && o[1] >= 16 && o[1] <= 31)
+                   || (o[0] === 192 && o[1] === 168) || (o[0] === 169 && o[1] === 254)
+                   || (o[0] === 100 && o[1] >= 64 && o[1] <= 127)
+        return h === "localhost" || /\.local$/.test(h) || h.indexOf(".") < 0
     }
     // "worklog.example.com" -> "https://worklog.example.com", "nas:8000" -> "http://nas:8000"; an address that
     // already has a scheme is kept; trailing slashes go
@@ -44,16 +58,17 @@ ScrollView {
         return /^http:\/\//i.test(url.trim()) && user.trim() !== "" && !isLocalHost(hostOf(url))
     }
 
+    property string saveError: ""
     function connectNow() {
         const url = normalizeUrl(urlField.text)
         urlField.text = url
-        Api.setServer(url, userField.text, passwordField.text)
+        saveError = Api.setServer(url, userField.text, passwordField.text)   // "" or "Could not save the password on this device"
     }
     // forgets the user and the password (and the stored secret); the pages then show the login message
     function signOut() {
         userField.text = ""
         passwordField.text = ""
-        Api.setServer(Api.serverUrl, "", "")
+        saveError = Api.setServer(Api.serverUrl, "", "")   // also drops the waiting actions (another login)
     }
 
     property alias weekFieldItem: weekField   // tests
@@ -84,34 +99,51 @@ ScrollView {
     readonly property bool hasDefaults: !!settings && settings.default_type !== undefined
     property string defaultsMessage: ""
 
-    function reload() {
-        connected = null
+    // the break types the Defaults card offers; replaced only when they changed, so the ComboBox keeps an unsaved pick
+    property var breakTypes: []
+
+    function fillHours(st) { weekField.text = String(st.week_basis_h) }
+    function fillRate(st) {
+        rateField.text = st.rate === null ? "" : String(st.rate)
+        unitBox.currentIndex = Math.max(0, unitBox.model.indexOf(st.rate_unit))
+    }
+    function fillDefaults(st) {
+        if (JSON.stringify(page.breakTypes) !== JSON.stringify(st.break_types))
+            page.breakTypes = st.break_types
+        typeField.text = st.default_type
+        clientField.text = st.default_client || ""
+        breakBox.currentIndex = st.break_types.indexOf(st.default_break_type)
+        closeField.text = st.auto_close_time
+        autoAddSwitch.checked = st.calendar_auto_add
+    }
+
+    // Reads the server's settings. `section` ("hours", "rate", "defaults") refreshes only that card's
+    // fields, so saving one card never overwrites what was typed in another; without it all are filled.
+    function reload(section) {
+        if (!section)
+            connected = null
         Api.request("GET", "/api/settings", undefined, function (s) {
             if (!weekField)   // the answer came after the page was gone
                 return
             page.settings = s
             page.connected = true
             page.serverMessage = qsTr("Connected to %1").arg(Api.baseUrl)
-            weekField.text = String(s.week_basis_h)
-            rateField.text = s.rate === null ? "" : String(s.rate)
-            unitBox.currentIndex = Math.max(0, unitBox.model.indexOf(s.rate_unit))
-            if (page.hasDefaults) {
-                typeField.text = s.default_type
-                clientField.text = s.default_client || ""
-                breakBox.currentIndex = s.break_types.indexOf(s.default_break_type)
-                closeField.text = s.auto_close_time
-                autoAddSwitch.checked = s.calendar_auto_add
-            }
+            if (!section || section === "hours")
+                page.fillHours(s)
+            if (!section || section === "rate")
+                page.fillRate(s)
+            if (page.hasDefaults && (!section || section === "defaults"))
+                page.fillDefaults(s)
         }, function (e) {
             page.connected = false
             page.serverMessage = e
         })
     }
 
-    function save(body, setMessage) {
+    function save(body, setMessage, section) {
         Api.request("PUT", "/api/settings", body, function (s) {
             page.flash(setMessage)
-            page.reload()
+            page.reload(section)
         }, e => setMessage(qsTr("Error: %1").arg(e)))
     }
 
@@ -215,7 +247,7 @@ ScrollView {
                     flat: true
                     Accessible.name: qsTr("Sign out: forget the saved user and password")
                     Accessible.role: Accessible.Button
-                    onClicked: page.signOut()
+                    onClicked: signOutDialog.open()
                 }
                 Button {
                     id: connectButton
@@ -224,11 +256,18 @@ ScrollView {
                     onClicked: page.connectNow()
                 }
             }
+            Label {
+                visible: page.saveError !== ""
+                text: page.saveError
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
             // Android only: the saved login opens after a fingerprint/face (or the screen lock)
             Switch {
                 id: unlockSwitch
                 visible: Qt.platform.os === "android" && Biometric.isAvailable()
-                text: qsTr("Require fingerprint/face to open")
+                text: qsTr("Ask for fingerprint or face when the app opens")
                 checked: Api.requireUnlock
                 Accessible.name: text
                 Layout.fillWidth: true
@@ -244,10 +283,38 @@ ScrollView {
                     }
                 }
             }
+            Caption {
+                visible: unlockSwitch.visible
+                text: qsTr("The home-screen widget, the quick tile and the notification stay usable without it.")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
             Label {
                 visible: unlockSwitch.visible && page.unlockMessage !== ""
                 text: page.unlockMessage
                 color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
+
+        Card {
+            visible: Qt.platform.os !== "android"
+            title: qsTr("Keyboard")
+
+            Switch {
+                id: shortcutSwitch
+                text: qsTr("Single-key shortcuts (S, P, X, 1–6, arrows)")
+                checked: Api.keyShortcuts
+                onToggled: Api.keyShortcuts = checked
+                Accessible.name: text
+            }
+            Caption {
+                text: qsTr("They never act while a text field, list or number box has the focus.")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
@@ -357,7 +424,7 @@ ScrollView {
                 Button {
                     text: qsTr("Save")
                     enabled: page.weekHours >= 1 && page.weekHours <= 80
-                    onClicked: page.save({ week_basis_h: page.weekHours }, m => page.hoursMessage = m)
+                    onClicked: page.save({ week_basis_h: page.weekHours }, m => page.hoursMessage = m, "hours")
                 }
             }
             Label {
@@ -386,7 +453,7 @@ ScrollView {
                     text: qsTr("Save")
                     enabled: rateField.text.trim() === "" || isFinite(page.parseRate(rateField.text))
                     onClicked: page.save({ rate: rateField.text.trim() === "" ? null : page.parseRate(rateField.text),
-                                           rate_unit: unitBox.currentText }, m => page.rateMessage = m)
+                                           rate_unit: unitBox.currentText }, m => page.rateMessage = m, "rate")
                 }
             }
             Label {
@@ -422,7 +489,7 @@ ScrollView {
             Caption { text: qsTr("Break type for Pause") }
             ComboBox {
                 id: breakBox
-                model: page.hasDefaults ? page.settings.break_types : []
+                model: page.breakTypes
                 Layout.fillWidth: true
                 Accessible.name: qsTr("Default break type")
             }
@@ -461,7 +528,7 @@ ScrollView {
                     onClicked: page.save({ default_type: typeField.text.trim(), default_client: clientField.text.trim() || null,
                                            default_break_type: breakBox.currentText,
                                            auto_close_time: Api.normTime(closeField.text),
-                                           calendar_auto_add: autoAddSwitch.checked }, m => page.defaultsMessage = m)
+                                           calendar_auto_add: autoAddSwitch.checked }, m => page.defaultsMessage = m, "defaults")
                 }
             }
         }
@@ -488,5 +555,23 @@ ScrollView {
             }
         }
         Item { implicitHeight: 8 }
+    }
+
+    Dialog {
+        id: signOutDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: qsTr("Sign out?")
+        width: Math.min(parent ? parent.width - 32 : 320, 400)
+        standardButtons: Dialog.Yes | Dialog.Cancel
+        Material.accent: Api.accent
+        contentItem: Label {
+            text: Api.queue.length > 0
+                  ? qsTr("The saved user and password are forgotten. The %n action(s) still waiting to be sent are discarded.", "", Api.queue.length)
+                  : qsTr("The saved user and password are forgotten.")
+            wrapMode: Text.Wrap
+        }
+        onAccepted: page.signOut()
     }
 }

@@ -7,6 +7,7 @@ import QtQuick.Layouts
 ScrollView {
     id: page
     property string month: Api.today().slice(0, 7)   // "2026-10"
+    property bool monthChosen: false                 // stepped by the user: stays; otherwise it follows the current month
     property var days: []
     property string error: ""
 
@@ -16,6 +17,7 @@ ScrollView {
                                      "before-first": qsTr("before first log") })
     // below this width the reason field gets its own line under the day
     readonly property bool narrow: availableWidth < 480
+    readonly property int colW: 68   // the hours columns
 
     // The rows live in a ListModel that is updated in place by date, so a reload (after every save)
     // keeps the delegates, and with them the focus and a half-typed value in another row.
@@ -76,6 +78,7 @@ ScrollView {
         const d = Api.parseDate(month + "-01")
         d.setMonth(d.getMonth() + n)
         month = Api.isoDate(d).slice(0, 7)
+        monthChosen = true
     }
 
     function reload() {
@@ -105,19 +108,28 @@ ScrollView {
     }
 
     // false (and an error shown) when the hours are not numbers: nothing is ever sent as NaN/null
-    function save(date, expected, sick, reason) {
+    // `onFail(message)` runs when the server refuses it (the row then goes back to the saved values)
+    function save(date, expected, sick, reason, onFail) {
         const e = hours(expected, false), s = hours(sick, true)
         if (isNaN(e) || isNaN(s)) {
             error = qsTr("Hours must be a number from 0 to 24")
             return false
         }
-        Api.request("PUT", "/api/days/" + date, { expected_h: e, sick_h: s, reason: reason }, null, e2 => page.error = e2)
+        Api.request("PUT", "/api/days/" + date, { expected_h: e, sick_h: s, reason: reason }, null, function (e2) {
+            page.error = e2
+            if (onFail) onFail(e2)
+        })
         return true
     }
 
     onMonthChanged: reload()
     Component.onCompleted: if (visible) reload()
-    onVisibleChanged: if (visible) reload()
+    onVisibleChanged: {
+        if (visible && !monthChosen)
+            month = Api.today().slice(0, 7)   // the app can run for days: follow the calendar
+        if (visible)
+            reload()
+    }
     Connections {
         target: Api
         // a hidden page reloads when its tab is shown
@@ -143,7 +155,7 @@ ScrollView {
                 onClicked: page.shiftMonth(-1)
             }
             Label {
-                text: Api.parseDate(page.month + "-01").toLocaleDateString(Qt.locale(), "MMMM yyyy")
+                text: Api.parseDate(page.month + "-01").toLocaleDateString(Api.locale, "MMMM yyyy")
                 font.pixelSize: 20
                 font.weight: Font.Bold
                 horizontalAlignment: Text.AlignHCenter
@@ -183,8 +195,8 @@ ScrollView {
                     Layout.maximumWidth: page.narrow ? 100000 : 110
                     Layout.fillWidth: page.narrow
                 }
-                Caption { text: qsTr("Exp."); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 56 }
-                Caption { text: qsTr("Sick"); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: 56 }
+                Caption { text: page.availableWidth < 360 ? qsTr("Exp.") : qsTr("Expected"); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: page.colW }
+                Caption { text: qsTr("Sick"); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: page.colW }
                 Caption { visible: !page.narrow; text: qsTr("Reason"); Layout.fillWidth: true }
                 Item { implicitWidth: 36 }
             }
@@ -237,17 +249,25 @@ ScrollView {
                                 if (!sickField.activeFocus) sickField.text = String(rowLoader.sick)
                                 if (!reasonField.activeFocus) reasonField.text = rowLoader.reason
                             }
+                            property string err: ""   // why the last edit of this row was rejected
                             function revert() {
                                 expField.text = String(rowLoader.expected)
                                 sickField.text = String(rowLoader.sick)
+                                reasonField.text = rowLoader.reason
                             }
                             function commit() {
                                 const e = page.hours(expField.text, false), s = page.hours(sickField.text, true)
                                 if (!isNaN(e) && !isNaN(s) && e === rowLoader.expected && s === rowLoader.sick
                                         && reasonField.text === rowLoader.reason)
                                     return
-                                if (!page.save(rowLoader.date, expField.text, sickField.text, reasonField.text))
-                                    revert()
+                                dr.err = ""
+                                const ok = page.save(rowLoader.date, expField.text, sickField.text, reasonField.text, function (m) {
+                                    if (dr) { dr.err = m; dr.revert() }
+                                })
+                                if (!ok) {
+                                    dr.err = page.error
+                                    dr.revert()
+                                }
                             }
                             Component.onCompleted: sync()
                             Connections {
@@ -263,7 +283,7 @@ ScrollView {
                                 Layout.maximumWidth: page.narrow ? 100000 : 110
                                 Layout.fillWidth: page.narrow
                                 Label {
-                                    text: Api.parseDate(rowLoader.date).toLocaleDateString(Qt.locale(), "ddd d")
+                                    text: Api.parseDate(rowLoader.date).toLocaleDateString(Api.locale, "ddd d")
                                     font.weight: dr.stored ? Font.DemiBold : Font.Normal
                                     color: dr.stored ? Api.fg : Api.muted
                                 }
@@ -284,7 +304,7 @@ ScrollView {
                                 topPadding: 6
                                 bottomPadding: 6
                                 implicitHeight: 36
-                                Layout.preferredWidth: 56
+                                Layout.preferredWidth: page.colW
                                 Accessible.name: qsTr("Expected hours")
                                 onEditingFinished: dr.commit()
                             }
@@ -297,7 +317,7 @@ ScrollView {
                                 topPadding: 6
                                 bottomPadding: 6
                                 implicitHeight: 36
-                                Layout.preferredWidth: 56
+                                Layout.preferredWidth: page.colW
                                 Accessible.name: qsTr("Sick hours")
                                 onEditingFinished: dr.commit()
                             }
@@ -313,6 +333,17 @@ ScrollView {
                                 Layout.columnSpan: page.narrow ? 4 : 1
                                 Accessible.name: qsTr("Reason")
                                 onEditingFinished: dr.commit()
+                            }
+                            Label {
+                                visible: dr.err !== ""
+                                text: dr.err
+                                color: Api.errorColor
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                Layout.row: 2
+                                Layout.column: 0
+                                Layout.columnSpan: page.narrow ? 4 : 5
+                                Layout.fillWidth: true
                             }
                             ToolButton {
                                 text: "↺"

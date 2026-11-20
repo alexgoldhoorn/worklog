@@ -205,8 +205,10 @@ ScrollView {
         return function () {
             card = null
             gen++
+            const g = gen
+            // a Reset (or another card) while the log request was out must not start the phase after all
             if (action)
-                action(() => page.begin(phase))
+                action(function () { if (page && g === page.gen) page.begin(phase) })
             else
                 begin(phase)
         }

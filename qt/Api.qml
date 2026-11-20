@@ -19,6 +19,7 @@ QtObject {
         property alias idleAfterMinutes: api.idleMinutes   // renamed from idleMinutes: the old default of 10 was saved everywhere
         property alias idleRaise: api.idleRaise
         property alias requireUnlock: api.requireUnlock
+        property alias keyShortcuts: api.keyShortcuts
     }
     // Windows desktop: keep running in the tray when the window closes, and the global start/pause hotkey
     property bool trayKeep: true
@@ -30,6 +31,15 @@ QtObject {
     property int idleMinutes: 60
     // false: the question waits in the window and a tray balloon announces it; true: the window comes to the front
     property bool idleRaise: false
+    // window-level single-key shortcuts (S P X 1-6, arrows) on or off; Settings switch
+    property bool keyShortcuts: true
+    // Is the keyboard focus somewhere the single-key shortcuts may act? Not on a text field, ComboBox
+    // or SpinBox/Slider (they use those keys themselves); buttons and the pages are fine.
+    function focusFree(item) {
+        if (!item)
+            return true
+        return !("inputMethodHints" in item) && !("stepSize" in item) && !("editable" in item) && !("popup" in item)
+    }
     property bool hotkeyCapturing: false   // the Settings field is waiting for a key: release the hotkey so it can be pressed
     property string hotkeyError: ""   // set by TrayController when the hotkey could not be registered
     readonly property bool trayCapable: Qt.platform.os === "windows"
@@ -68,7 +78,7 @@ QtObject {
     readonly property color line2: dark ? "#222831" : "#eef0f3"
     readonly property color fg: dark ? "#e7eaef" : "#15181d"
     readonly property color muted: dark ? "#98a2b3" : "#6b7380"
-    readonly property color faint: dark ? "#5f6b7a" : "#9aa3b0"
+    readonly property color faint: dark ? "#8591a2" : "#5f6978"
     readonly property color accent: dark ? "#5b9dff" : "#2563eb"
     readonly property color accentBg: dark ? "#16284a" : "#e8effd"
     readonly property color accentFg: dark ? "#0b1220" : "#ffffff"
@@ -89,11 +99,14 @@ QtObject {
     function signColor(h) { return h > 0.005 ? workColor : h < -0.005 ? errorColor : muted }
 
     // "1.5 h left" or "+0.4 h extra"; empty when nothing is expected
-    function leftOrExtra(worked, expected) {
+    // (one decimal when `oneDecimal`, as the web's hero does)
+    function leftOrExtra(worked, expected, oneDecimal) {
         if (!(expected > 0))
             return ""
         const d = worked - expected
-        return d < -0.005 ? qsTr("%1 left").arg(fmtH(-d)) : qsTr("%1 extra").arg(fmtSigned(d))
+        const f = oneDecimal ? fmtH1 : fmtH
+        return d < -0.005 ? qsTr("%1 left").arg(f(-d))
+                          : qsTr("%1 extra").arg((d > 0.005 ? "+" : "") + f(d))
     }
 
     // emitted after any successful mutation, so every page reloads what it shows
@@ -145,25 +158,29 @@ QtObject {
         }
     }
 
+    // The one English locale for every date the app shows: the app ships in English only, and
+    // Qt.locale() would mix in the device's language.
+    readonly property var locale: Qt.locale("en_GB")
+    // "Tue 20 Oct" for an ISO date
+    function fmtDay(iso) { return locale.toString(parseDate(iso), "ddd d MMM") }
+
+    // Saves the login. Returns "" when all went well, else a message (the password could not be stored).
     function setServer(url, user, pass) {
-        // actions queued for another server must never be replayed to this one
-        if (url.trim().replace(/\/+$/, "") !== baseUrl && queue.length > 0) {
-            const n = queue.length
-            queue = []
-            saveQueue()
-            queueFailed(qsTr("%n queued action(s) for the previous server dropped", "", n))
-        }
+        // actions queued for another server or login must never be replayed to this one
+        if ((url.trim().replace(/\/+$/, "") !== baseUrl || user !== username) && queue.length > 0)
+            dropQueue(qsTr("%n queued action(s) for the previous server or login dropped", "", queue.length))
         status = null
         statusError = ""
         statusGen++   // an answer still on its way belongs to the old server or login
         serverUrl = url
         username = user
         password = pass
-        SecretStore.set("password", pass)
+        const stored = SecretStore.set("password", pass)
         TimerWidget.configure(url, user)
         TimerWidget.refresh()
         serverChanged()
         refreshStatus()
+        return stored ? "" : qsTr("Could not save the password on this device")
     }
 
     // ---- shared status -------------------------------------------------------
@@ -234,10 +251,28 @@ QtObject {
         onTriggered: api.refreshStatus()
     }
 
-    // the break type Pause uses when none was picked: the server's first (most used), "eat" before any status
+    // the break type Pause uses when none was picked: the server's first (most used)
+    // (empty before any status: the request then sends no type and the server picks its own)
     function defaultBreak() {
         const b = status && status.chips ? status.chips.break_types : []
-        return b && b.length > 0 ? b[0] : "eat"
+        return b && b.length > 0 ? b[0] : ""
+    }
+    // the body of a Pause: the type is left out when none is known
+    function pauseBody(type) {
+        const t = type || defaultBreak()
+        return t ? { type: t } : {}
+    }
+    // the body of a Start: with no type and no project picked, the last work block's (status.resume)
+    function startBody(type, project) {
+        const body = {}
+        if (type) body.type = type
+        if (project) body.project = project
+        const r = status ? status.resume : null
+        if (!type && !project && r) {
+            if (r.type) body.type = r.type
+            if (r.project) body.project = r.project
+        }
+        return body
     }
 
     // ---- requests ------------------------------------------------------------
@@ -288,7 +323,7 @@ QtObject {
                       : (data && data.error) || ("HTTP " + status), status)   // status 0: unreachable
             }
             // any answer proves the server is there: send what was queued while it was not
-            if (status !== 0 && !api.flushing && api.queue.length > 0)
+            if (api.flushVerdict(status) !== "keep" && !api.flushing && api.queue.length > 0)
                 Qt.callLater(api.flushQueue)
         }
         entry.fail = () => finish(0, "")
@@ -314,6 +349,10 @@ QtObject {
 
     property var queue: []   // [{ path, body }]
     property bool flushing: false
+    // bumped whenever the queue is replaced or cleared: a flush request still in flight must not touch the new one
+    property int queueGen: 0
+    // why the head of the queue is stuck, "" when it is only waiting for the network
+    property string queueStuck: ""
     // a queued action the server refused when it was replayed (e.g. a block changed meanwhile)
     signal queueFailed(string message)
     property Settings offline: Settings {
@@ -327,11 +366,23 @@ QtObject {
     }
     function saveQueue() { offline.queueJson = JSON.stringify(queue) }
 
+    // empty the queue (another login, or Discard)
+    function dropQueue(message) {
+        queueGen++
+        flushing = false
+        queueStuck = ""
+        queue = []
+        saveQueue()
+        if (message)
+            queueFailed(message)
+    }
+
     // "2026-10-20T09:30", the server's wall clock now
     function atNow() { return today() + "T" + nowHHMM() }
 
     // POST /api/start|pause|stop. When the server cannot be reached the action is queued and
-    // onQueued() runs instead of onErr. A queue that is not empty also takes the action, to keep the order.
+    // onQueued() runs instead of onErr. A queue that is not empty also takes the action, to keep the
+    // order, and is sent again at once.
     function timerAction(path, body, onOk, onErr, onQueued) {
         const queueIt = function () {
             const b = Object.assign({}, body)
@@ -342,6 +393,7 @@ QtObject {
         }
         if (queue.length > 0) {
             queueIt()
+            Qt.callLater(flushQueue)
             return
         }
         request("POST", path, body, onOk, function (e, status) {
@@ -352,24 +404,45 @@ QtObject {
         })
     }
 
-    // send the queue front to back; stops at the first unreachable answer, drops an action the server refuses
+    // What to do with the head of the queue after the server answered it with `status`:
+    // "keep" (try again later: unreachable, login, timeout, rate limit, server error) or "drop"
+    // (the server refused the action for good).
+    function flushVerdict(status) {
+        if (status === 0 || status === 401 || status === 408 || status === 429 || status >= 500)
+            return "keep"
+        return "drop"
+    }
+
+    // send the queue front to back; stops at the first answer that says "later", drops an action the server refuses
     function flushQueue() {
         if (flushing || queue.length === 0)
             return
         flushing = true
+        const gen = queueGen
         const next = function () {
+            if (gen !== api.queueGen)
+                return   // the queue was replaced meanwhile: this chain belongs to the old one
             if (queue.length === 0) {
                 flushing = false
+                queueStuck = ""
                 return
             }
             const item = queue[0]
             request("POST", item.path, item.body, function () {
+                if (gen !== api.queueGen)
+                    return
                 queue = queue.slice(1)
                 saveQueue()
+                queueStuck = ""
                 next()
             }, function (e, status) {
-                if (status === 0 || status === 401) {   // still offline / not logged in: try again later
+                if (gen !== api.queueGen)
+                    return
+                if (flushVerdict(status) === "keep") {
                     flushing = false
+                    queueStuck = status === 401 ? qsTr("Login required")
+                               : status >= 500 ? qsTr("Server error")
+                               : status === 0 ? "" : e
                     return
                 }
                 queue = queue.slice(1)
@@ -408,7 +481,7 @@ QtObject {
     // chart series colours (style.css --s1…--s7, --s-other)
     readonly property var series: dark ? ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9"]
                                        : ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6"]
-    readonly property color seriesOther: dark ? "#5f6b7a" : "#9aa3b0"
+    readonly property color seriesOther: dark ? "#5f6b7a" : "#9aa3b0"   // not `faint`, which follows the web's contrast fix
 
     // free text going into a StyledText label
     function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
@@ -503,6 +576,13 @@ QtObject {
         const v = String(text).trim()
         const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(v)
         return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? pad(Number(m[1])) + ":" + m[2] : v
+    }
+
+    // 2.54 -> "2.5 h" (one decimal, trailing zero dropped, like the web's fmtH1)
+    function fmtH1(h) {
+        if (h === null || h === undefined)
+            return "–"
+        return fmtNum(h, 1) + " h"
     }
 
     // 2.5 -> "2.5 h", trailing zeros dropped

@@ -1,6 +1,5 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 // The Today screen: the Timer while it shows today, the Log for any other day. Main.qml's header
@@ -12,7 +11,7 @@ Item {
     readonly property string date: viewDate || today
     readonly property bool isToday: viewDate === ""
     readonly property string heading: {
-        const d = Api.parseDate(date).toLocaleDateString(Qt.locale(), "ddd d MMM")
+        const d = Api.parseDate(date).toLocaleDateString(Api.locale, "ddd d MMM")
         return isToday ? qsTr("Today · %1").arg(d) : d
     }
 
@@ -29,6 +28,7 @@ Item {
     // ← / → step a day from today as well (the Log has its own for the other days);
     // not while a dialog or the calendar is open, and a focused text field keeps its arrow keys
     readonly property bool shortcutsOn: visible && isToday && !timerPage.dialog.visible && !datePicker.visible
+                                        && Api.keyShortcuts && Api.focusFree(Window.window ? Window.window.activeFocusItem : null)
     Shortcut { sequence: "Left"; enabled: screen.shortcutsOn; onActivated: screen.step(-1) }
     Shortcut { sequence: "Right"; enabled: screen.shortcutsOn; onActivated: screen.step(1) }
 

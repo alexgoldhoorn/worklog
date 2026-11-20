@@ -19,6 +19,8 @@ Item {
     property real lastTickMs: Date.now()
     property var pending: null        // { startMs, endMs, minutes, block } while the question is open
     readonly property bool asking: pending !== null
+    property bool sending: false      // the break is being logged: the question stays open until the server accepted it
+    property string error: ""         // why the last attempt failed, shown in the question
 
     // ---- pure parts ----------------------------------------------------------
 
@@ -87,7 +89,7 @@ Item {
         if (!shouldAsk(Api.idleOn, st, prev, cur, Api.idleMinutes, asking))
             return
         Api.refreshStatus(function (s) {
-            const fresh = s || Api.status
+            const fresh = s   // a failed refresh must not make us decide from a stale status
             if (!fresh || fresh.state !== "working" || root.asking)
                 return
             const clock = Api.now().getTime()
@@ -131,27 +133,43 @@ Item {
 
     function logAsBreak() {
         const p = root.pending
-        root.pending = null
-        dialog.close()
-        if (!p)
+        if (!p || root.sending)
             return
+        root.sending = true
+        root.error = ""
         const fail = function (e) {
             if (root.tray)
                 root.tray.notify(qsTr("Could not log the break"), e, true)
         }
         // not Api.timerAction: a queued pause would get the time of the replay instead of `at`
-        Api.request("POST", "/api/pause", { type: Api.defaultBreak(), at: root.atString(p.startMs) }, function () {
-            const body = {}
-            if (p.block && p.block.type) body.type = p.block.type
-            if (p.block && p.block.project) body.project = p.block.project
-            Api.timerAction("/api/start", body, null, fail, function () {
+        const body = Api.pauseBody("")
+        body.at = root.atString(p.startMs)
+        Api.request("POST", "/api/pause", body, function () {
+            // logged: the question is answered
+            root.sending = false
+            root.pending = null
+            dialog.close()
+            const startBody = {}
+            if (p.block && p.block.type) startBody.type = p.block.type
+            if (p.block && p.block.project) startBody.project = p.block.project
+            Api.timerAction("/api/start", startBody, null, fail, function () {
                 if (root.tray)
                     root.tray.notify(qsTr("Worklog"), qsTr("Break logged; resuming is saved offline and will be sent later"), false)
             })
-        }, fail)
+        }, function (e) {
+            // not logged (network not up yet after sleep, ...): the question stays, with the reason
+            root.sending = false
+            root.error = e
+            fail(e)
+            if (!dialog.opened)
+                dialog.open()
+        })
     }
     function keepAsWork() {
+        if (root.sending)
+            return
         root.pending = null
+        root.error = ""
         dialog.close()
     }
 
@@ -165,20 +183,33 @@ Item {
         width: Math.min(parent ? parent.width - 32 : 320, 400)
         Material.accent: Api.accent
 
-        contentItem: Label {
-            text: root.pending ? root.question(root.pending) : ""
-            wrapMode: Text.Wrap
+        contentItem: ColumnLayout {
+            spacing: 8
+            Label {
+                text: root.pending ? root.question(root.pending) : ""
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: root.error !== ""
+                text: qsTr("Could not log it: %1. Try again.").arg(root.error)
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
         }
         footer: DialogButtonBox {
             Button {
                 text: qsTr("Log as break")
+                enabled: !root.sending
                 highlighted: true
                 Accessible.name: text
-                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+                DialogButtonBox.buttonRole: DialogButtonBox.ActionRole   // not Accept: the dialog stays open until the server took the break
                 onClicked: root.logAsBreak()
             }
             Button {
                 text: qsTr("Keep as work")
+                enabled: !root.sending
                 Accessible.name: text
                 DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
                 onClicked: root.keepAsWork()

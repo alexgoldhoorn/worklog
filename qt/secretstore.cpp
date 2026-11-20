@@ -1,5 +1,6 @@
 #include "secretstore.h"
 
+#include <QCoreApplication>
 #include <QSettings>
 
 void SecretStore::removeLegacy(const QString &key)
@@ -15,7 +16,12 @@ void SecretStore::removeLegacy(const QString &key)
 
 static std::wstring target(const QString &key)
 {
-    return (QStringLiteral("worklog/") + key).toStdWString();
+    // The organisation name keeps the real app on "worklog/<key>"; tests and
+    // WORKLOG_ORG scratch copies get their own entry.
+    QString org = QCoreApplication::organizationName();
+    if (org.isEmpty())
+        org = QStringLiteral("worklog");
+    return (org + QLatin1Char('/') + key).toStdWString();
 }
 
 SecretStore::SecretStore(QObject *parent) : QObject(parent) {}
@@ -56,6 +62,7 @@ void SecretStore::remove(const QString &key)
 
 #elif defined(Q_OS_ANDROID)
 #include <QCoreApplication>
+#include <QJniEnvironment>
 #include <QJniObject>
 
 static const char *storeClass = "net/goldhoorn/worklog/SecretStore";
@@ -77,10 +84,14 @@ bool SecretStore::set(const QString &key, const QString &value)
         remove(key);
         return true;
     }
-    return QJniObject::callStaticMethod<jboolean>(
+    const bool ok = QJniObject::callStaticMethod<jboolean>(
             storeClass, "set", "(Landroid/content/Context;Ljava/lang/String;Ljava/lang/String;)Z",
             QNativeInterface::QAndroidApplication::context().object(),
             QJniObject::fromString(key).object<jstring>(), QJniObject::fromString(value).object<jstring>());
+    QJniEnvironment env;
+    if (env.checkAndClearExceptions())   // a Java exception is a failed write too
+        return false;
+    return ok;
 }
 
 void SecretStore::remove(const QString &key)

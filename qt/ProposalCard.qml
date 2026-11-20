@@ -4,15 +4,15 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// The work-calendar meetings of one day. A meeting without a block can be added as one (the
-// server cuts it out of whatever was logged there) or dismissed. The Timer shows only those;
-// the Log (`showAll`) lists every meeting, the logged and the dismissed ones marked.
+// The work-calendar meetings of one day, as on the web (Timer and Log alike): every meeting is listed,
+// the logged and the dismissed ones marked. A meeting without a block can be added as one (the server
+// cuts it out of whatever was logged there) or dismissed; a dismissed one can still be added.
 // Hidden when there is nothing to show.
 Card {
     id: card
     property string date
     property var meetings: []      // the day's `meetings` (or `proposals` from an older server)
-    property bool showAll: false
+    property bool showAll: true   // false lists only the meetings still waiting
 
     readonly property var rows: showAll ? meetings : open(meetings)
 
@@ -24,16 +24,7 @@ Card {
     }
 
     visible: rows.length > 0
-    title: showAll ? qsTr("Work calendar") : qsTr("Calendar proposals")
-
-    Caption {
-        text: card.showAll ? qsTr("The day's meetings · add one to cut it into the log")
-                           : qsTr("Meetings without a block")
-        font.capitalization: Font.MixedCase
-        font.letterSpacing: 0
-        wrapMode: Text.Wrap
-        Layout.fillWidth: true
-    }
+    title: qsTr("Work calendar · the day's meetings")
 
     Repeater {
         model: card.rows

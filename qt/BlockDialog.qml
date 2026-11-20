@@ -68,11 +68,20 @@ Dialog {
 
     function isTime(v) { return /^\d\d:\d\d$/.test(v) }
 
-    // a new block on another day cannot be left open: that would be a running block in the past
-    readonly property bool needsEnd: block === null && date !== "" && date !== Api.today()
+    // The end cannot be left empty when that would open a block: a new one on another day would be a
+    // running block in the past, and a closed block being edited would be reopened.
+    readonly property bool needsEnd: (block === null && date !== "" && date !== Api.today()) || (block !== null && !!block.end)
+
+    // "" when start and end (as typed) are in order or not both times yet, else the server's own wording
+    function endProblem(start, end) {
+        const a = Api.normTime(start), b = Api.normTime(end)
+        return isTime(a) && isTime(b) && b <= a ? qsTr("End must be after start") : ""
+    }
+    readonly property string timeProblem: endProblem(startField.text, endField.text)
 
     readonly property bool valid: isTime(Api.normTime(startField.text))
                                   && (endField.text.trim() === "" ? !needsEnd : isTime(Api.normTime(endField.text)))
+                                  && timeProblem === ""
                                   && typeField.editText.trim() !== ""
 
     // what the form says now, normalised
@@ -243,7 +252,7 @@ Dialog {
             Caption { text: qsTr("Date") }
             Button {
                 id: dateButton
-                text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
+                text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Api.locale, "dddd d MMMM yyyy")
                 flat: true
                 Layout.fillWidth: true
                 Accessible.name: qsTr("Date: %1").arg(text)
@@ -278,7 +287,7 @@ Dialog {
                     Caption { text: qsTr("End") }
                     TextField {
                         id: endField
-                        placeholderText: dlg.needsEnd ? qsTr("Required on another day") : qsTr("empty = running")
+                        placeholderText: dlg.needsEnd ? qsTr("Required") : qsTr("empty = running")
                         validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
                         inputMethodHints: Qt.ImhPreferNumbers
                         selectByMouse: true
@@ -331,6 +340,13 @@ Dialog {
                 level: "warn"
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
+            }
+            Label {
+                visible: dlg.timeProblem !== ""
+                text: dlg.timeProblem
+                color: Api.errorColor
+                font.pixelSize: 12
+                Layout.fillWidth: true
             }
             NoticeBanner {
                 visible: dlg.error !== ""

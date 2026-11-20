@@ -44,9 +44,10 @@ TestCase {
 
     function test_toggle() {
         const c = createTemporaryObject(ctl, tc)
+        Api.status = null
         compare(c.toggleRequestFor("working", "walk").path, "/api/pause")
         compare(c.toggleRequestFor("working", "walk").body.type, "walk")
-        compare(c.toggleRequestFor("working").body.type, "eat")
+        compare(JSON.stringify(c.toggleRequestFor("working").body), "{}", "no break type known: none is sent, never a literal")
         compare(c.toggleRequestFor("break", "eat").path, "/api/start")
         compare(c.toggleRequestFor("stopped", "eat").path, "/api/start")
     }

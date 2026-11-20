@@ -7,7 +7,9 @@ Item {
     id: root
 
     property var appWindow: null
-    property bool startHidden: false   // started with --minimized and there is a tray to hide in
+    property bool startHidden: false   // started with --minimized and a tray is wanted (the setting is on)
+    property bool trayAvailable: false // the tray icon exists; at logon it can appear a moment after the app starts
+    property int settleMs: 15000       // how long a --minimized start waits for the tray before showing the window
     readonly property bool desktop: Qt.platform.os !== "android" && Qt.platform.os !== "ios"
 
     Settings {
@@ -88,8 +90,18 @@ Item {
 
     Component.onCompleted: {
         restore()
-        if (!startHidden && appWindow)
+        if (!appWindow)
+            return
+        if (!startHidden)
             appWindow.show()
+        else if (!trayAvailable)
+            settle.start()   // stay hidden for now: the tray may only be ready in a moment
+    }
+    // A quiet start without a tray would leave no way to reach the app: show the window after a while.
+    Timer {
+        id: settle
+        interval: root.settleMs
+        onTriggered: if (!root.trayAvailable && root.appWindow) root.appWindow.show()
     }
     Connections {
         target: Qt.application

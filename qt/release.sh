@@ -25,5 +25,9 @@ mkdir -p "$DIST"
 cp "$BUILD/appWorkLogApp.exe" "$DIST/WorkLog.exe"
 windeployqt --release --qmldir "$SRC" --no-translations --compiler-runtime "$DIST/WorkLog.exe"
 
-powershell -NoProfile -Command "Compress-Archive -Path '$(cygpath -w "$DIST")' -DestinationPath '$(cygpath -w "$OUT/$NAME.zip")'"
+# Windows' bsdtar writes a zip with forward-slash entry names (PowerShell 5.1's Compress-Archive writes
+# backslashes, which other unzip tools mishandle). Git Bash's own tar cannot make zips.
+WINTAR="$(cygpath -u "${SYSTEMROOT:-C:/Windows}")/System32/tar.exe"
+(cd "$OUT" && "$WINTAR" -a -c -f "$NAME.zip" "$NAME")
+test -s "$OUT/$NAME.zip"
 echo "Done: $OUT/$NAME.zip (run $NAME/WorkLog.exe; it needs the files next to it)"

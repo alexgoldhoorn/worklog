@@ -21,8 +21,8 @@ ApplicationWindow {
     readonly property var trayCtl: trayLoader.item
     readonly property bool hidesToTray: Api.trayCapable && Api.trayKeep && !!trayCtl && trayCtl.available
     onClosing: close => {
-        // Android's back key: from a screen of the More menu it leads back to Today first
-        if (Qt.platform.os === "android" && window.inMore) {
+        // Android's back key: from Week, Pomodoro or a screen of the More menu it leads back to the Timer first
+        if (Qt.platform.os === "android" && window.current !== window.navTimer) {
             close.accepted = false
             window.current = window.navTimer
             return
@@ -43,7 +43,8 @@ ApplicationWindow {
     // Declared after the tray loader: its start-up logic needs to know whether a tray exists
     WindowState {
         appWindow: window
-        startHidden: Autostart.startMinimized && window.hidesToTray
+        startHidden: Autostart.startMinimized && Api.trayCapable && Api.trayKeep
+        trayAvailable: !!window.trayCtl && window.trayCtl.available
     }
     IdleWatcher {   // Windows: "you were away, log it as a break?"
         appWindow: window
@@ -250,9 +251,69 @@ ApplicationWindow {
         function onSettingsRequested() { window.current = window.navSettings }
     }
 
+    // Actions tapped while the server was out of reach, on every screen until they are sent or discarded
+    Rectangle {
+        id: queueStrip
+        visible: Api.queue.length > 0
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: window.safe.left
+        anchors.rightMargin: window.safe.right
+        height: visible ? stripRow.implicitHeight + 8 : 0
+        color: Api.warnBg
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Api.line }
+        RowLayout {
+            id: stripRow
+            anchors.fill: parent
+            anchors.leftMargin: 12
+            anchors.rightMargin: 4
+            spacing: 4
+            Label {
+                text: qsTr("%n action(s) waiting", "", Api.queue.length)
+                      + (Api.queueStuck !== "" ? " · " + Api.queueStuck : "")
+                color: Api.warnColor
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Button {
+                text: qsTr("Retry now")
+                flat: true
+                Accessible.name: text
+                onClicked: Api.flushQueue()
+            }
+            Button {
+                text: qsTr("Discard")
+                flat: true
+                Accessible.name: qsTr("Discard the waiting actions")
+                onClicked: discardDialog.open()
+            }
+        }
+    }
+    Dialog {
+        id: discardDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: qsTr("Discard waiting actions?")
+        width: Math.min(parent ? parent.width - 32 : 320, 400)
+        standardButtons: Dialog.Yes | Dialog.Cancel
+        Material.accent: Api.accent
+        contentItem: Label {
+            text: qsTr("The %n action(s) that could not be sent yet are thrown away and never reach the server.", "", Api.queue.length)
+            wrapMode: Text.Wrap
+        }
+        onAccepted: Api.dropQueue("")
+    }
+
     StackLayout {
         id: stack
-        anchors.fill: parent
+        anchors.top: queueStrip.bottom
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: parent.right
         anchors.leftMargin: window.safe.left
         anchors.rightMargin: window.safe.right
         currentIndex: window.current

@@ -113,7 +113,7 @@ Popup {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
                 font.weight: Font.DemiBold
-                text: new Date(picker.viewYear, picker.viewMonth, 1).toLocaleDateString(Qt.locale(), "MMMM yyyy")
+                text: new Date(picker.viewYear, picker.viewMonth, 1).toLocaleDateString(Api.locale, "MMMM yyyy")
             }
             ToolButton {
                 text: "›"
@@ -133,7 +133,7 @@ Popup {
                 model: 7
                 Label {
                     required property int index
-                    text: Qt.locale().dayName((index + 1) % 7, Locale.ShortFormat).substring(0, 2)   // Qt: 0 = Sunday
+                    text: Api.locale.dayName((index + 1) % 7, Locale.ShortFormat).substring(0, 2)   // Qt: 0 = Sunday
                     color: Api.muted
                     font.pixelSize: 11
                     horizontalAlignment: Text.AlignHCenter
@@ -172,7 +172,7 @@ Popup {
                         Layout.preferredWidth: 1
                         Layout.preferredHeight: 40
                         Accessible.role: Accessible.Button
-                        Accessible.name: Api.parseDate(cell.modelData.iso).toLocaleDateString(Qt.locale(), "dddd d MMMM yyyy")
+                        Accessible.name: Api.parseDate(cell.modelData.iso).toLocaleDateString(Api.locale, "dddd d MMMM yyyy")
                         Accessible.onPressAction: picker.pick(cell.modelData.iso)
 
                         Rectangle {

@@ -20,7 +20,9 @@ Popup {
 
     parent: Overlay.overlay
     x: (parent.width - width) / 2
-    y: parent.height - height - 24
+    // above the bottom bar and the safe-area inset (the window's footer includes both), so Undo never covers the navigation
+    readonly property var appWin: parent ? parent.ApplicationWindow.window : null
+    y: parent.height - height - 16 - (appWin && appWin.footer ? appWin.footer.height : 0)
     width: Math.min(420, parent.width - 32)
     padding: 12
     leftPadding: 16

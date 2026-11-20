@@ -19,14 +19,14 @@ The web UI (`worklog/web/static/`) is the reference for behaviour. The app mirro
 | More › **Settings** | Server and login, week length, rate, the server's defaults, and the options below |
 
 Timer, Week and Pomodoro are the buttons at the bottom; the rest is under the ⋮ menu in the header.
-The names, their order and the icons are the same as in the web's navigation.
+The names, their order and the icons are the same as in the web's navigation. The web adds its own Day page and a More menu (Add or find a date, Move, Workcal, Settings).
 
 Week and Add or find a date need the server's planner (`BALANCE_DB`, `BALANCE_STATE_DIR`, `DAY_RULES`; see
 [docs/host-integration.md](../docs/host-integration.md)). Without it they show the server's message.
 
 **Offline.** Start, Pause and Stop tapped while the server cannot be reached are kept, in order, with
 the time they were tapped, and sent when the server answers again. The Timer shows the state those
-actions imply and marks it as waiting. Edits to blocks are not queued.
+actions imply and marks it as waiting. Edits to blocks are not queued. A strip on every screen shows "N action(s) waiting" with Retry now and Discard. An action the server refuses for good is dropped; one that fails for a reason that may pass (offline, login, timeout, rate limit, server error) stays.
 
 **Windows.**
 

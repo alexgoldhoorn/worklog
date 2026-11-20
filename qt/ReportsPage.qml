@@ -11,7 +11,12 @@ ScrollView {
     property string end: ""        // empty = today
     property var summary: null
     property var heat: null
+    // today, re-read whenever the page is shown (the app can run for days); the invoice month follows it
+    // until the user steps to another one
+    property string todayIso: Api.today()
+    property bool invoiceChosen: false
     property string invoiceMonth: Api.today().slice(0, 7)
+    property string rangeError: ""
     property var invoice: []
     property string error: ""
     property string heatError: ""
@@ -22,7 +27,7 @@ ScrollView {
     readonly property var rows: summary ? summary.rows : []
     // the period that is still running, as the server keys it: "2026-43", "2026-10", "2026-Q4", "2026"
     readonly property string currentKey: {
-        const t = Api.today()
+        const t = todayIso
         return group === "week" ? Api.weekKey(t) : group === "month" ? t.slice(0, 7)
              : group === "quarter" ? t.slice(0, 4) + "-Q" + (Math.floor((Number(t.slice(5, 7)) - 1) / 3) + 1) : t.slice(0, 4)
     }
@@ -33,16 +38,16 @@ ScrollView {
 
     function periodLabel(key) {
         if (group === "week")
-            return "W" + key.slice(5)
+            return key   // "2026-43", as the web writes it
         if (group === "month")
-            return Api.parseDate(key + "-01").toLocaleDateString(Qt.locale(), "MMM")
+            return Api.parseDate(key + "-01").toLocaleDateString(Api.locale, "MMM")
         return key.replace("-Q", " Q")
     }
     function periodLong(key) {
         if (group === "week")
             return qsTr("Week %1 · %2").arg(key.slice(5)).arg(key.slice(0, 4))
         if (group === "month")
-            return Api.parseDate(key + "-01").toLocaleDateString(Qt.locale(), "MMMM yyyy")
+            return Api.parseDate(key + "-01").toLocaleDateString(Api.locale, "MMMM yyyy")
         return key.replace("-Q", " Q")
     }
     function inProgress(key) { return key === currentKey ? " " + qsTr("(in progress)") : "" }
@@ -89,6 +94,9 @@ ScrollView {
         })
     }
 
+    readonly property var groups: ["week", "month", "quarter", "year"]
+    readonly property var groupLabels: [qsTr("Week"), qsTr("Month"), qsTr("Quarter"), qsTr("Year")]
+
     // ---- range presets ---------------------------------------------------------------------
     readonly property var presets: [qsTr("All"), qsTr("This year"), qsTr("Last 12 weeks"), qsTr("Last 6 months")]
     function presetRange(name) {
@@ -112,7 +120,8 @@ ScrollView {
     }
     property string pickTarget: "start"
     function applyDates(s, e) {
-        if (s === start && e === end)
+        rangeError = rangeProblem(s, e)
+        if (rangeError !== "" || (s === start && e === end))
             return
         start = s
         end = e
@@ -122,6 +131,25 @@ ScrollView {
         const d = Api.parseDate(invoiceMonth + "-01")
         d.setMonth(d.getMonth() + n)
         invoiceMonth = Api.isoDate(d).slice(0, 7)
+        invoiceChosen = true
+    }
+
+    // "" when s and e (either may be empty) make a usable range, else what is wrong with them
+    function rangeProblem(s, e) {
+        const bad = t => t !== "" && !(/^\d{4}-\d{2}-\d{2}$/.test(t) && Api.isoDate(Api.parseDate(t)) === t)
+        if (bad(s) || bad(e))
+            return qsTr("Use a date like %1.").arg(Api.today())
+        if (s !== "" && e !== "" && s > e)
+            return qsTr("From is after To.")
+        return ""
+    }
+    // a date typed in one of the fields
+    function typedDate(which, text) {
+        const t = text.trim()
+        const s = which === "start" ? t : start, e = which === "end" ? t : end
+        rangeError = rangeProblem(s, e)
+        if (rangeError === "" && (which === "start" ? t !== start : t !== end))
+            applyDates(s, e)
     }
     function setRange(s, e) {
         startField.text = s
@@ -133,7 +161,14 @@ ScrollView {
 
     onInvoiceMonthChanged: loadInvoice()
     Component.onCompleted: if (visible) reload()
-    onVisibleChanged: if (visible) reload()
+    onVisibleChanged: {
+        if (visible) {
+            todayIso = Api.today()
+            if (!invoiceChosen)
+                invoiceMonth = todayIso.slice(0, 7)
+            reload()
+        }
+    }
     Connections {
         target: Api
         // a hidden page reloads when its tab is shown
@@ -221,10 +256,10 @@ ScrollView {
             }
 
             ChipRow {
-                label: qsTr("Group by")
-                model: ["week", "month", "quarter", "year"]
-                current: page.group
-                onPicked: value => { page.group = value; page.reload() }
+                label: qsTr("Group")
+                model: page.groupLabels
+                current: page.groupLabels[page.groups.indexOf(page.group)]
+                onPicked: value => { page.group = page.groups[page.groupLabels.indexOf(value)]; page.reload() }
             }
             ChipRow {
                 label: qsTr("Range")
@@ -244,7 +279,7 @@ ScrollView {
                     validator: RegularExpressionValidator { regularExpression: /^(\d{4}-\d{2}-\d{2})?$/ }
                     Layout.fillWidth: true
                     Accessible.name: qsTr("From date")
-                    onEditingFinished: if (acceptableInput && text !== page.start) { page.start = text; page.reload() }
+                    onEditingFinished: page.typedDate("start", text)
                 }
                 ToolButton {
                     text: qsTr("Pick")
@@ -258,7 +293,7 @@ ScrollView {
                     validator: RegularExpressionValidator { regularExpression: /^(\d{4}-\d{2}-\d{2})?$/ }
                     Layout.fillWidth: true
                     Accessible.name: qsTr("To date")
-                    onEditingFinished: if (acceptableInput && text !== page.end) { page.end = text; page.reload() }
+                    onEditingFinished: page.typedDate("end", text)
                 }
                 ToolButton {
                     text: qsTr("Pick")
@@ -266,6 +301,13 @@ ScrollView {
                     Accessible.role: Accessible.Button
                     onClicked: { page.pickTarget = "end"; datePicker.openFor(endField.text) }
                 }
+            }
+            Label {
+                visible: page.rangeError !== ""
+                text: page.rangeError
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Label {
                 visible: page.exportMessage !== ""
@@ -438,7 +480,7 @@ ScrollView {
                     onClicked: page.shiftInvoice(-1)
                 }
                 Label {
-                    text: Api.parseDate(page.invoiceMonth + "-01").toLocaleDateString(Qt.locale(), "MMM yyyy")
+                    text: Api.parseDate(page.invoiceMonth + "-01").toLocaleDateString(Api.locale, "MMM yyyy")
                     font.weight: Font.DemiBold
                 }
                 ToolButton {
