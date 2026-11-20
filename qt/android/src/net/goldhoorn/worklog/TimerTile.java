@@ -25,7 +25,13 @@ public class TimerTile extends TileService {
     }
 
     private void redraw() {
-        new Handler(Looper.getMainLooper()).post(this::draw);
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                draw();
+            } catch (Throwable t) {
+                android.util.Log.w("TimerTile", "draw: " + t);
+            }
+        });
     }
 
     // The worker asks the server what runs now and decides start or stop from that, not from the cached
@@ -48,14 +54,19 @@ public class TimerTile extends TileService {
         JSONObject st = WorklogClient.cached(this);
         String state = st == null ? "stopped" : st.optString("state", "stopped");
         String error = WorklogClient.prefs(this).getString("error", "");
+        String notice = WorklogClient.prefs(this).getString("notice", "");
         tile.setIcon(Icon.createWithResource(this, R.drawable.ic_timer));
         tile.setLabel("Worklog");
         tile.setState("working".equals(state) ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             String sub = TimerWidget.label(state);
             String waiting = WorklogClient.queued(this) > 0 ? WorklogClient.queued(this) + " waiting" : "";
-            if (!waiting.isEmpty())
+            if (!notice.isEmpty())
+                sub = notice;
+            else if (!waiting.isEmpty())
                 sub = waiting;
+            else if (WorklogClient.needsApp(error))
+                sub = error;
             else if (!error.isEmpty())
                 sub = "Offline";
             else if (st != null && !st.isNull("project") && !"stopped".equals(state))

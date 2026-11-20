@@ -70,10 +70,21 @@ public class WorklogClient {
         SharedPreferences p = prefs(ctx);
         SharedPreferences.Editor e = p.edit()
                 .putString("url", newUrl)
-                .putString("user", user == null ? "" : user);
+                .putString("user", user == null ? "" : user)
+                .remove("notice");   // the app was opened: a refusal has been seen (or can be seen there)
         if (!newUrl.equals(p.getString("url", newUrl)))   // another server: its status and queue do not apply
-            e.remove("status").remove("queue").remove("error").remove("notice").remove("clockOffset");
+            e.remove("status").remove("queue").remove("error").remove("clockOffset");
         e.apply();
+    }
+
+    static void setNotice(Context ctx, String notice) {
+        prefs(ctx).edit().putString("notice", notice).apply();
+    }
+
+    // Errors only the app can fix (shown as they are; other errors are just "Offline")
+    static boolean needsApp(String error) {
+        return error != null && (error.startsWith("Login required") || error.startsWith("Server needs https")
+                || error.startsWith("Open Worklog"));
     }
 
     static boolean hasServer(Context ctx) {
@@ -118,6 +129,10 @@ public class WorklogClient {
         String base = p.getString("url", "");
         if (base.isEmpty())
             throw new Refused(0, "Open Worklog and set the server");
+        // credentials only go over https, or over http to a server on the LAN (the manifest allows cleartext
+        // for the LAN server's sake, so this is the check)
+        if (base.regionMatches(true, 0, "http://", 0, 7) && !LocalNet.isLocalHost(base))
+            throw new Refused(0, "Server needs https: open Worklog");
         long left = remaining();
         if (left < 1000)
             throw new Unreachable("Timed out");
@@ -132,7 +147,14 @@ public class WorklogClient {
             c.setRequestProperty("Accept", "application/json");
             String user = p.getString("user", "");
             if (!user.isEmpty()) {
-                String login = user + ":" + SecretStore.get(ctx, "password");
+                String password;
+                try {
+                    String stored = SecretStore.lookup(ctx, "password");
+                    password = stored == null ? "" : stored;   // nothing stored: the server answers 401
+                } catch (Exception e) {
+                    throw new Refused(401, "Open Worklog to sign in again");   // stored but cannot be decrypted
+                }
+                String login = user + ":" + password;
                 c.setRequestProperty("Authorization", "Basic "
                         + Base64.encodeToString(login.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP));
             }
@@ -203,14 +225,19 @@ public class WorklogClient {
         return body;
     }
 
-    // the most used break type ("eat" first, like the app's default)
+    // the server's default break type: it lists the configured default first. null when the status has no
+    // list; the pause then goes without a type and the server picks its default
     static String breakType(JSONObject last) {
         JSONArray b = last == null ? null : last.optJSONArray("breaks");
-        return b != null && b.length() > 0 ? b.optString(0, "eat") : "eat";
+        return b != null && b.length() > 0 && !b.isNull(0) ? b.optString(0) : null;
     }
 
     static JSONObject pauseBody(JSONObject last) throws Exception {
-        return new JSONObject().put("type", breakType(last));
+        JSONObject body = new JSONObject();
+        String t = breakType(last);
+        if (t != null)
+            body.put("type", t);
+        return body;
     }
 
     // ---- the offline queue ---------------------------------------------------
@@ -292,11 +319,13 @@ public class WorklogClient {
         }
     }
 
+    // `notice`: null keeps the stored one, "" clears it, anything else replaces it
     static void cache(Context ctx, JSONObject st, String error, String notice) {
         SharedPreferences.Editor e = prefs(ctx).edit()
                 .putString("error", error == null ? "" : error)
-                .putString("notice", notice == null ? "" : notice)
                 .putLong("triedAt", System.currentTimeMillis());
+        if (notice != null)
+            e.putString("notice", notice);
         if (st != null) {
             try {
                 st.put("_at", System.currentTimeMillis());

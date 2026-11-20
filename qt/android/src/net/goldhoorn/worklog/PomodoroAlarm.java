@@ -19,7 +19,34 @@ public class PomodoroAlarm extends BroadcastReceiver {
     private static final String CHANNEL = "pomodoro";
     private static final int ID = 1;
 
+    private static final String PREFS = "worklog_pomodoro";
+
+    // the pending alarm is kept here too, so BootReceiver can set it again after a reboot (alarms are lost)
+    private static void remember(Context ctx, long atMs, String title, String text) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putLong("at", atMs).putString("title", title).putString("text", text).apply();
+    }
+
+    private static void forget(Context ctx) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply();
+    }
+
+    // after a reboot or an update: set the alarm again when its end time is stored and still ahead
+    static void restore(Context ctx) {
+        android.content.SharedPreferences p = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        long at = p.getLong("at", 0);
+        if (at > System.currentTimeMillis())
+            setAlarm(ctx, at, p.getString("title", ""), p.getString("text", ""));
+        else if (at != 0)
+            forget(ctx);
+    }
+
     public static void schedule(Context ctx, long atMs, String title, String text) {
+        remember(ctx, atMs, title, text);
+        setAlarm(ctx, atMs, title, text);
+    }
+
+    private static void setAlarm(Context ctx, long atMs, String title, String text) {
         Intent intent = new Intent(ctx, PomodoroAlarm.class)
                 .putExtra("title", title)
                 .putExtra("text", text);
@@ -35,6 +62,7 @@ public class PomodoroAlarm extends BroadcastReceiver {
 
     // drops the pending alarm and a notification that is already showing
     public static void cancel(Context ctx) {
+        forget(ctx);
         Intent intent = new Intent(ctx, PomodoroAlarm.class);
         PendingIntent pending = PendingIntent.getBroadcast(ctx, ID, intent,
                 PendingIntent.FLAG_NO_CREATE | PendingIntent.FLAG_IMMUTABLE);
@@ -43,20 +71,6 @@ public class PomodoroAlarm extends BroadcastReceiver {
             pending.cancel();
         }
         ((NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE)).cancel(ID);
-    }
-
-    // a server on the LAN (a private address, localhost, a single-label or .local name)
-    static boolean isLocalHost(String url) {
-        try {
-            String h = new java.net.URI(url).getHost();
-            if (h == null)
-                return false;
-            h = h.toLowerCase(java.util.Locale.ROOT);
-            return h.equals("localhost") || h.endsWith(".local") || h.indexOf('.') < 0
-                    || h.matches("10\\..*|192\\.168\\..*|169\\.254\\..*|172\\.(1[6-9]|2[0-9]|3[01])\\..*");
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     // Asks once, in one dialog: Android 13+ before notifications may be posted, Android 17+ before a LAN
@@ -68,7 +82,7 @@ public class PomodoroAlarm extends BroadcastReceiver {
             need.add(Manifest.permission.POST_NOTIFICATIONS);
         String lan = "android.permission.ACCESS_LOCAL_NETWORK";
         if (Build.VERSION.SDK_INT >= 37 && activity.checkSelfPermission(lan) != PackageManager.PERMISSION_GRANTED
-                && isLocalHost(WorklogClient.prefs(activity).getString("url", "")))
+                && LocalNet.isLocalHost(WorklogClient.prefs(activity).getString("url", "")))
             need.add(lan);
         if (!need.isEmpty())
             activity.runOnUiThread(() -> activity.requestPermissions(need.toArray(new String[0]), ID));
@@ -76,6 +90,7 @@ public class PomodoroAlarm extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context ctx, Intent intent) {
+        forget(ctx);   // it fired
         NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
         nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Pomodoro", NotificationManager.IMPORTANCE_HIGH));
 

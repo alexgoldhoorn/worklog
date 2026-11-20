@@ -60,20 +60,48 @@ public class TimerWidget extends AppWidgetProvider {
         ctx.sendBroadcast(new Intent(ACTION_REFRESH).setClass(ctx, TimerWidget.class));
     }
 
+    // The least time a run needs to be worth starting (a status fetch plus an action)
+    private static final long MIN_START_MS = 2000;
+
     // runs an action (or only a refresh) off the main thread and redraws everything; used by the tile too
+    // (which has no system limit to keep to)
     static void run(Context ctx, String action, Runnable done) {
+        run(ctx, action, done, Long.MAX_VALUE);
+    }
+
+    // `limit` is the point in time by which this run must be done (a receiver's goAsync() allows about
+    // 10 s from its start). The budget starts when the worker picks the run up, not when it was queued
+    // behind a slow one; a run that can no longer start in time is dropped (not queued as an offline
+    // action: the server was never tried) with a notice, and finishes cleanly.
+    static void run(Context ctx, String action, Runnable done, long limit) {
         Context app = ctx.getApplicationContext();
-        long deadline = System.currentTimeMillis() + BUDGET_MS;
         WORKER.execute(() -> {
-            WorklogClient.setDeadline(deadline);
             try {
-                work(app, action);
-            } catch (Exception e) {
-                WorklogClient.cache(app, null, String.valueOf(e.getMessage()), null);
+                long start = System.currentTimeMillis();
+                long deadline = limit == Long.MAX_VALUE ? start + BUDGET_MS : Math.min(start + BUDGET_MS, limit);
+                if (deadline - start < MIN_START_MS) {
+                    if (!ACTION_REFRESH.equals(action))
+                        WorklogClient.setNotice(app, "Busy: tap again");
+                } else {
+                    WorklogClient.setDeadline(deadline);
+                    try {
+                        work(app, action);
+                    } catch (Exception e) {
+                        WorklogClient.cache(app, null, String.valueOf(e.getMessage()), null);
+                    }
+                }
+                render(app);
+            } catch (Throwable t) {
+                android.util.Log.w("TimerWidget", "run failed: " + t);
+            } finally {
+                if (done != null) {
+                    try {
+                        done.run();
+                    } catch (Throwable t) {
+                        android.util.Log.w("TimerWidget", "done failed: " + t);
+                    }
+                }
             }
-            render(app);
-            if (done != null)
-                done.run();
         });
     }
 
@@ -102,7 +130,8 @@ public class TimerWidget extends AppWidgetProvider {
             st.put("project", resume == null || resume.isNull("project") ? JSONObject.NULL : resume.optString("project"));
         } else if (ACTION_PAUSE.equals(action)) {
             st.put("state", "break");
-            st.put("type", WorklogClient.breakType(last));
+            String bt = WorklogClient.breakType(last);
+            st.put("type", bt == null ? JSONObject.NULL : bt);
             st.put("project", JSONObject.NULL);
         } else {
             st.put("state", "stopped");
@@ -140,6 +169,7 @@ public class TimerWidget extends AppWidgetProvider {
         JSONObject st = f.last;
         String error = f.stopped == null ? null : f.stopped.getMessage();
         boolean reachable = f.stopped == null;
+        boolean done = false;   // a user action went through (or was already in effect)
         // 2. a fresh status, so start/stop is decided on what the server has now, not on the cache
         if (reachable) {
             try {
@@ -148,6 +178,7 @@ public class TimerWidget extends AppWidgetProvider {
                     action = "working".equals(st.optString("state")) ? ACTION_STOP : ACTION_START;
                 if (isAction && !pointless(action, st.optString("state", "stopped")))
                     st = send(app, action, st);
+                done = isAction;
             } catch (WorklogClient.Unreachable e) {
                 reachable = false;
                 error = e.getMessage();
@@ -166,7 +197,8 @@ public class TimerWidget extends AppWidgetProvider {
             WorklogClient.enqueue(app, pathOf(action), body);
             st = optimistic(last, action);
         }
-        WorklogClient.cache(app, st, error, f.notice);
+        // a refusal stays until the next successful user action or until the app is opened (configure())
+        WorklogClient.cache(app, st, error, !f.notice.isEmpty() ? f.notice : done ? "" : null);
     }
 
     @Override
@@ -174,7 +206,7 @@ public class TimerWidget extends AppWidgetProvider {
         String action = intent.getAction();
         if (ACTION_REFRESH.equals(action) || ACTION_START.equals(action) || ACTION_PAUSE.equals(action)
                 || ACTION_STOP.equals(action) || ACTION_TOGGLE.equals(action)) {
-            run(ctx, action, finisher(goAsync()));
+            run(ctx, action, finisher(goAsync()), System.currentTimeMillis() + BUDGET_MS);
         } else {
             super.onReceive(ctx, intent);   // APPWIDGET_UPDATE etc. -> onUpdate / onDisabled
         }
@@ -183,7 +215,7 @@ public class TimerWidget extends AppWidgetProvider {
     @Override
     public void onUpdate(Context ctx, AppWidgetManager manager, int[] ids) {
         render(ctx);   // the last status at once, then a fresh one
-        run(ctx, ACTION_REFRESH, finisher(goAsync()));
+        run(ctx, ACTION_REFRESH, finisher(goAsync()), System.currentTimeMillis() + BUDGET_MS);
     }
 
     // ---- drawing -------------------------------------------------------------
@@ -200,7 +232,7 @@ public class TimerWidget extends AppWidgetProvider {
     }
 
     static String label(String state) {
-        return "working".equals(state) ? "Working" : "break".equals(state) ? "Break" : "Stopped";
+        return "working".equals(state) ? "Working" : "break".equals(state) ? "On break" : "Stopped";
     }
 
     private static int color(String state) {
@@ -237,7 +269,31 @@ public class TimerWidget extends AppWidgetProvider {
         String type = str(st, "type");
         String project = str(st, "project");
 
-        // widget
+        try {
+            renderWidget(ctx, st, state, running, type, project, notice, waiting, error);
+        } catch (Throwable t) {
+            android.util.Log.w("TimerWidget", "widget: " + t);
+        }
+        try {
+            notification(ctx, st, state, type, project, !notice.isEmpty() ? notice : !waiting.isEmpty() ? waiting
+                    : WorklogClient.needsApp(error) ? error : "");
+        } catch (Throwable t) {
+            android.util.Log.w("TimerWidget", "notification: " + t);
+        }
+        try {
+            TileService.requestListeningState(ctx, new ComponentName(ctx, TimerTile.class));
+        } catch (Throwable t) {
+            android.util.Log.w("TimerWidget", "tile: " + t);
+        }
+        try {
+            scheduleRefresh(ctx, running, !waiting.isEmpty());
+        } catch (Throwable t) {
+            android.util.Log.w("TimerWidget", "alarm: " + t);
+        }
+    }
+
+    private static void renderWidget(Context ctx, JSONObject st, String state, boolean running, String type,
+                                     String project, String notice, String waiting, String error) {
         RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.timer_widget);
         v.setTextViewText(R.id.widget_state, label(state) + (running && !type.isEmpty() ? " · " + type : ""));
         v.setTextColor(R.id.widget_state, color(state));
@@ -269,10 +325,6 @@ public class TimerWidget extends AppWidgetProvider {
         int[] ids = manager.getAppWidgetIds(new ComponentName(ctx, TimerWidget.class));
         if (ids.length > 0)
             manager.updateAppWidget(ids, v);
-
-        notification(ctx, st, state, type, project, !notice.isEmpty() ? notice : waiting);
-        TileService.requestListeningState(ctx, new ComponentName(ctx, TimerTile.class));
-        scheduleRefresh(ctx, running, !waiting.isEmpty());
     }
 
     static String fmtH(double h) {
