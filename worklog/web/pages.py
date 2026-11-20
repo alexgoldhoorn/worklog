@@ -3,7 +3,7 @@ import hashlib
 import os
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
@@ -28,6 +28,15 @@ def static_version() -> str:
 
 STATIC_VERSION = static_version()
 templates.env.globals["static_v"] = STATIC_VERSION
+
+
+@router.get("/sw.js")
+def service_worker():
+    """The service worker has to sit at the root to control every page; its cache name carries the static version,
+    so a deploy replaces the worker and the old caches go on activation."""
+    with open(os.path.join(os.path.dirname(__file__), "static", "sw.js"), encoding="utf-8") as fh:
+        body = fh.read().replace("__VERSION__", STATIC_VERSION)
+    return Response(body, media_type="text/javascript", headers={"Cache-Control": "no-cache"})
 
 
 def _page(request: Request, name: str, page: str) -> HTMLResponse:

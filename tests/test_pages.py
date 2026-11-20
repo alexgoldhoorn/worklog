@@ -5,9 +5,12 @@ import pytest
 
 @pytest.mark.parametrize("path,ids", [
     ("/timer", ["btn-start", "btn-pause", "btn-stop", "blocks", "proposals", "totals",
-           "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint"]),
+           "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint",
+           "queue-strip", "idle-card"]),
     ("/settings", ["settings-notices", "defaults", "def-type", "def-client", "def-break", "def-close", "def-autoadd", "def-save", "def-msg",
-                   "rate", "rate-unit", "rate-hint", "basis", "basis-seg", "basis-hint", "pref-shortcuts"]),
+                   "rate", "rate-unit", "rate-hint", "basis", "basis-seg", "basis-hint", "pref-shortcuts", "currency",
+                   "clients-list", "client-form", "client-new", "client-new-bill", "client-add", "clients-msg",
+                   "breaks-list", "break-form", "break-new", "break-add", "breaks-msg", "pref-idle", "pref-idle-min"]),
     ("/", ["day-chips", "day-start", "timeline", "top3", "day-add", "day-find", "find-dialog", "find-form", "find-close", "f-date"]),
     ("/find", ["find-form", "f-what", "f-date", "f-start", "f-end", "find-submit", "options", "put-btn", "find-notices"]),
     ("/week", ["propose", "outlook", "add", "add-cal"]),
@@ -228,3 +231,56 @@ def test_manifest_and_icons(client):
     assert m["name"] == "worklog" and m["display"] == "standalone" and m["start_url"] == "/timer"
     for icon in m["icons"]:
         assert client.get(icon["src"]).status_code == 200
+
+
+def test_no_literal_currency_symbol_in_pages_or_scripts(client):
+    # the symbol comes from the server's `currency` setting (kept in wl.currency()), never from the markup
+    import pathlib
+    web = pathlib.Path(__file__).resolve().parents[1] / "worklog" / "web"
+    for path in [*web.glob("static/*.js"), *web.glob("templates/*.html")]:
+        assert "€" not in path.read_text(encoding="utf-8"), path.name
+    settings = client.get("/settings").text
+    assert 'id="currency"' in settings and "€" not in settings
+    js = client.get("/static/app.js").text
+    assert "wl.currency()" in js and "currency: v" in js
+    assert "currency" in client.get("/static/core.js").text
+
+
+def test_settings_page_manages_clients_and_break_types(client):
+    js = client.get("/static/app.js").text
+    for route in ("/api/clients", "/api/break-types"):
+        assert route in js
+    html = client.get("/settings").text
+    assert "Clients" in html and "Break types" in html and "only works while the page is open" in html
+
+
+def test_week_undo_calls_the_propose_route(client):
+    js = client.get("/static/week.js").text
+    assert "/propose`" in js and '"Undo"' in js
+
+
+def test_offline_queue_and_idle_prompt_are_wired(client):
+    core = client.get("/static/core.js").text
+    assert "worklog.queue" in core and "request_id" in core and "setInterval(" in core and '"online"' in core
+    assert "408" in core and "429" in core and "401" in core
+    app = client.get("/static/app.js").text
+    assert "waiting" in app and "Retry now" in app and '"Discard"' in app and "wl.queue.act(" in app
+    assert "Log it as a break?" in app and '"Log as break"' in app and "/api/pause" in app
+    assert "Offline \u00b7 last update" in core
+
+
+def test_service_worker_is_served_from_the_root(client):
+    from worklog.web.pages import STATIC_VERSION
+    r = client.get("/sw.js")
+    assert r.status_code == 200 and "javascript" in r.headers["content-type"]
+    assert r.headers["cache-control"] == "no-cache"
+    assert f'const VERSION = "{STATIC_VERSION}"' in r.text and "__VERSION__" not in r.text
+    # never the API, only GET, old caches removed
+    assert '"/api/"' in r.text and 'req.method !== "GET"' in r.text and "caches.delete" in r.text
+    assert 'navigator.serviceWorker.register("/sw.js")' in client.get("/static/core.js").text
+
+
+def test_service_worker_does_not_get_a_page_for_a_logged_out_browser(client):
+    # the worker only falls back to a kept page when the network call throws; an answer, a 401 included, is returned as it is
+    js = client.get("/sw.js").text
+    assert "return res; // any answer" in js and js.index("const cache = await caches.open(CACHE);") > js.index("return res;")

@@ -84,7 +84,10 @@ const timer = {
   dirty: false, // the day arrived while a cell was being edited; shown when the edit ends
   refocus: null, // {id, field}: the cell to focus after the next table rebuild
   followup: null, // one-tap offer after a time edit (move the neighbouring block's edge too)
-  fetchedAt: 0, // Date.now() when `status` arrived; the clock ticks on from status.elapsed_min
+  real: null, // the last status the server (or the offline copy) gave; `status` is that plus the waiting offline actions
+  realAt: 0, // Date.now() the real status is valid at
+  offline: false,
+  fetchedAt: 0, // Date.now() `status` is valid at; the clock ticks on from status.elapsed_s
   tick: null,
 };
 
@@ -392,7 +395,7 @@ function blockRow(b) {
   const cell = (field, text, cls) => el("td", { "data-field": field, class: cls || "", text: text || "", tabindex: "0",
     "aria-label": `Edit ${field}: ${text || "empty"}`, onclick: edit, onkeydown: editKey });
   const typeCell = el("td", { "data-field": "type", class: "type", tabindex: "0", "aria-label": `Edit type: ${b.type}`, onclick: edit, onkeydown: editKey }, el("span", { text: b.type }));
-  const bill = b.billable === true ? ["yes", "€"] : b.billable === false ? ["no", "✗"] : ["na", "–"];
+  const bill = b.billable === true ? ["yes", wl.currency()] : b.billable === false ? ["no", "✗"] : ["na", "–"];
   const billName = b.billable === true ? "billable" : b.billable === false ? "not billable" : "billing not set";
   const dur = b.end ? b.duration : fmtHM(isRunningBlock(b) ? liveElapsedMin() : minutesSince(b.date, b.start));
   tr.append(
@@ -434,7 +437,7 @@ async function cycleBillable(b) {
 }
 
 function renderBlocks() {
-  const heads = [["Start"], ["End"], ["Type"], ["Project"], ["Client"], ["€", "num"], ["Dur", "num"], [""]];
+  const heads = [["Start"], ["End"], ["Type"], ["Project"], ["Client"], [wl.currency(), "num"], ["Dur", "num"], [""]];
   const head = el("tr", {}, ...heads.map(([t, c]) => el("th", { class: c || "", text: t })));
   const blocks = timer.day.blocks;
   const rows = [];
@@ -500,20 +503,95 @@ function syncPendingFromStatus() {
 
 const statusSeq = wl.sequence(), daySeq = wl.sequence();
 
+// The status the page shows: the real one, plus what the waiting offline actions (Start / Pause / Stop) would have done.
+function parseAt(at) {
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/.exec(at || "");
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : serverNow();
+}
+function impliedStatus(real, items) {
+  const s = JSON.parse(JSON.stringify(real));
+  for (const it of items) {
+    const kind = it.path.split("/").pop();
+    if (kind === "stop") { Object.assign(s, { state: "stopped", block: null, elapsed_s: 0, elapsed_min: 0, since: null, past_stop_min: null }); continue; }
+    const at = parseAt(it.body.at), start = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
+    const work = kind === "start";
+    const type = it.body.type || (work ? "work" : ((s.chips && s.chips.break_types && s.chips.break_types[0]) || "break"));
+    const elapsed = Math.max(0, Math.floor((serverNow() - at) / 1000));
+    Object.assign(s, { state: work ? "working" : "break", since: start, elapsed_s: elapsed, elapsed_min: Math.floor(elapsed / 60), past_stop_min: null,
+      block: { id: -1, date: isoDate(at), start, end: null, type, project: it.body.project || null, work_type: work ? "work" : "break", source: "queue" } });
+  }
+  return s;
+}
+
+// timer.status from timer.real and the queue; the totals dim while actions wait
+function applyQueue() {
+  if (!timer.real) return;
+  const items = wl.queue.items();
+  timer.status = items.length ? impliedStatus(timer.real, items) : timer.real;
+  timer.fetchedAt = items.length ? Date.now() : timer.realAt;
+  $("totals").classList.toggle("dim", items.length > 0);
+  renderQueueStrip();
+}
+
+function renderQueueStrip() {
+  const strip = $("queue-strip"), n = wl.queue.waiting();
+  strip.hidden = n === 0;
+  if (!n) { strip.replaceChildren(); return; }
+  const stuck = wl.queue.stuck();
+  strip.replaceChildren(
+    el("span", { class: "q-text", text: `${n} action${n === 1 ? "" : "s"} waiting${stuck ? ` · ${stuck}` : ""}` }),
+    el("button", { type: "button", class: "small ghost", text: "Retry now", onclick: (e) => wl.locked(e.currentTarget, () => wl.queue.flush()) }),
+    el("button", { type: "button", class: "small ghost", text: "Discard", "aria-label": "Discard the waiting actions",
+      onclick: () => { if (confirm(`Discard waiting actions? ${n === 1 ? "The action that has" : `The ${n} actions that have`} not been sent yet will be thrown away and never reach the server.`)) wl.queue.discard(); } }));
+}
+
+function onQueueChange(what) {
+  applyQueue();
+  if (timer.status) renderStatus();
+  const refused = wl.queue.takeDropped().map((m) => new Error(`A waiting action was refused: ${m}`));
+  if (what === "sent") refreshAll().then(() => refused.forEach(showError));
+  else refused.forEach(showError);
+}
+
+const DAY_KEY = "worklog.day";
+
 async function loadStatus() {
   const current = statusSeq();
-  const status = await api("GET", "/api/status");
+  let status;
+  try {
+    status = await api("GET", "/api/status");
+  } catch (err) {
+    const c = err.status === 0 ? wl.cachedStatus() : null;
+    if (!c) throw err; // unreachable and nothing kept: the error shows
+    if (!current()) return;
+    timer.real = c.status; timer.realAt = c.epoch; timer.offline = true;
+    applyQueue(); syncPendingFromStatus(); renderStatus();
+    return;
+  }
   if (!current()) return; // a newer request is on its way (or has already been shown)
-  timer.status = status;
-  timer.fetchedAt = Date.now();
-  syncClock(timer.status);
+  timer.offline = false;
+  wl.cacheStatus(status);
+  wl.setCurrency(status.currency);
+  timer.real = status;
+  timer.realAt = Date.now();
+  syncClock(status);
+  applyQueue();
   syncPendingFromStatus();
   renderStatus();
 }
 
 async function loadDay() {
   const current = daySeq();
-  const day = await api("GET", `/api/day/${timer.date}`);
+  let day;
+  try {
+    day = await api("GET", `/api/day/${timer.date}`);
+    wl.store.set(DAY_KEY, JSON.stringify({ date: timer.date, day }));
+  } catch (err) {
+    let kept = null;
+    try { kept = JSON.parse(wl.store.get(DAY_KEY, "null")); } catch (_) { /* unreadable */ }
+    if (err.status !== 0 || !kept || kept.date !== timer.date) throw err;
+    day = kept.day;
+  }
   if (!current()) return;
   timer.day = day;
   if (timer.editing) { timer.dirty = true; renderProposals(); return; } // never rebuild the table under an open editor
@@ -539,8 +617,8 @@ async function timerAction(path, body) {
   if (timer.busy) return;
   setBusy(true);
   try {
-    await api("POST", path, body);
-    await refreshAll();
+    const r = await wl.queue.act(path, body); // goes now, or waits in the offline queue
+    if (r.queued) { applyQueue(); if (timer.status) renderStatus(); } else await refreshAll();
   } catch (err) { await failed(err); } finally { setBusy(false); }
 }
 
@@ -745,10 +823,105 @@ async function loadSettings() {
     $("def-autoadd").checked = st.calendar_auto_add;
     $("rate").value = st.rate == null ? "" : fmtNum(st.rate, 2);
     $("rate-unit").value = st.rate_unit;
+    wl.setCurrency(st.currency);
+    $("currency").value = st.currency;
+    renderCurrencyLabels();
     renderRateHint(st);
     renderBasis(st);
     $("settings-notices").replaceChildren();
+    await Promise.all([loadClients(current), loadBreakTypes(current)]);
   } catch (err) { showMessages($("settings-notices"), [`Error: ${err.message}`], "error"); }
+}
+
+// the rate unit's labels carry the currency symbol
+function renderCurrencyLabels() {
+  const c = wl.currency();
+  $("rate-unit").options[0].text = `${c}/h`;
+  $("rate-unit").options[1].text = `${c}/day`;
+}
+
+async function saveCurrency() {
+  const v = $("currency").value.trim();
+  if (!v || v.length > 4) { showMessages($("settings-notices"), ["Error: the currency must be 1 to 4 characters"], "error"); return; }
+  try {
+    const st = await api("PUT", "/api/settings", { currency: v });
+    wl.setCurrency(st.currency);
+    $("currency").value = st.currency;
+    renderCurrencyLabels();
+    renderRateHint(st);
+    $("settings-notices").replaceChildren();
+  } catch (err) { showMessages($("settings-notices"), [`Error: ${err.message}`], "error"); await loadSettings(); }
+}
+
+// ---- clients and break types (Settings) ---------------------------------------------------------------
+
+function listMsg(id, text) { showMessages($(id), text ? [`Error: ${text}`] : [], "error"); }
+
+async function loadClients(current) {
+  const rows = await api("GET", "/api/clients");
+  if (current && !current()) return;
+  $("clients-list").replaceChildren(...rows.map(clientRow));
+  $("clients-empty").hidden = rows.length > 0;
+}
+
+function clientRow(c) {
+  const path = `/api/clients/${encodeURIComponent(c.name)}`;
+  const name = el("input", { type: "text", value: c.name, maxlength: "100", autocomplete: "off", class: "quiet", "aria-label": `Name of client ${c.name}` });
+  const bill = el("input", { type: "checkbox", "aria-label": `${c.name} is billable` });
+  bill.checked = c.billable;
+  const save = (body, undo) => wl.locked([name, bill], async () => {
+    try { await api("PUT", path, body); listMsg("clients-msg", ""); await loadClients(); }
+    catch (err) { undo(); listMsg("clients-msg", err.message); }
+  });
+  name.addEventListener("change", () => {
+    const v = name.value.trim();
+    if (v === c.name) return;
+    save({ name: v }, () => { name.value = c.name; });
+  });
+  bill.addEventListener("change", () => save({ billable: bill.checked }, () => { bill.checked = c.billable; }));
+  const del = el("button", { type: "button", class: "ghost x", text: "×", title: "Delete this client", "aria-label": `Delete client ${c.name}`,
+    onclick: (e) => wl.locked(e.currentTarget, async () => {
+      try { await api("DELETE", path); listMsg("clients-msg", ""); await loadClients(); } catch (err) { listMsg("clients-msg", err.message); }
+    }) });
+  return el("li", { class: "cl-row" }, name, el("label", { class: "check" }, bill, " billable"), del);
+}
+
+async function addClient(e) {
+  e.preventDefault();
+  const name = $("client-new").value.trim();
+  if (!name) { listMsg("clients-msg", "enter a name"); return; }
+  await wl.locked($("client-add"), async () => {
+    try {
+      await api("POST", "/api/clients", { name, billable: $("client-new-bill").checked });
+      $("client-new").value = ""; listMsg("clients-msg", ""); await loadClients();
+    } catch (err) { listMsg("clients-msg", err.message); }
+  });
+}
+
+async function loadBreakTypes(current) {
+  const [names, st] = await Promise.all([api("GET", "/api/break-types"), api("GET", "/api/settings")]);
+  if (current && !current()) return;
+  const picked = $("def-break").value;
+  $("def-break").replaceChildren(...names.map((t) => el("option", { value: t, text: t })));
+  $("def-break").value = names.includes(picked) ? picked : st.default_break_type;
+  $("breaks-list").replaceChildren(...names.map((n) => el("li", { class: "bt-row" },
+    el("span", { class: "bt-name", text: n }),
+    n === st.default_break_type ? el("span", { class: "badge set", text: "default" })
+      : el("button", { type: "button", class: "ghost x", text: "×", title: "Delete this break type", "aria-label": `Delete break type ${n}`,
+        onclick: (e) => wl.locked(e.currentTarget, async () => {
+          try { await api("DELETE", `/api/break-types/${encodeURIComponent(n)}`); listMsg("breaks-msg", ""); await loadBreakTypes(); }
+          catch (err) { listMsg("breaks-msg", err.message); }
+        }) }))));
+}
+
+async function addBreakType(e) {
+  e.preventDefault();
+  const name = $("break-new").value.trim();
+  if (!name) { listMsg("breaks-msg", "enter a name"); return; }
+  await wl.locked($("break-add"), async () => {
+    try { await api("POST", "/api/break-types", { name }); $("break-new").value = ""; listMsg("breaks-msg", ""); await loadBreakTypes(); }
+    catch (err) { listMsg("breaks-msg", err.message); }
+  });
 }
 
 async function saveDefaults() {
@@ -797,11 +970,23 @@ function renderRateHint(st) {
   if (st.rate_h == null) { h.textContent = "billable hours × rate"; return; }
   const perDay = st.rate_h * st.default_expected_h;
   h.textContent = st.rate_unit === "day"
-    ? `= ${fmtNum(st.rate_h, 2)} €/h at ${fmtH(st.default_expected_h)} per day`
+    ? `= ${fmtNum(st.rate_h, 2)} ${wl.currency()}/h at ${fmtH(st.default_expected_h)} per day`
     : `= ${fmtEur(perDay)} per ${fmtH(st.default_expected_h)} day`;
 }
 
 function initSettings() {
+  renderCurrencyLabels();
+  $("currency").value = wl.currency();
+  $("currency").addEventListener("change", saveCurrency);
+  $("client-form").addEventListener("submit", addClient);
+  $("break-form").addEventListener("submit", addBreakType);
+  const on = $("pref-idle"), mins = $("pref-idle-min");
+  on.checked = idleOn(); mins.value = idleMinutes(); mins.disabled = !on.checked;
+  on.addEventListener("change", () => { wl.store.set(IDLE_ON_KEY, on.checked ? "1" : "0"); mins.disabled = !on.checked; });
+  mins.addEventListener("change", () => {
+    const n = Math.floor(Number(mins.value));
+    if (n >= 1 && n <= 240) wl.store.set(IDLE_MIN_KEY, String(n)); else mins.value = idleMinutes();
+  });
   $("def-save").addEventListener("click", saveDefaults);
   $("rate").addEventListener("change", saveRate);
   $("rate-unit").addEventListener("change", saveRate);
@@ -811,6 +996,93 @@ function initSettings() {
   sc.checked = shortcutsOn();
   sc.addEventListener("change", () => wl.store.set(SHORTCUTS_KEY, sc.checked ? "1" : "0"));
   loadSettings();
+}
+
+// ---- idle prompt ----------------------------------------------------------------------------------
+// Like the Qt app's IdleWatcher, but only while this page is open: when input (pointer, key, touch, scroll, the tab coming
+// back) returns after at least N minutes without any, and a work block runs, ask once whether that time was a break.
+// "Log as break" pauses at the moment the idling began (not before the block's start), then starts the same type and
+// project now. A failed request keeps the question.
+const IDLE_ON_KEY = "worklog.idle", IDLE_MIN_KEY = "worklog.idleMinutes";
+const idleOn = () => wl.store.get(IDLE_ON_KEY, "1") !== "0";
+const idleMinutes = () => { const n = Math.floor(Number(wl.store.get(IDLE_MIN_KEY, "60"))); return n >= 1 && n <= 240 ? n : 60; };
+const idle = { last: Date.now(), asking: null, checking: false };
+
+function fmtAway(min) {
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+// the away span on the server's clock: from the last input before the idling to the first one after, not before the
+// running block started and at most 23 h back (what /api/pause accepts)
+function awaySpan(prevMs, nowMs, block) {
+  let start = wl.serverAt(prevMs);
+  const end = wl.serverAt(nowMs);
+  const floor = new Date(end.getTime() - 23 * 3600 * 1000);
+  if (start < floor) start = floor;
+  if (block && block.date && /^\d\d:\d\d/.test(block.start || "")) {
+    const [y, mo, d] = block.date.split("-").map(Number), [h, m] = block.start.split(":").map(Number);
+    const bs = new Date(y, mo - 1, d, h, m);
+    if (start < bs) start = bs;
+  }
+  return { start, end, minutes: Math.max(0, Math.round((end - start) / 60000)) };
+}
+
+function renderIdle() {
+  const box = $("idle-card"), q = idle.asking;
+  box.hidden = !q;
+  if (!q) { box.replaceChildren(); return; }
+  const hm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  box.replaceChildren(...[
+    el("p", { class: "idle-q", text: `You were away ${fmtAway(q.minutes)} (${hm(q.start)}\u2013${hm(q.end)}). Log it as a break?` }),
+    q.error ? el("p", { class: "error", text: `Could not log it: ${q.error}. Try again.` }) : null,
+    el("div", { class: "row" },
+      el("button", { type: "button", id: "idle-log", class: "small primary", text: "Log as break", disabled: q.sending, onclick: idleLog }),
+      el("button", { type: "button", id: "idle-keep", class: "small ghost", text: "Keep as work", disabled: q.sending, onclick: () => { idle.asking = null; renderIdle(); } }))].filter(Boolean));
+}
+
+async function idleLog() {
+  const q = idle.asking;
+  if (!q || q.sending) return;
+  q.sending = true; q.error = "";
+  renderIdle();
+  try {
+    if (!q.pausedDone) {
+      const type = pauseType();
+      await api("POST", "/api/pause", { ...(type ? { type } : {}), at: wl.atString(q.start), request_id: q.pauseId });
+      q.pausedDone = true;
+    }
+    await api("POST", "/api/start", { type: q.type, ...(q.project ? { project: q.project } : {}), request_id: q.startId });
+    idle.asking = null;
+  } catch (err) { q.error = err.message; }
+  if (idle.asking) q.sending = false;
+  renderIdle();
+  await refreshAll();
+}
+
+async function idleInput() {
+  const now = Date.now(), prev = idle.last;
+  idle.last = now;
+  if (idle.asking || idle.checking || !idleOn() || now - prev < idleMinutes() * 60000) return;
+  idle.checking = true;
+  try {
+    // the snapshot can be old after a long absence: ask the server before deciding
+    await loadStatus().catch(() => {});
+    const s = timer.status;
+    if (!s || s.state !== "working" || !s.block || idle.asking) return;
+    const span = awaySpan(prev, now, s.block);
+    if (span.minutes < 1) return;
+    idle.asking = { ...span, type: s.block.type, project: s.block.project, pauseId: wl.newId(), startId: wl.newId(), pausedDone: false };
+    renderIdle();
+  } finally { idle.checking = false; }
+}
+
+function initIdle() {
+  for (const ev of ["pointerdown", "pointermove", "keydown", "touchstart", "wheel", "scroll"]) {
+    window.addEventListener(ev, () => { idleInput(); }, { passive: true, capture: true });
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) idleInput(); });
 }
 
 async function initTimer() {
@@ -842,6 +1114,11 @@ async function initTimer() {
     else if (e.key === "ArrowRight") gotoDate(shiftDate(timer.date, 1));
     else shortcut(e);
   });
+  wl.queue.listeners.add(onQueueChange);
+  wl.net.listeners.add((ok) => { if (ok && timer.offline) refreshAll(); });
+  window.addEventListener("online", refreshAll);
+  renderQueueStrip();
+  initIdle();
   refreshAll();
   setInterval(() => loadStatus().catch(showError), 60000);
   setInterval(() => { if (timer.status && timer.status.state !== "stopped") renderHeroClocks(); }, 1000);
@@ -1115,14 +1392,14 @@ window.addEventListener("resize", () => { if (chartState.rows && wideW() !== cha
 
 // ---- reports page ------------------------------------------------------------
 
-const fmtEur = (v) => (v == null ? "" : `${Math.round(v).toLocaleString("en-GB").replace(/,/g, " ")} €`);
+const fmtEur = (v) => (v == null ? "" : `${Math.round(v).toLocaleString("en-GB").replace(/,/g, " ")} ${wl.currency()}`);
 
 // Load and save errors of the Reports page show in a notice area at the top (the Import section is collapsed).
 // One message per source, cleared when that source succeeds again.
 const reportMsgs = new Map();
 function reportNotice(source, message) {
   if (message) reportMsgs.set(source, message); else reportMsgs.delete(source);
-  showMessages($("reports-notices"), [...reportMsgs.values()].map((m) => (m.startsWith("Heatmap") ? m : `Error: ${m}`)), "error");
+  showMessages($("reports-notices"), [...new Set(reportMsgs.values())].map((m) => (m.startsWith("Heatmap") ? m : `Error: ${m}`)), "error");
 }
 
 let reportAlt = 40; // the alternative week basis shown next to the base columns
@@ -1135,7 +1412,7 @@ const reportCols = () => [
   ["days", "Days", (r) => String(r.days_worked)],
   ["equiv", "Days eq.", (r) => fmtNum(r.days_equiv, 1)],
   ["billable", "Billable", (r) => fmtH(r.billable_h)],
-  ["amount", "€", (r) => fmtEur(r.amount), "eur"],
+  ["amount", wl.currency(), (r) => fmtEur(r.amount), "eur"],
 ];
 
 function table(cols, rows, rowClass) {
@@ -1218,7 +1495,7 @@ async function loadInvoice() {
     if (!current()) return;
     reportNotice("invoice", null);
     const priced = rows.some((r) => r.amount != null);
-    const cols = priced ? [...invoiceCols, ["amount", "€", null]] : invoiceCols;
+    const cols = priced ? [...invoiceCols, ["amount", wl.currency(), null]] : invoiceCols;
     const head = el("tr", {}, ...cols.map(([k, label]) => el("th", { class: k === "date" || k === "reason" ? "" : "num", text: label })));
     const body = rows.map((r) => el("tr", { class: isWeekend(r.date) ? "wknd" : "" },
       el("td", {}, el("span", { class: "wd", text: r.weekday }), r.date.slice(8)),
@@ -1519,6 +1796,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   initMore();
   if (page === "timer") initTimer();
   else if (page === "settings") initSettings();
-  else if (page === "reports") { await wl.ensureClock(); initReports(); }
+  else if (page === "reports") { await Promise.all([wl.ensureClock(), wl.loadCurrency()]); initReports(); }
   else if (page === "days") { await wl.ensureClock(); initDays(); }
 });

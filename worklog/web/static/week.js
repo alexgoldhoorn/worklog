@@ -153,8 +153,25 @@
   }
 
   async function decide(id, action) {
-    try { await api(`/api/balance/blocks/${id}/${action}`, {method: "POST"}); await load(); notice(action === "approve" ? "Approved. Google Calendar catches up within 15 minutes." : "Rejected.", "ok"); }
-    catch (e) { notice(e.message, "error"); }
+    try {
+      await api(`/api/balance/blocks/${id}/${action}`, {method: "POST"});
+      await load();
+      noticeUndo(action === "approve" ? "Approved. Google Calendar catches up within 15 minutes." : "Rejected.", id);
+    } catch (e) { notice(e.message, "error"); }
+  }
+
+  // after an approve or a reject: Undo puts the block back to "proposed" (a real undo on the server)
+  function noticeUndo(text, id) {
+    const p = document.createElement("p"); p.className = "ok";
+    const row = document.createElement("span"); row.className = "week-undo";
+    const t = document.createElement("span"); t.textContent = text;
+    const b = document.createElement("button"); b.type = "button"; b.className = "small"; b.textContent = "Undo";
+    b.onclick = () => wl.locked(b, async () => {
+      try { await api(`/api/balance/blocks/${id}/propose`, {method: "POST"}); await load(); notice("Back to proposed.", "ok"); }
+      catch (e) { notice(e.message, "error"); }
+    });
+    row.append(t, b); p.append(row);
+    $("#notices").replaceChildren(p);
   }
 
   function renderGoals(g) {

@@ -27,9 +27,13 @@
     <label class="rate">Rate
       <span class="rate-in">
         <input type="number" id="rate" min="0" step="1" inputmode="decimal" placeholder="–" aria-label="Rate">
-        <select id="rate-unit" aria-label="Rate unit"><option value="h">€/h</option><option value="day">€/day</option></select>
+        <select id="rate-unit" aria-label="Rate unit"><option value="h"></option><option value="day"></option></select>
       </span>
       <small id="rate-hint" class="muted"></small>
+    </label>
+    <label class="cur">Currency
+      <input id="currency" maxlength="4" size="5" autocomplete="off" aria-label="Currency symbol or code">
+      <small class="muted">shown after amounts on Reports and in the invoice</small>
     </label>
     <label class="basis">Week
       <span class="rate-in">
@@ -44,11 +48,38 @@
   </div>
 </section>
 
+<h2>Clients <small>the names a block can be billed to</small></h2>
+<section class="card prefs" id="clients">
+  <p class="hint" id="clients-empty" hidden>No clients yet.</p>
+  <ul class="plain-list" id="clients-list"></ul>
+  <form id="client-form" class="inline-form">
+    <input id="client-new" maxlength="100" autocomplete="off" placeholder="New client" aria-label="New client name">
+    <label class="check"><input id="client-new-bill" type="checkbox" checked> billable</label>
+    <button id="client-add" class="small" type="submit">Add</button>
+  </form>
+  <div id="clients-msg" class="notices" role="status"></div>
+  <p class="hint">A client that blocks use, or that is the default client, cannot be deleted.</p>
+</section>
+
+<h2>Break types <small>what Pause can be</small></h2>
+<section class="card prefs" id="break-types">
+  <ul class="plain-list" id="breaks-list"></ul>
+  <form id="break-form" class="inline-form">
+    <input id="break-new" maxlength="40" autocomplete="off" placeholder="New break type" aria-label="New break type name">
+    <button id="break-add" class="small" type="submit">Add</button>
+  </form>
+  <div id="breaks-msg" class="notices" role="status"></div>
+  <p class="hint">Names are kept in lower case. The default (set under Defaults) and any type blocks use cannot be deleted.</p>
+</section>
+
 <h2>This device</h2>
 <section class="card prefs">
   <div class="defaults">
     <label class="check"><input id="pref-shortcuts" type="checkbox"> Single-key shortcuts on the Timer page
       <small>S start · P pause · X stop · 1–6 type · / project · arrow keys change day. They never act while you are typing or a button has focus. Kept in this browser only.</small></label>
+    <label class="check"><input id="pref-idle" type="checkbox"> Ask when I come back after being away
+      <small>While a work block runs and this page has seen no input for a while, ask on your return whether that time was a break. It only works while the page is open. Kept in this browser only.</small></label>
+    <label class="idle-min">Away for at least (minutes) <input id="pref-idle-min" type="number" min="1" max="240" step="1" inputmode="numeric" aria-label="Minutes away before asking"></label>
   </div>
 </section>
 {% endblock %}

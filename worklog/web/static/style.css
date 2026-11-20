@@ -44,7 +44,8 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 
 /* ---- header -------------------------------------------------------------- */
 .top { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line); margin-bottom: 14px; }
-.top .bar { display: flex; align-items: center; gap: 18px; height: 48px; }
+/* overflow/background/radius reset: the Pomodoro's progress `.bar` rule would clip the More menu that drops below the header */
+.top .bar { display: flex; align-items: center; gap: 18px; height: 48px; overflow: visible; background: none; border-radius: 0; }
 .brand { font-weight: 700; letter-spacing: -.01em; color: var(--fg); text-decoration: none; display: flex; align-items: center; gap: 8px; }
 .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--stop); transition: background .2s; }
 .brand .dot.working { background: var(--work); box-shadow: 0 0 0 3px var(--work-bg); }
@@ -690,3 +691,23 @@ dialog.sheet.narrow { width: min(440px, calc(100vw - 20px)); }
   .live::before { animation: none; }
   .bar-fill, .bar span, .bar-fg, .brand .dot { transition: none; }
 }
+
+/* offline state, waiting actions and the idle question */
+.offline-bar { max-width: 820px; margin: 0 auto; padding: 6px 14px; background: var(--amber-bg); color: var(--amber); font-size: .9rem; font-weight: 600; }
+.offline-bar[hidden], .queue-strip[hidden], .idle-card[hidden] { display: none; }
+.queue-strip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 10px; padding: 6px 8px 6px 12px; border-radius: var(--r-sm);
+  background: var(--amber-bg); color: var(--amber); font-size: .9rem; }
+.queue-strip .q-text { flex: 1 1 160px; font-weight: 600; }
+.idle-card { margin: 0 0 12px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--accent-bg); border: 1px solid var(--accent); }
+.idle-card p { margin: 0 0 8px; }
+.idle-card p.error { color: var(--danger); }
+.idle-card .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.totals.dim { opacity: .5; }
+.plain-list { list-style: none; margin: 0 0 10px; padding: 0; }
+.cl-row, .bt-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--line2); }
+.cl-row input[type=text] { flex: 1 1 140px; min-width: 0; }
+.bt-row .bt-name { flex: 1; }
+.inline-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.inline-form input[type=text], .inline-form input:not([type]) { flex: 1 1 140px; min-width: 0; }
+.idle-min input { width: 6rem; }
+.week-undo { display: inline-flex; align-items: center; gap: 10px; }
