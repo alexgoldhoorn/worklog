@@ -19,6 +19,7 @@ class MainView extends WatchUi.View {
     private var _ticks as Number;
     private var _drawnMin as Number;
     private var _keep as Boolean;
+    private var _acting as Boolean;
 
     function initialize() {
         View.initialize();
@@ -33,6 +34,7 @@ class MainView extends WatchUi.View {
         _ticks = 0;
         _drawnMin = -1;
         _keep = false;
+        _acting = false;
     }
 
     //! Called when the action menu opens or closes. A key press and its release can land on two
@@ -123,6 +125,7 @@ class MainView extends WatchUi.View {
             return;
         }
         setBusy(true);
+        _acting = true;
         message = "…";
         var base = body != null ? body : (action == :start ? Logic.startBody(status) : {});
         _client.call(action, Logic.withExpect(base, state()), method(:onAction));
@@ -131,6 +134,7 @@ class MainView extends WatchUi.View {
 
     function onAction(ok as Boolean, result as Dictionary or String, code as Number) as Void {
         setBusy(false);
+        _acting = false;
         if (ok) {
             status = result as Dictionary;
             receivedAt = System.getTimer();
@@ -168,8 +172,15 @@ class MainView extends WatchUi.View {
         _watchdog = null;
         if (busy) {
             busy = false;
-            _keep = false;
             message = "Timed out";
+            if (_acting) {
+                // The action may have been applied anyway: fetch the truth, keep the message.
+                _acting = false;
+                _keep = true;
+                refresh(true);
+            } else {
+                _keep = false;
+            }
             WatchUi.requestUpdate();
         }
     }

@@ -9,6 +9,8 @@ request times out on the phone or in the simulator).
 A POST with expect_state that differs from the mock's state gets 409 {"error": "state changed",
 "state": <current>} and does nothing, like the server. To test it, change the state with curl
 (`curl -u a:b -X POST "http://127.0.0.1:8503/api/stop?brief=1"`) while the widget shows Working.
+Control: GET /ctl?state=working|break|stopped&fail=none|401|500|slow&delay=N changes the state or
+the failure mode of the running mock (e.g. to test the 409 path, or a slow reply, without a restart).
 In the simulator, switch off the HTTPS check and set serverUrl to http://127.0.0.1:8503.
 """
 import argparse
@@ -67,6 +69,23 @@ class Handler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self):
+        # Control route (not part of the server API): /ctl?state=working|break|stopped&fail=none|500|slow|401&delay=N
+        if self.path.startswith("/ctl"):
+            global FAIL, DELAY
+            from urllib.parse import urlparse, parse_qs
+            q = {k: v[0] for k, v in parse_qs(urlparse(self.path).query).items()}
+            if "state" in q:
+                if q["state"] == "stopped":
+                    STATE.update(state="stopped", started=None, since=None, type=None, project=None)
+                else:
+                    open_block(q["state"], "dev" if q["state"] == "working" else "eat", "acme" if q["state"] == "working" else None)
+            if "fail" in q:
+                FAIL = None if q["fail"] == "none" else q["fail"]
+            if "delay" in q:
+                DELAY = int(q["delay"])
+            print("CTL", q, flush=True)
+            self.reply(200, {"ok": True, "state": STATE["state"], "fail": FAIL})
+            return
         if not self.guard():
             return
         if self.path.split("?")[0] == "/api/status":

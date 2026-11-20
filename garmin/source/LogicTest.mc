@@ -87,8 +87,8 @@ function testGlanceCache(logger as Logger) as Boolean {
     return check(logger, c.size(), 5)
         & check(logger, Logic.cachedLine(c, 1000, false), "Working 2:14 · acme")
         & check(logger, Logic.cachedLine(c, 1120, false), "Working 2:16 · acme")
-        & check(logger, Logic.cachedLine(c, 1120, true), "Working 2:16 · acme ?")
-        & check(logger, Logic.cachedLine(c, 1601, false), "Working 2:24 · acme ?")
+        & check(logger, Logic.cachedLine(c, 1120, true), "Working 2:16 ?")
+        & check(logger, Logic.cachedLine(c, 1601, false), "Working 2:24 ?")
         & check(logger, Logic.cachedLine(c, 900, false), "Working 2:14 · acme")
         & check(logger, Logic.cachedLine(stopped, 1050, false), "Stopped · 6.5 h")
         & check(logger, Logic.cachedLine(stopped, 9000, false), "Stopped · 6.5 h ?");

@@ -141,7 +141,8 @@ module Logic {
     }
 
     //! Glance line from a cache entry: elapsed advanced by the time since it was stored; a
-    //! trailing " ?" when older than 10 minutes or when `old` (the refresh failed).
+    //! trailing " ?" when older than 10 minutes or when `old` (the refresh failed). The glance
+    //! is narrow (about 16 characters), so a marked line drops the project to keep the "?" visible.
     (:glance)
     function cachedLine(c as Dictionary, nowSec as Number, old as Boolean) as String {
         var t = c["t"];
@@ -149,11 +150,12 @@ module Logic {
         if (age < 0) {
             age = 0;
         }
+        var stale = old || age > 600;
         var e = c["e"];
-        var st = {"state" => c["s"], "project" => c["p"], "today_work_h" => c["h"],
+        var st = {"state" => c["s"], "project" => stale ? null : c["p"], "today_work_h" => c["h"],
             "elapsed_s" => e instanceof Number ? e + age : null} as Dictionary;
         var line = glanceLine(st);
-        return (old || age > 600) ? line + " ?" : line;
+        return stale ? line + " ?" : line;
     }
 
     (:glance)

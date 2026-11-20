@@ -3,7 +3,8 @@
 A widget with a glance for the Forerunner 965. The glance shows the timer state and elapsed
 time (`Working 2:14 · acme`, `On break 0:12`, `Stopped · 6.5 h`). It shows the last answer at once
 (cached in `Application.Storage`, elapsed time advanced from the stored time, trailing ` ?` when
-older than 10 minutes or when the refresh failed) and replaces it when the fetch answers. Opening it shows the state with a
+older than 10 minutes or when the refresh failed; the project is dropped from such a line because
+the glance is only about 16 characters wide and would cut the `?` off) and replaces it when the fetch answers. Opening it shows the state with a
 ticking clock, and Select (button or tap) opens Start / Pause / Stop. After every action the watch
 shows what the server returned, with one short vibration on success and three on failure.
 
@@ -37,7 +38,8 @@ it, the server answers 409 `{"error": "state changed"}` and does nothing; the wa
 other failed action it also fetches the status again (a timeout may have happened after the server
 acted), keeping the error text on screen. The open widget refreshes the status every 60 s (not while a
 request is in flight), redraws only when the minute shown changes (10 s tick), and a 30 s watchdog clears
-the busy state if no reply ever arrives (`Timed out`).
+the busy state if no reply ever arrives (`Timed out`; if it was an action that timed out, the
+status is fetched again, once, keeping the message).
 
 Error texts: `Needs https://` (-1001, or a non-https URL configured), `Login required` (401),
 `No phone link` (-104, -2), `Timed out` (-300), `Server error` (5xx), `Error <code>` otherwise;
@@ -95,8 +97,13 @@ In the simulator:
   `localhost`; any other non-https URL shows `Needs https://`. `--fail 401` and `--fail 500` show
   `Login required` and `Server error`. The simulator never times out a request (it waited 130 s
   for `--fail slow` and showed the late reply), so `Timed out` (code -300, from the phone) can
-  only be seen on the watch, e.g. with the phone paired but offline. Which message that gives is
-  not verified yet. Tick the HTTPS check again afterwards.
+  only be seen on the watch, e.g. with the phone paired but offline. The watchdog's `Timed out`
+  (30 s) does show in the simulator. With *Connection Type → BLE → Not Connected* the requests
+  fail with -104 and the widget shows `No phone link` (verified). Tick the HTTPS check again afterwards.
+- `GET /ctl?state=working|break|stopped&fail=none|401|500|slow&delay=N` on the mock changes its
+  state or failure mode while it runs (for the stale-state, refresh and error checks).
+- If the app shows `No login` although `properties.xml` has defaults, an old saved settings file
+  with empty values wins: delete `%TEMP%\com.garmin.connectiq\GARMIN\APPS\SETTINGS\*.SET` and relaunch.
 
 ### Manual checks (simulator, then the watch)
 
