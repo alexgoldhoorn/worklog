@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
@@ -58,6 +59,23 @@ ScrollView {
         return /^http:\/\//i.test(url.trim()) && user.trim() !== "" && !isLocalHost(hostOf(url))
     }
 
+    // "Test connection": the typed address and login are tried (GET /api/status?brief=1) without saving them
+    property bool testing: false
+    property string testMessage: ""
+    property bool testOk: false
+    function testNow() {
+        const url = normalizeUrl(urlField.text)
+        testing = true
+        testMessage = ""
+        Api.probe(url, userField.text, passwordField.text, function (r) {
+            if (!page)
+                return
+            page.testing = false
+            page.testOk = r.ok
+            page.testMessage = r.message
+        })
+    }
+
     property string saveError: ""
     function connectNow() {
         const url = normalizeUrl(urlField.text)
@@ -90,6 +108,8 @@ ScrollView {
                 page.rateMessage = ""
             if (page.defaultsMessage === qsTr("Saved"))
                 page.defaultsMessage = ""
+            if (page.currencyMessage === qsTr("Saved"))
+                page.currencyMessage = ""
         }
     }
 
@@ -105,7 +125,50 @@ ScrollView {
     function fillHours(st) { weekField.text = String(st.week_basis_h) }
     function fillRate(st) {
         rateField.text = st.rate === null ? "" : String(st.rate)
-        unitBox.currentIndex = Math.max(0, unitBox.model.indexOf(st.rate_unit))
+        unitBox.currentIndex = Math.max(0, unitBox.find(st.rate_unit))
+    }
+    // the currency symbol: 1 to 4 characters once trimmed
+    readonly property bool currencyValid: currencyField.text.trim().length >= 1 && currencyField.text.trim().length <= 4
+    property string currencyMessage: ""
+    function fillCurrency(st) { if (st.currency !== undefined) currencyField.text = st.currency }
+
+    // ---- clients and break types (the lists the server keeps; a 409 comes back as its own text) ----------
+    property var clients: []
+    property var breakList: []
+    property string clientsError: ""
+    property string breakError: ""
+    property string renaming: ""        // the client the rename dialog is for
+    function loadLists() {
+        Api.request("GET", "/api/clients", undefined, function (l) { if (page) page.clients = l }, function (e) { if (page) page.clientsError = e })
+        Api.request("GET", "/api/break-types", undefined, function (l) { if (page) page.breakList = l }, function (e) { if (page) page.breakError = e })
+    }
+    // one change to a list; the answer (or the error) lands in `setError`, the lists are read again
+    function listCall(method, path, body, setError) {
+        setError("")
+        Api.request(method, path, body, function () {
+            if (!page)
+                return
+            page.loadLists()
+            page.reload("defaults")   // a renamed client or a new break type shows in the Defaults card
+        }, e => setError(e))
+    }
+    function addClient(name, billable) {
+        listCall("POST", "/api/clients", { name: name.trim(), billable: billable }, e => page.clientsError = e)
+    }
+    function setBillable(name, billable) {
+        listCall("PUT", "/api/clients/" + encodeURIComponent(name), { billable: billable }, e => page.clientsError = e)
+    }
+    function renameClient(name, to) {
+        listCall("PUT", "/api/clients/" + encodeURIComponent(name), { name: to.trim() }, e => page.clientsError = e)
+    }
+    function deleteClient(name) {
+        listCall("DELETE", "/api/clients/" + encodeURIComponent(name), undefined, e => page.clientsError = e)
+    }
+    function addBreak(name) {
+        listCall("POST", "/api/break-types", { name: name.trim() }, e => page.breakError = e)
+    }
+    function deleteBreak(name) {
+        listCall("DELETE", "/api/break-types/" + encodeURIComponent(name), undefined, e => page.breakError = e)
     }
     function fillDefaults(st) {
         if (JSON.stringify(page.breakTypes) !== JSON.stringify(st.break_types))
@@ -134,6 +197,8 @@ ScrollView {
                 page.fillRate(s)
             if (page.hasDefaults && (!section || section === "defaults"))
                 page.fillDefaults(s)
+            if (!section || section === "currency")
+                page.fillCurrency(s)
         }, function (e) {
             page.connected = false
             page.serverMessage = e
@@ -147,10 +212,10 @@ ScrollView {
         }, e => setMessage(qsTr("Error: %1").arg(e)))
     }
 
-    Component.onCompleted: reload()
+    Component.onCompleted: { reload(); loadLists() }
     Connections {
         target: Api
-        function onServerChanged() { page.reload() }
+        function onServerChanged() { page.reload(); page.loadLists() }
     }
 
     property bool confirmingUnlock: false
@@ -231,14 +296,16 @@ ScrollView {
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
             }
-            RowLayout {
+            Flow {
+                id: serverRow
                 Layout.fillWidth: true
+                spacing: 8
                 Label {
+                    width: Math.max(160, serverRow.width - 8)
                     text: page.connected === null ? qsTr("Connecting…") : page.serverMessage
                     color: page.connected === false ? Api.errorColor : page.Material.foreground
                     opacity: page.connected ? 0.7 : 1
                     wrapMode: Text.Wrap
-                    Layout.fillWidth: true
                 }
                 Button {
                     id: signOutButton
@@ -250,11 +317,28 @@ ScrollView {
                     onClicked: signOutDialog.open()
                 }
                 Button {
+                    id: testButton
+                    text: page.testing ? qsTr("Testing…") : qsTr("Test connection")
+                    flat: true
+                    enabled: !page.testing && urlField.text.trim() !== ""
+                    Accessible.name: qsTr("Test connection: try this address and login without saving them")
+                    Accessible.role: Accessible.Button
+                    onClicked: page.testNow()
+                }
+                Button {
                     id: connectButton
                     text: qsTr("Connect")
                     highlighted: true
                     onClicked: page.connectNow()
                 }
+            }
+            Label {
+                visible: page.testMessage !== ""
+                text: page.testMessage
+                color: page.testOk ? Api.workColor : Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                Accessible.name: text
             }
             Label {
                 visible: page.saveError !== ""
@@ -448,7 +532,18 @@ ScrollView {
                     Accessible.name: qsTr("Amount per unit")
                     onTextEdited: page.rateMessage = ""
                 }
-                ComboBox { id: unitBox; model: ["h", "day"]; Layout.preferredWidth: 96 }
+                ComboBox {
+                    id: unitBox
+                    model: ["h", "day"]
+                    displayText: Api.currency + "/" + currentText
+                    delegate: ItemDelegate {
+                        required property string modelData
+                        width: unitBox.width
+                        text: Api.currency + "/" + modelData
+                    }
+                    Layout.preferredWidth: 110
+                    Accessible.name: qsTr("Rate unit")
+                }
                 Button {
                     text: qsTr("Save")
                     enabled: rateField.text.trim() === "" || isFinite(page.parseRate(rateField.text))
@@ -534,6 +629,179 @@ ScrollView {
         }
 
         Card {
+            title: qsTr("Currency")
+            enabled: page.connected === true
+
+            Caption {
+                text: qsTr("Symbol or code shown beside amounts (1 to 4 characters, no conversion)")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField {
+                    id: currencyField
+                    maximumLength: 4
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("Currency")
+                    onTextEdited: page.currencyMessage = ""
+                }
+                Button {
+                    text: qsTr("Save")
+                    enabled: page.currencyValid
+                    onClicked: page.save({ currency: currencyField.text.trim() }, m => page.currencyMessage = m, "currency")
+                }
+            }
+            Label {
+                text: page.currencyMessage
+                visible: text !== ""
+                opacity: 0.7
+            }
+        }
+
+        Card {
+            title: qsTr("Clients")
+            enabled: page.connected === true
+
+            Caption {
+                text: qsTr("Billable clients are priced with the rate; a block carries its client's name. A client in use cannot be deleted.")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: page.clients.length === 0
+                text: qsTr("No clients yet.")
+                color: Api.muted
+            }
+            Repeater {
+                model: page.clients
+                delegate: RowLayout {
+                    id: crow
+                    required property var modelData
+                    spacing: 4
+                    Layout.fillWidth: true
+                    Label { text: crow.modelData.name; elide: Text.ElideRight; Layout.fillWidth: true }
+                    Switch {
+                        text: qsTr("Billable")
+                        checked: crow.modelData.billable
+                        Accessible.name: qsTr("%1 is billable").arg(crow.modelData.name)
+                        onToggled: page.setBillable(crow.modelData.name, checked)
+                    }
+                    ToolButton {
+                        text: qsTr("Rename")
+                        Accessible.name: qsTr("Rename %1").arg(crow.modelData.name)
+                        onClicked: { page.renaming = crow.modelData.name; renameField.text = crow.modelData.name; renameDialog.open() }
+                    }
+                    ToolButton {
+                        text: "✗"
+                        Accessible.name: qsTr("Delete %1").arg(crow.modelData.name)
+                        onClicked: page.deleteClient(crow.modelData.name)
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField {
+                    id: newClient
+                    placeholderText: qsTr("New client")
+                    maximumLength: 100
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("New client name")
+                    onAccepted: addClientButton.clicked()
+                }
+                CheckBox { id: newClientBillable; text: qsTr("Billable"); checked: true }
+                Button {
+                    id: addClientButton
+                    text: qsTr("Add")
+                    enabled: newClient.text.trim() !== ""
+                    onClicked: { page.addClient(newClient.text, newClientBillable.checked); newClient.text = "" }
+                }
+            }
+            Label {
+                visible: page.clientsError !== ""
+                text: page.clientsError
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
+
+        Card {
+            title: qsTr("Break types")
+            enabled: page.connected === true
+
+            Caption {
+                text: qsTr("What Pause can log. The default (first) and the ones blocks use cannot be deleted.")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Flow {
+                spacing: 6
+                Layout.fillWidth: true
+                Repeater {
+                    model: page.breakList
+                    delegate: Rectangle {
+                        id: bchip
+                        required property var modelData
+                        required property int index
+                        implicitHeight: 36
+                        implicitWidth: bname.implicitWidth + bdel.implicitWidth + 20
+                        radius: 18
+                        color: "transparent"
+                        border.color: bchip.index === 0 ? Api.accent : Api.line
+                        Label {
+                            id: bname
+                            anchors.left: parent.left
+                            anchors.leftMargin: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: bchip.modelData + (bchip.index === 0 ? " · " + qsTr("default") : "")
+                        }
+                        ToolButton {
+                            id: bdel
+                            anchors.right: parent.right
+                            anchors.verticalCenter: parent.verticalCenter
+                            implicitWidth: 32
+                            implicitHeight: 32
+                            text: "✗"
+                            Accessible.name: qsTr("Delete break type %1").arg(bchip.modelData)
+                            onClicked: page.deleteBreak(bchip.modelData)
+                        }
+                    }
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                TextField {
+                    id: newBreak
+                    placeholderText: qsTr("New break type")
+                    maximumLength: 40
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("New break type name")
+                    onAccepted: addBreakButton.clicked()
+                }
+                Button {
+                    id: addBreakButton
+                    text: qsTr("Add")
+                    enabled: newBreak.text.trim() !== ""
+                    onClicked: { page.addBreak(newBreak.text); newBreak.text = "" }
+                }
+            }
+            Label {
+                visible: page.breakError !== ""
+                text: page.breakError
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
+
+        Card {
             title: qsTr("About")
 
             Label {
@@ -555,6 +823,33 @@ ScrollView {
             }
         }
         Item { implicitHeight: 8 }
+    }
+
+    Dialog {
+        id: renameDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: qsTr("Rename %1").arg(page.renaming)
+        width: Math.min(parent ? parent.width - 32 : 320, 400)
+        standardButtons: Dialog.Save | Dialog.Cancel
+        Material.accent: Api.accent
+        onAccepted: page.renameClient(page.renaming, renameField.text)
+        contentItem: ColumnLayout {
+            Label {
+                text: qsTr("Blocks and the default client with this name follow the new name.")
+                wrapMode: Text.Wrap
+                color: Api.muted
+                Layout.fillWidth: true
+            }
+            TextField {
+                id: renameField
+                maximumLength: 100
+                Layout.fillWidth: true
+                Accessible.name: qsTr("New name")
+                onAccepted: renameDialog.accept()
+            }
+        }
     }
 
     Dialog {

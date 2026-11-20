@@ -343,6 +343,59 @@ QtObject {
         }
     }
 
+    // What "Test connection" says about an answer from /api/status?brief=1: { ok, message }.
+    // `status` is the HTTP status (0 = no answer), `text` the body.
+    function probeVerdict(status, text, url) {
+        if (status === 0)
+            return { ok: false, message: qsTr("Cannot reach %1: check the address, and that the server is running").arg(url) }
+        if (status === 401 || status === 403)
+            return { ok: false, message: qsTr("The server is there, but it refused this user or password") }
+        if (status >= 200 && status < 300) {
+            let d = null
+            try { d = JSON.parse(text) } catch (e) { /* not JSON */ }
+            if (d && typeof d === "object" && !Array.isArray(d) && (typeof d.state === "string" || typeof d.now === "string"))
+                return { ok: true, message: qsTr("It works: the server accepted this login") }
+            return { ok: false, message: qsTr("Not a worklog server: %1 answered, but not with a worklog status").arg(url) }
+        }
+        if (status >= 500)
+            return { ok: false, message: qsTr("The server answered with an error (HTTP %1)").arg(status) }
+        return { ok: false, message: qsTr("Not a worklog server: %1 answered HTTP %2 to the status request").arg(url).arg(status) }
+    }
+
+    // Checks an address and login without saving them or touching the queue: done({ ok, message })
+    function probe(url, user, pass, done) {
+        const base = url.trim().replace(/\/+$/, "")
+        if (base === "") {
+            done({ ok: false, message: qsTr("Enter the server address first") })
+            return
+        }
+        const xhr = new XMLHttpRequest()
+        const entry = { xhr: xhr, at: Date.now(), finished: false, fail: null }
+        const finish = function (status, text) {
+            if (entry.finished)
+                return
+            entry.finished = true
+            api.inflight = api.inflight.filter(x => x !== entry)
+            done(api.probeVerdict(status, text, base))
+        }
+        entry.fail = () => finish(0, "")
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === XMLHttpRequest.DONE)
+                finish(xhr.status, xhr.responseText)
+        }
+        try {
+            api.inflight = api.inflight.concat([entry])
+            xhr.open("GET", base + "/api/status?brief=1")
+            if (user !== "") {
+                const utf8 = unescape(encodeURIComponent(user + ":" + pass))
+                xhr.setRequestHeader("Authorization", "Basic " + Qt.btoa(Array.from(utf8, c => c.charCodeAt(0))))
+            }
+            xhr.send()
+        } catch (e) {
+            finish(0, "")
+        }
+    }
+
     // ---- offline queue -------------------------------------------------------
     // Start/pause/stop tapped while the server is unreachable are kept (in order, each with the server
     // time it was tapped, the API's `at`) and sent when it answers again.
@@ -384,6 +437,9 @@ QtObject {
     // onQueued() runs instead of onErr. A queue that is not empty also takes the action, to keep the
     // order, and is sent again at once.
     function timerAction(path, body, onOk, onErr, onQueued) {
+        // one id per action: it stays with the action in the queue and on every replay, so a request that
+        // timed out after the server applied it is not applied a second time
+        body = Object.assign({}, body, { request_id: newRequestId() })
         const queueIt = function () {
             const b = Object.assign({}, body)
             b.at = atNow()
@@ -402,6 +458,13 @@ QtObject {
             else if (onErr)
                 onErr(e)
         })
+    }
+
+    // 1-64 characters, unique per action
+    property int requestSeq: 0
+    function newRequestId() {
+        requestSeq++
+        return "q" + Date.now().toString(36) + "-" + requestSeq + "-" + Math.floor(Math.random() * 1e9).toString(36)
     }
 
     // What to do with the head of the queue after the server answered it with `status`:
@@ -485,6 +548,23 @@ QtObject {
 
     // free text going into a StyledText label
     function esc(t) { return String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+    // The little Markdown Todoist puts in task text (the web's mdlite.js): **bold**, __bold__ and `code`
+    // markers are dropped, [text](http…) links stay. mdHtml() gives StyledText with <a> for the links,
+    // mdPlain() the text alone.
+    function mdStrip(t) { return String(t === null || t === undefined ? "" : t).replace(/\*\*(.+?)\*\*/g, "$1").replace(/__(.+?)__/g, "$1").replace(/`(.+?)`/g, "$1") }
+    function mdHtml(t) {
+        const s = mdStrip(t)
+        const re = /\[((?:[^\[\]]|\[[^\[\]]*\]){1,200})\]\((https?:\/\/[^\s)]{1,500})\)/g
+        let out = "", last = 0, m
+        while ((m = re.exec(s)) !== null) {
+            out += esc(s.slice(last, m.index)) + '<a href="' + esc(m[2]).replace(/"/g, "&quot;") + '">' + esc(m[1]) + "</a>"
+            last = m.index + m[0].length
+        }
+        return out + esc(s.slice(last))
+    }
+    function mdPlain(t) {
+        return mdStrip(t).replace(/\[((?:[^\[\]]|\[[^\[\]]*\]){1,200})\]\((https?:\/\/[^\s)]{1,500})\)/g, "$1")
+    }
     function pad(n) { return (n < 10 ? "0" : "") + n }
 
     // "7.5" and "7,5" -> 7.5 whatever the device's locale; NaN for anything that is not a plain number
@@ -499,11 +579,18 @@ QtObject {
         return (Math.round(v * f) / f).toString()
     }
 
+    // The server's currency symbol (status.currency, Settings), "€" until it says otherwise
+    property string currency: "€"
+    onStatusChanged: {
+        if (status && typeof status.currency === "string" && status.currency !== "")
+            currency = status.currency
+    }
+
     // 1234.4 -> "1 234 €"
     function fmtEur(v) {
         if (v === null || v === undefined)
             return ""
-        return Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " €"
+        return Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ") + " " + currency
     }
 
     // ISO week key as the server writes it: "2026-43"

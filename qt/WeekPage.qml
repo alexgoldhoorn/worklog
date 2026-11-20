@@ -5,7 +5,8 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // The balance week (the web's Week page): the seven days with work meetings, personal events and
-// planned blocks (approve / reject), then the load gate, work goals and the 28-day gate history.
+// planned blocks (approve / reject, with Undo), then the load gate, work goals, the 28-day gate history and
+// the balance settings.
 ScrollView {
     id: page
     signal addToCalendar()   // a meeting or appointment, not a protected block: Main opens Add or find a date
@@ -68,17 +69,80 @@ ScrollView {
         })
     }
 
+    // [label, value, note] as the web's "The numbers behind it" table
     readonly property var gateRows: [
-        [qsTr("Work last 7 days"), fmt(nums.hours_7d, " h")],
-        [qsTr("Work, 3-week average"), fmt(nums.hours_21d_week_avg, " h/week")],
-        [qsTr("Evenings past the stop (7 d)"), fmt(nums.evenings_7d)],
-        [qsTr("Resting HR (7 d / usual)"), fmt(nums.rhr_7d) + " / " + fmt(nums.rhr_base)],
-        [qsTr("HRV (7 d / usual)"), fmt(nums.hrv_7d, " ms") + " / " + fmt(nums.hrv_base, " ms")],
-        [qsTr("Sleep (7 d)"), fmt(nums.sleep_7d_h, " h")],
-        [qsTr("Stress (7 d / usual)"), fmt(nums.stress_7d) + " / " + fmt(nums.stress_base)],
-        [qsTr("Runs done / planned (14 d)"), fmt(nums.runs_done_14d) + " / " + fmt(nums.runs_planned_14d)],
-        [qsTr("Heavy days you tapped (7 d)"), fmt(nums.felt_heavy_7d)]
+        [qsTr("Work last 7 days"), fmt(nums.hours_7d, " h"),
+         weekData && weekData.settings ? qsTr("band %1–%2 h").arg(weekData.settings.week_hours_min).arg(weekData.settings.week_hours_max) : ""],
+        [qsTr("Work, 3-week average"), fmt(nums.hours_21d_week_avg, " h/week"), ""],
+        [qsTr("Evenings past the stop (7 d)"), fmt(nums.evenings_7d), ""],
+        [qsTr("Resting HR (7 d / usual)"), fmt(nums.rhr_7d) + " / " + fmt(nums.rhr_base), ""],
+        [qsTr("HRV (7 d / usual)"), fmt(nums.hrv_7d, " ms") + " / " + fmt(nums.hrv_base, " ms"), ""],
+        [qsTr("Sleep (7 d)"), fmt(nums.sleep_7d_h, " h") + (nums.sleep_score_7d !== null && nums.sleep_score_7d !== undefined ? qsTr(", score %1").arg(nums.sleep_score_7d) : ""), ""],
+        [qsTr("Stress (7 d / usual)"), fmt(nums.stress_7d) + " / " + fmt(nums.stress_base), ""],
+        [qsTr("Runs done / planned (14 d)"), fmt(nums.runs_done_14d) + " / " + fmt(nums.runs_planned_14d), nums.illness_open ? qsTr("illness open: runs not counted") : ""],
+        [qsTr("Heavy days you tapped (7 d)"), fmt(nums.felt_heavy_7d), ""]
     ]
+
+    // "Google Calendar: <state> (n block(s) waiting)" when the calendar sync is not ok, else ""
+    readonly property string syncWarning: {
+        const sy = weekData ? weekData.sync : null
+        return sy && sy.google && sy.google !== "ok" ? qsTr("Google Calendar: %1 (%2 block(s) waiting)").arg(sy.google).arg(sy.pending || 0) : ""
+    }
+    // "Tue 20 Oct in 3 days" for the event the gate is looking ahead to
+    function preEventText(pe) { return pe ? (pe.days === 1 ? qsTr("%1 in 1 day").arg(pe.title) : qsTr("%1 in %2 days").arg(pe.title).arg(pe.days)) : "" }
+    function balanceRepeaterItem(i) { return balanceRepeater.itemAt(i) }
+
+    // days from the shown "today" to an ISO date or datetime (negative: past)
+    function daysFrom(iso) { return Math.round((Api.parseDate(String(iso).slice(0, 10)) - Api.parseDate(page.todayIso)) / 864e5) }
+    // "3 d ago", "today", "in 3 d"
+    function leftText(d) { return d < 0 ? qsTr("%1 d ago").arg(-d) : d === 0 ? qsTr("today") : qsTr("in %1 d").arg(d) }
+
+    // ---- balance settings (the web's card at the bottom of Week) ---------------------------------
+    readonly property var balanceFields: [
+        { key: "hard_stop", label: qsTr("Hard stop"), time: true, help: qsTr("24h. Work past this time counts as an evening for the gate; the proposed Hard stop blocks start here.") },
+        { key: "run_slot", label: qsTr("Run slot"), time: true, help: qsTr("24h. Where the Sunday proposal puts a planned run.") },
+        { key: "run_alt_slots", label: qsTr("Run fallback slots"), help: qsTr("24h, comma-separated. Tried in order when the run slot clashes with a work meeting.") },
+        { key: "week_hours_min", label: qsTr("Week hours min"), number: true, help: qsTr("The band the gate judges work hours against (hours signal fires above max).") },
+        { key: "week_hours_max", label: qsTr("Week hours max"), number: true, help: "" },
+        { key: "gcal_calendar", label: qsTr("Google calendar"), help: qsTr("Approved blocks are mirrored to this calendar (primary with a prefix until it exists).") },
+        { key: "todoist_project", label: qsTr("Todoist project"), help: qsTr("Where the top 3 and milestones come from.") },
+        { key: "milestone_label", label: qsTr("Milestone label"), help: qsTr("Milestones are dated Todoist tasks in that project carrying this label; they are not stored here.") }
+    ]
+    property bool balanceOpen: false
+    property bool balanceDirty: false     // typed in, not saved: a reload must not overwrite it
+    property string balanceMessage: ""
+    property string balanceError: ""
+    function fillBalance() {
+        const st = weekData ? weekData.settings : null
+        if (!st)
+            return
+        for (let i = 0; i < balanceRepeater.count; i++) {
+            const it = balanceRepeater.itemAt(i)
+            if (it)
+                it.field.text = st[it.key] === null || st[it.key] === undefined ? "" : String(st[it.key])
+        }
+        balanceDirty = false
+    }
+    // the typed values, as the web sends them (every field as text)
+    function balanceBody() {
+        const body = {}
+        for (let i = 0; i < balanceRepeater.count; i++) {
+            const it = balanceRepeater.itemAt(i)
+            if (it)
+                body[it.key] = it.field.text.trim()
+        }
+        return body
+    }
+    function saveBalance() {
+        balanceError = ""
+        balanceMessage = ""
+        Api.request("PUT", "/api/balance/settings", balanceBody(), function () {
+            page.balanceDirty = false
+            page.balanceMessage = qsTr("Settings saved. The gate reads them on its next run.")
+            page.reload()
+        }, e => page.balanceError = e)
+    }
+    onWeekDataChanged: if (!balanceDirty) Qt.callLater(fillBalance)
 
     property int requestId: 0
 
@@ -98,9 +162,6 @@ ScrollView {
 
     function shift(days) { start = Api.addDays(weekData ? weekData.start : Api.today(), days) }
 
-    // A block only has a state (proposed / approved / rejected) that the server flips; the calendar sync job
-    // follows it. So the way back from a reject is to approve the block again: that restores an approved
-    // block exactly. A proposed one cannot go back to "proposed" (no route sets it), so Undo approves it.
     // ✗ on a block: an approved one is asked about first (it is on the calendar), a proposed one goes at once
     function reject(block) {
         if (block.state === "approved")
@@ -108,16 +169,16 @@ ScrollView {
         else
             decide(block.id, "reject")
     }
+    // action: "approve", "reject" or "propose" (back to proposed). Approving and rejecting offer Undo, which
+    // calls the server's propose route: the block is "proposed" again, whatever it was before.
     function decide(id, action) {
-        const was = weekData ? weekData.blocks.find(b => b.id === id) : null
         Api.request("POST", "/api/balance/blocks/" + id + "/" + action, undefined, function () {
-            if (action === "approve") {
-                page.info = qsTr("Approved. Google Calendar catches up within 15 minutes.")
-                return
-            }
             page.info = ""
-            snack.show(qsTr("Rejected."), () => page.decide(id, "approve"),
-                       was && was.state === "proposed" ? qsTr("Approve instead") : qsTr("Undo"))
+            if (action === "propose")
+                snack.show(qsTr("Back to proposed."))
+            else
+                snack.show(action === "approve" ? qsTr("Approved. Google Calendar catches up within 15 minutes.") : qsTr("Rejected."),
+                           () => page.decide(id, "propose"))
         }, e => page.error = e)
     }
 
@@ -231,6 +292,8 @@ ScrollView {
                     text: page.weekData ? page.dayLabel(page.weekData.start) + " – " + page.dayLabel(page.weekData.end) : qsTr("Week")
                     font.pixelSize: 18
                     font.weight: Font.Bold
+                    fontSizeMode: Text.HorizontalFit   // "Mon 16 Nov – Sun 22 Nov" must not run into the Today button at 360 dp
+                    minimumPixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
                 }
@@ -275,22 +338,52 @@ ScrollView {
             title: qsTr("Load gate")
             visible: page.weekData !== null
             actions: Label {
-                text: page.gate && page.gate.colour ? page.colourName(page.gate.colour) : qsTr("no verdict")
+                text: page.gate && page.gate.colour ? qsTr("Load %1").arg(page.colourName(page.gate.colour)) : qsTr("No verdict yet")
                 color: page.gateColor(page.gate ? page.gate.colour : "")
                 font.weight: Font.Bold
             }
 
+            Caption {
+                text: qsTr("Daily at 07:22, from work hours, body signals and runs kept")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
             Label {
                 visible: !(page.gate && page.gate.colour)
-                text: qsTr("No verdict yet: the gate runs daily.")
+                text: qsTr("The gate runs at 07:22")
                 color: Api.muted
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
             Label {
                 visible: !!(page.gate && page.gate.colour)
-                text: (page.meaning[page.gate.colour] || "") + (page.gate.date ? " (" + page.gate.date + ")" : "")
+                text: qsTr("Verdict of %1").arg(page.gate.date || "")
+                color: Api.muted
+                font.pixelSize: 12
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: !!(page.gate && page.gate.pre_event)
+                text: "· " + page.preEventText(page.gate ? page.gate.pre_event : null)
+                color: Api.muted
+                font.pixelSize: 12
                 wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: !!(page.gate && page.gate.colour)
+                text: page.meaning[page.gate.colour] || ""
+                color: Api.muted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Caption { visible: !!(page.gate && page.gate.colour); text: qsTr("Why") }
+            Label {
+                visible: !!(page.gate && page.gate.colour) && !(page.gate.signals && page.gate.signals.length)
+                text: qsTr("No signal firing.")
+                color: Api.muted
                 Layout.fillWidth: true
             }
             Repeater {
@@ -302,21 +395,47 @@ ScrollView {
                     Layout.fillWidth: true
                 }
             }
+            Caption { visible: !!(page.gate && page.gate.protect); text: qsTr("Protect") }
             Label {
                 visible: !!(page.gate && page.gate.protect)
-                text: qsTr("Protect: %1").arg(page.gate.protect || "")
+                text: page.gate.protect || ""
                 font.weight: Font.DemiBold
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            DataTable {
-                visible: !!(page.gate && page.gate.colour)
-                columns: [{ title: qsTr("Signal"), w: 190 }, { title: qsTr("Value"), w: 110, num: true }]
-                rows: page.gateRows.map(r => ({ cells: r }))
+            Caption { visible: !!(page.gate && page.gate.colour); text: qsTr("The numbers behind it") }
+            Repeater {
+                model: page.gate && page.gate.colour ? page.gateRows : []
+                delegate: ColumnLayout {
+                    id: nrow
+                    required property var modelData
+                    spacing: 0
+                    Layout.fillWidth: true
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: nrow.modelData[0]; wrapMode: Text.Wrap; Layout.fillWidth: true; font.pixelSize: 13 }
+                        Label { text: nrow.modelData[1]; font.pixelSize: 13; font.weight: Font.DemiBold; font.features: { "tnum": 1 } }
+                    }
+                    Label {
+                        visible: nrow.modelData[2] !== ""
+                        text: nrow.modelData[2]
+                        color: Api.muted
+                        font.pixelSize: 11
+                        Layout.fillWidth: true
+                    }
+                    Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Api.line2 }
+                }
             }
             Label {
                 visible: !!(page.gate && page.gate.gaps && page.gate.gaps.length)
                 text: qsTr("No data: %1").arg(page.gate && page.gate.gaps ? page.gate.gaps.join(", ") : "")
+                color: Api.warnColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: page.syncWarning !== ""
+                text: page.syncWarning
                 color: Api.warnColor
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
@@ -567,50 +686,97 @@ ScrollView {
             visible: page.weekData !== null
             readonly property var goals: page.weekData ? page.weekData.goals : null
             readonly property bool has: !!goals && !!goals.project
+            readonly property string milestoneLabel: page.weekData && page.weekData.settings ? page.weekData.settings.milestone_label || "" : ""
 
             Label {
                 visible: !goalsCard.has
-                text: qsTr("No Todoist snapshot yet.")
+                text: qsTr("No Todoist snapshot yet (sync runs every 15 min).")
                 color: Api.muted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Label {
                 visible: goalsCard.has
-                text: goalsCard.has ? qsTr("%1 · %2 open").arg(goalsCard.goals.project).arg(goalsCard.goals.open) : ""
+                text: goalsCard.has ? [goalsCard.goals.project, qsTr("%1 open").arg(goalsCard.goals.open),
+                                       goalsCard.goals.fetched ? String(goalsCard.goals.fetched).slice(0, 16).replace("T", " ") : ""]
+                                      .filter(x => x).join(" · ") : ""
                 color: Api.muted
                 font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Caption { visible: goalsCard.has; text: qsTr("Milestones") }
+            Label {
+                visible: goalsCard.has && goalsCard.goals.milestones.length === 0
+                text: goalsCard.has ? qsTr("None yet. Milestones live in Todoist, not here: give a dated task in %1 the label %2 and it appears on the next sync.")
+                                      .arg(goalsCard.goals.project).arg(goalsCard.milestoneLabel) : ""
+                color: Api.muted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
             Repeater {
                 model: goalsCard.has ? goalsCard.goals.milestones : []
-                delegate: RowLayout {
+                delegate: GridLayout {
                     id: ms
                     required property var modelData
-                    readonly property int daysLeft: Math.round((Api.parseDate(modelData.due.slice(0, 10)) - Api.parseDate(page.todayIso)) / 864e5)
+                    readonly property int daysLeft: page.daysFrom(modelData.due)
+                    readonly property color tone: daysLeft < 0 ? Api.errorColor : daysLeft <= 7 ? Api.warnColor : Api.muted
+                    columns: 2
+                    columnSpacing: 10
+                    rowSpacing: 0
                     Layout.fillWidth: true
-                    Label { text: ms.modelData.due.slice(0, 10); color: ms.daysLeft < 0 ? Api.errorColor : ms.daysLeft <= 7 ? Api.warnColor : Api.muted }
-                    Label { text: ms.modelData.content; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                    Label { text: ms.modelData.due.slice(0, 10); color: ms.tone; font.pixelSize: 12 }
+                    Label { text: page.leftText(ms.daysLeft); color: ms.tone; font.pixelSize: 12; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
                     Label {
-                        text: ms.daysLeft < 0 ? qsTr("%1 d ago").arg(-ms.daysLeft) : ms.daysLeft === 0 ? qsTr("today") : qsTr("in %1 d").arg(ms.daysLeft)
-                        color: Api.muted
+                        text: Api.mdHtml(ms.modelData.content)
+                        textFormat: Text.StyledText
+                        wrapMode: Text.Wrap
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        onLinkActivated: link => Qt.openUrlExternally(link)
                     }
                 }
             }
             Caption { visible: goalsCard.has; text: qsTr("Top 3 today") }
+            Label {
+                visible: goalsCard.has && goalsCard.goals.top3.length === 0
+                text: qsTr("Nothing due today in this project.")
+                color: Api.muted
+                Layout.fillWidth: true
+            }
             Repeater {
                 model: goalsCard.has ? goalsCard.goals.top3 : []
                 delegate: Label {
+                    id: top
                     required property var modelData
                     required property int index
-                    text: (index + 1) + ". " + modelData.content
+                    readonly property bool overdue: !!modelData.due && String(modelData.due).slice(0, 10) < page.todayIso
+                    text: (index + 1) + ". " + Api.mdHtml(modelData.content)
+                          + (overdue ? " <font color=\"" + Api.muted + "\">(" + Api.esc(String(modelData.due).slice(0, 10)) + ")</font>" : "")
+                    textFormat: Text.StyledText
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
+                    onLinkActivated: link => Qt.openUrlExternally(link)
                 }
+            }
+            Label {
+                visible: goalsCard.has && goalsCard.goals.due_today_or_overdue > 3
+                text: goalsCard.has ? qsTr("%1 due or overdue in total; the three highest priority are shown.").arg(goalsCard.goals.due_today_or_overdue) : ""
+                color: Api.muted
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
         }
 
         Card {
             title: qsTr("Gate history")
-            visible: page.weekData !== null && page.weekData.history.length > 0
+            visible: page.weekData !== null
+            Label {
+                visible: !!page.weekData && page.weekData.history.length === 0
+                text: qsTr("No history yet.")
+                color: Api.muted
+            }
             Flow {
                 spacing: 4
                 Layout.fillWidth: true
@@ -635,9 +801,90 @@ ScrollView {
                 }
             }
             Caption {
-                text: qsTr("One square per day, last 28 days; the number is the day of the month")
+                text: qsTr("One square per day, last 28 days: green / amber / red, number = day of month")
                 font.capitalization: Font.MixedCase
                 font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
+
+        Card {
+            title: qsTr("Balance settings")
+            visible: page.weekData !== null
+            actions: Button {
+                text: page.balanceOpen ? qsTr("Hide") : qsTr("Show")
+                flat: true
+                Accessible.name: page.balanceOpen ? qsTr("Hide the balance settings") : qsTr("Show the balance settings")
+                Accessible.role: Accessible.Button
+                onClicked: page.balanceOpen = !page.balanceOpen
+            }
+            Caption {
+                text: qsTr("Hard stop, run slot, hours band, calendar, Todoist project · stored in balance.db")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                id: balanceRepeater
+                model: page.balanceOpen ? page.balanceFields : []
+                onItemAdded: Qt.callLater(page.fillBalance)
+                delegate: ColumnLayout {
+                    id: brow
+                    required property var modelData
+                    readonly property string key: modelData.key
+                    property alias field: bfield
+                    spacing: 2
+                    Layout.fillWidth: true
+                    Label { text: brow.modelData.label; font.pixelSize: 12; color: Api.muted }
+                    TextField {
+                        id: bfield
+                        inputMethodHints: brow.modelData.number ? Qt.ImhFormattedNumbersOnly : Qt.ImhNone
+                        placeholderText: brow.modelData.time ? qsTr("HH:MM") : ""
+                        Layout.fillWidth: true
+                        Accessible.name: brow.modelData.label
+                        Accessible.description: brow.modelData.help
+                        onTextEdited: { page.balanceDirty = true; page.balanceMessage = "" }
+                    }
+                    Label {
+                        visible: brow.modelData.help !== ""
+                        text: brow.modelData.help
+                        color: Api.muted
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+            Label {
+                visible: page.balanceOpen
+                text: qsTr("The gate and the Sunday proposal read them on their next run.")
+                color: Api.muted
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: page.balanceError !== ""
+                text: qsTr("Could not save: %1").arg(page.balanceError)
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: page.balanceMessage !== ""
+                text: page.balanceMessage
+                color: Api.workColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Button {
+                visible: page.balanceOpen
+                text: qsTr("Save")
+                highlighted: true
+                Accessible.name: text
+                onClicked: page.saveBalance()
             }
         }
 
@@ -654,7 +901,7 @@ ScrollView {
         standardButtons: Dialog.Yes | Dialog.Cancel
         Material.accent: Api.accent
         contentItem: Label {
-            text: qsTr("It is taken off the calendar. You can approve it again with Undo.")
+            text: qsTr("It is taken off the calendar on the next sync. Undo puts it back to proposed.")
             wrapMode: Text.Wrap
         }
         onAccepted: { const id = page.confirmId; page.confirmId = -1; page.decide(id, "reject") }

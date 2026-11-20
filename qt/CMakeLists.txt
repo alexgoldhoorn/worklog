@@ -38,6 +38,7 @@ set(WL_QML_FILES
     TimerPage.qml
     DayPage.qml
     WeekPage.qml
+    PlannerPage.qml
     FindPage.qml
     ChipMulti.qml
     SettingsPage.qml

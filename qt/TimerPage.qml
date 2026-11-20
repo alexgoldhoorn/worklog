@@ -381,7 +381,6 @@ ScrollView {
         // ---- notices ----------------------------------------------------------
         Repeater {
             model: (page.error && !page.offline ? [{ text: qsTr("Error: %1").arg(page.error), level: "error" }] : [])
-                   .concat(Api.queue.length ? [{ text: qsTr("%n action(s) waiting for the server", "", Api.queue.length), level: "warn" }] : [])
                    .concat(page.serverNotices.map(t => ({ text: t, level: "warn" })))
                    .concat(page.status ? Api.overlapItems(page.status).map(o => ({ text: o.text, level: "warn", date: o.date })) : [])
                    .concat(page.status && page.status.needs_review.length

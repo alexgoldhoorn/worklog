@@ -433,7 +433,7 @@ ScrollView {
                           { title: qsTr("Expected"), w: 80, num: true }, { title: qsTr("Extra"), w: 76, num: true },
                           { title: qsTr("Extra %1h").arg(page.altWeek), w: 84, num: true }, { title: qsTr("Days"), w: 50, num: true },
                           { title: qsTr("Days eq."), w: 70, num: true }, { title: qsTr("Billable"), w: 80, num: true }]
-                         .concat(page.priced ? [{ title: "€", w: 90, num: true }] : [])
+                         .concat(page.priced ? [{ title: Api.currency, w: 90, num: true }] : [])
                 rows: page.rows.slice().reverse().map(r => ({
                     tint: r.key === page.currentKey ? Api.accentBg : undefined,
                     cells: [page.periodLong(r.key).replace(/^Week /, "W"), Api.fmtH(r.worked_h), Api.fmtH(r.expected_h),
@@ -499,7 +499,7 @@ ScrollView {
                 readonly property int daysWorked: page.invoice.filter(r => r.worked).length
                 columns: [{ title: qsTr("Date"), w: 70 }, { title: qsTr("Worked"), w: 76, num: true },
                           { title: qsTr("Expected"), w: 80, num: true }, { title: qsTr("Reason"), w: 120 },
-                          { title: "✓", w: 30, num: true }].concat(invPriced ? [{ title: "€", w: 80, num: true }] : [])
+                          { title: "✓", w: 30, num: true }].concat(invPriced ? [{ title: Api.currency, w: 80, num: true }] : [])
                 rows: page.invoice.map(r => ({
                     tint: [0, 6].indexOf(Api.parseDate(r.date).getDay()) >= 0 ? Api.line2 : undefined,
                     cells: [r.weekday + " " + Number(r.date.slice(8)), r.worked_h > 0 ? Api.fmtH(r.worked_h) : "",

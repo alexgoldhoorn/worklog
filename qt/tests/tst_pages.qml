@@ -19,6 +19,8 @@ TestCase {
     Component { id: pomodoroPage; PomodoroPage {} }
     Component { id: settingsPage; SettingsPage {} }
     Component { id: findPage; FindPage {} }
+    Component { id: plannerPage; PlannerPage {} }
+    Component { id: weekPage; WeekPage {} }
     Component { id: todayPage; TodayPage {} }
 
     function initTestCase() {
@@ -47,6 +49,8 @@ TestCase {
     function test_pomodoro_page() { load(pomodoroPage) }
     function test_settings_page() { load(settingsPage) }
     function test_find_page() { compare(load(findPage).error, "") }
+    function test_planner_page() { const p = load(plannerPage); compare(p.error, ""); verify(p.day !== null) }
+    function test_week_page() { const p = load(weekPage); compare(p.error, ""); verify(p.weekData !== null) }
 
     // the Today screen is the Timer on today and the Log on any other day
     function test_today_screen_switches_between_timer_and_log() {

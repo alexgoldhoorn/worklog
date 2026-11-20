@@ -60,16 +60,17 @@ ApplicationWindow {
     readonly property int navTimer: 0
     readonly property int navWeek: 1
     readonly property int navPomodoro: 2
-    readonly property int navReports: 3
-    readonly property int navExpected: 4
-    readonly property int navFind: 5
-    readonly property int navSettings: 6
+    readonly property int navDay: 3
+    readonly property int navReports: 4
+    readonly property int navExpected: 5
+    readonly property int navFind: 6
+    readonly property int navSettings: 7
     property int current: navTimer
     readonly property bool inMore: current > navPomodoro
     // the same names, in the same order, as the web's navigation
-    readonly property var titles: [qsTr("Timer"), qsTr("Week"), qsTr("Pomodoro"), qsTr("Reports"),
+    readonly property var titles: [qsTr("Timer"), qsTr("Week"), qsTr("Pomodoro"), qsTr("Day"), qsTr("Reports"),
                                    qsTr("Expected hours"), qsTr("Add or find a date"), qsTr("Settings")]
-    readonly property var icons: ["timer", "week", "pomodoro", "reports", "expected", "find", "settings"]
+    readonly property var icons: ["timer", "week", "pomodoro", "day", "reports", "expected", "find", "settings"]
 
     header: Rectangle {
         color: Api.card
@@ -143,6 +144,7 @@ ApplicationWindow {
                 Menu {
                     id: moreMenu
                     y: parent.height
+                    MoreItem { text: window.titles[window.navDay]; iconName: window.icons[window.navDay]; onTriggered: window.current = window.navDay }
                     MoreItem { text: window.titles[window.navReports]; iconName: window.icons[window.navReports]; onTriggered: window.current = window.navReports }
                     MoreItem { text: window.titles[window.navExpected]; iconName: window.icons[window.navExpected]; onTriggered: window.current = window.navExpected }
                     MoreItem { text: window.titles[window.navFind]; iconName: window.icons[window.navFind]; onTriggered: window.current = window.navFind }
@@ -330,6 +332,16 @@ ApplicationWindow {
             onAttention: {
                 window.current = window.navPomodoro
                 window.alert(0)   // flash the taskbar entry until the window is activated
+            }
+        }
+        PlannerPage {
+            onAddRequested: {
+                findPage.mode = "add"
+                window.current = window.navFind
+            }
+            onFindRequested: {
+                findPage.mode = "find"
+                window.current = window.navFind
             }
         }
         ReportsPage {}

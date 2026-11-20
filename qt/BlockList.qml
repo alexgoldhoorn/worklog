@@ -179,7 +179,7 @@ ColumnLayout {
                                 ToolTip.text: qsTr("Billable: tap to cycle")
                                 background: Rectangle { radius: 6; color: bill.hovered ? Api.line2 : "transparent" }
                                 contentItem: Text {
-                                    text: bill.value === true ? "€" : bill.value === false ? "✗" : "–"
+                                    text: bill.value === true ? Api.currency : bill.value === false ? "✗" : "–"
                                     color: bill.value === true ? Api.workColor : Api.faint
                                     font.weight: Font.Bold
                                     horizontalAlignment: Text.AlignHCenter

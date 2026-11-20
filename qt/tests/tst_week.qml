@@ -81,7 +81,8 @@ TestCase {
         tryVerify(() => p.snackbar.undoFn !== null, 5000)
         p.snackbar.undoFn()
         tryVerify(() => p.agenda[1].items.some(i => i.text === "Qt undo block"), 5000)
-        compare(p.agenda[1].items.find(i => i.text === "Qt undo block").block.state, "approved")
+        // Undo is the server's propose route: the block is "proposed" again
+        compare(p.agenda[1].items.find(i => i.text === "Qt undo block").block.state, "proposed")
     }
 
     function test_block_form_validation() {
