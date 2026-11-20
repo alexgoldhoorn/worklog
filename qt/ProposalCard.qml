@@ -78,7 +78,7 @@ Card {
                 }
                 AppButton {
                     text: qsTr("Add as meeting")
-                    highlighted: !meeting.dismissed
+                    primary: !meeting.dismissed
                     flat: meeting.dismissed
                     onClicked: Api.request("POST", "/api/calendar/add",
                                            { date: card.date, start: meeting.modelData.start, end: meeting.modelData.end, title: meeting.modelData.title },

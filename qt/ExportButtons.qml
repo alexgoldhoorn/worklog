@@ -18,11 +18,13 @@ RowLayout {
     AppButton {
         text: "CSV"
         flat: true
+        Accessible.name: qsTr("Export CSV")
         onClicked: { root.format = "csv"; saveDialog.open() }
     }
     AppButton {
         text: "XLSX"
         flat: true
+        Accessible.name: qsTr("Export XLSX")
         onClicked: { root.format = "xlsx"; saveDialog.open() }
     }
 

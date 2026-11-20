@@ -349,7 +349,7 @@ ScrollView {
                 visible: page.mode === "find"
                 text: page.busy ? qsTr("Finding…") : qsTr("Find")
                 enabled: !page.busy
-                highlighted: true
+                primary: true
                 Layout.alignment: Qt.AlignRight
                 Accessible.name: qsTr("Find a date")
                 Accessible.role: Accessible.Button
@@ -367,7 +367,7 @@ ScrollView {
                 visible: page.mode === "add"
                 text: qsTr("Add")
                 enabled: page.canAdd && !page.putDone && !page.putting
-                highlighted: true
+                primary: true
                 Layout.alignment: Qt.AlignRight
                 Accessible.name: qsTr("Add to the calendar")
                 Accessible.role: Accessible.Button
@@ -494,7 +494,7 @@ ScrollView {
                 visible: page.chosen !== null
                 text: qsTr("Put it in")
                 enabled: !page.putDone && !page.putting
-                highlighted: true
+                primary: true
                 Layout.alignment: Qt.AlignRight
                 Accessible.name: qsTr("Put it in")
                 Accessible.role: Accessible.Button

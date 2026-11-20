@@ -352,7 +352,7 @@ ScrollView {
             }
             AppButton {
                 text: qsTr("Only this one")
-                highlighted: true
+                primary: true
                 Accessible.name: text
                 Layout.fillWidth: true
                 onClicked: page.answer("once")

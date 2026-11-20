@@ -274,7 +274,7 @@ AppDialog {
                     }
                     AppButton {
                         text: dlg.chosen ? qsTr("Move to %1").arg(dlg.chosen.start) : qsTr("Move")
-                        highlighted: true
+                        primary: true
                         enabled: !dlg.done
                         Accessible.name: text
                         onClicked: dlg.confirm()

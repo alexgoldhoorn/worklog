@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 // The one text button. Three weights, the same on every screen:
-//   highlighted  the main action of a view or dialog: filled with the accent, the label in the colour made for
+//   primary      the main action of a view or dialog: filled with the accent, the label in the colour made for
 //                that fill (Api.accentFg) in both themes. Material's own highlighted button takes its label
 //                colour from the style's theme, which left white-on-light text when the two disagreed.
 //   (default)    a quiet tonal button (a neutral fill, the normal text colour)
@@ -12,6 +12,7 @@ import QtQuick.Controls.Material
 // 40 dp high, so every button is a touch target.
 Button {
     id: btn
+    property bool primary: false   // not Button.highlighted: a DialogButtonBox resets that on its buttons
     property bool destructive: false
     property color flatInk: Api.accent
     hoverEnabled: true
@@ -25,18 +26,21 @@ Button {
     background: Rectangle {
         implicitWidth: 64
         radius: 8
-        color: btn.flat ? (!btn.enabled ? "transparent" : btn.down ? Api.line : btn.hovered ? Api.line2 : "transparent")
-             : !btn.enabled ? Api.line2
-             : btn.highlighted ? (btn.down ? Qt.darker(btn.fillBase, 1.15) : btn.hovered ? Qt.lighter(btn.fillBase, 1.06) : btn.fillBase)
-             : (btn.down ? Api.line : btn.hovered ? Qt.darker(Api.line2, 1.04) : Api.line2)
-        border.color: btn.activeFocus && !btn.highlighted ? Api.accent : "transparent"
+        // highlighted wins over flat: a DialogButtonBox makes its buttons flat, which left Save as bare text
+        color: !btn.enabled ? (btn.flat && !btn.primary ? "transparent" : Api.line2)
+             : btn.primary ? (btn.down ? Qt.darker(btn.fillBase, 1.15) : btn.hovered ? Qt.lighter(btn.fillBase, 1.06) : btn.fillBase)
+             : btn.flat ? (btn.down ? Api.line : btn.hovered ? Api.line2 : "transparent")
+             : btn.down ? (Api.dark ? Qt.lighter(Api.line, 1.25) : Api.line)
+             : btn.hovered ? (Api.dark ? Qt.lighter(Api.line, 1.12) : Qt.darker(Api.line2, 1.04))
+             : (Api.dark ? Api.line : Api.line2)
+        border.color: btn.activeFocus && !btn.primary ? Api.accent : "transparent"
         Behavior on color { ColorAnimation { duration: 100 } }
     }
     contentItem: Label {
         text: btn.text
         font: btn.font
         color: !btn.enabled ? Api.muted
-             : btn.highlighted ? Api.accentFg
+             : btn.primary ? Api.accentFg
              : btn.destructive ? Api.errorColor
              : btn.flat ? btn.flatInk : Api.fg
         horizontalAlignment: Text.AlignHCenter

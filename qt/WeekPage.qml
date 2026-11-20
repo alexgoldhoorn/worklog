@@ -601,7 +601,7 @@ ScrollView {
             }
             AppButton {
                 text: qsTr("Save as approved")
-                highlighted: true
+                primary: true
                 enabled: page.formProblem === ""
                 Accessible.name: text
                 Accessible.role: Accessible.Button
@@ -878,7 +878,7 @@ ScrollView {
             AppButton {
                 visible: page.balanceOpen
                 text: qsTr("Save")
-                highlighted: true
+                primary: true
                 Accessible.name: text
                 onClicked: page.saveBalance()
             }

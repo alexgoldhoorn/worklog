@@ -420,7 +420,7 @@ ScrollView {
                     delegate: AppButton {
                         required property var modelData
                         text: modelData.text
-                        highlighted: !!modelData.primary
+                        primary: !!modelData.primary
                         flat: !modelData.primary
                         onClicked: modelData.fn()
                     }

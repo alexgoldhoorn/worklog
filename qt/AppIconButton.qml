@@ -9,6 +9,7 @@ ToolButton {
     id: btn
     property string name: ""
     property color ink: Api.fg
+    property bool tipSuppressed: false   // a menu opened from this button covers the tooltip
     hoverEnabled: true
     implicitWidth: 40
     implicitHeight: 40
@@ -17,7 +18,7 @@ ToolButton {
     font.capitalization: Font.MixedCase
     Accessible.name: btn.name
     Accessible.role: Accessible.Button
-    ToolTip.visible: hovered && btn.name !== ""
+    ToolTip.visible: hovered && btn.name !== "" && !btn.tipSuppressed
     ToolTip.text: btn.name
 
     contentItem: Label {

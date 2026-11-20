@@ -190,6 +190,8 @@ AppDialog {
 
     // scroll so that a focused field is not under the keyboard or the edge
     function reveal(item) {
+        if (!item || !form.contains(form.mapFromItem(item, 0, 0)))
+            return
         const y = item.mapToItem(form, 0, 0).y
         if (y < scroller.contentY)
             scroller.contentY = Math.max(0, y - 8)
@@ -214,7 +216,7 @@ AppDialog {
         AppButton {
             text: dlg.needsConfirm ? qsTr("Confirm") : qsTr("Save")
             enabled: dlg.valid
-            highlighted: true
+            primary: true
             DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
         }
     }
@@ -232,6 +234,8 @@ AppDialog {
         implicitHeight: form.implicitHeight
         contentWidth: width
         contentHeight: form.implicitHeight
+        // the keyboard takes room after the field got the focus: keep the focused field in view
+        onHeightChanged: if (Window.window) dlg.reveal(Window.window.activeFocusItem)
         ScrollBar.vertical: ScrollBar { policy: scroller.contentHeight > scroller.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
 
         ColumnLayout {

@@ -340,7 +340,7 @@ ScrollView {
                 AppButton {
                     id: connectButton
                     text: qsTr("Connect")
-                    highlighted: true
+                    primary: true
                     onClicked: page.connectNow()
                 }
             }
@@ -519,7 +519,7 @@ ScrollView {
                 }
                 AppButton {
                     text: qsTr("Save")
-                    highlighted: true
+                    primary: true
                     enabled: page.weekHours >= 1 && page.weekHours <= 80
                     onClicked: page.save({ week_basis_h: page.weekHours }, m => page.hoursMessage = m, "hours")
                 }
@@ -559,7 +559,7 @@ ScrollView {
                 }
                 AppButton {
                     text: qsTr("Save")
-                    highlighted: true
+                    primary: true
                     enabled: rateField.text.trim() === "" || isFinite(page.parseRate(rateField.text))
                     onClicked: page.save({ rate: rateField.text.trim() === "" ? null : page.parseRate(rateField.text),
                                            rate_unit: unitBox.currentText }, m => page.rateMessage = m, "rate")
@@ -631,7 +631,7 @@ ScrollView {
                 }
                 AppButton {
                     text: qsTr("Save")
-                    highlighted: true
+                    primary: true
                     enabled: typeField.text.trim() !== "" && breakBox.currentIndex >= 0
                              && /^\d{1,2}[:.h]?\d{2}$/.test(closeField.text.trim())
                     onClicked: page.save({ default_type: typeField.text.trim(), default_client: clientField.text.trim() || null,
@@ -664,7 +664,7 @@ ScrollView {
                 }
                 AppButton {
                     text: qsTr("Save")
-                    highlighted: true
+                    primary: true
                     enabled: page.currencyValid
                     onClicked: page.save({ currency: currencyField.text.trim() }, m => page.currencyMessage = m, "currency")
                 }
@@ -738,7 +738,7 @@ ScrollView {
                 AppButton {
                     id: addClientButton
                     text: qsTr("Add")
-                    highlighted: true
+                    primary: true
                     enabled: newClient.text.trim() !== ""
                     onClicked: { page.addClient(newClient.text, newClientBillable.checked); newClient.text = "" }
                 }
@@ -815,7 +815,7 @@ ScrollView {
                 AppButton {
                     id: addBreakButton
                     text: qsTr("Add")
-                    highlighted: true
+                    primary: true
                     enabled: newBreak.text.trim() !== ""
                     onClicked: { page.addBreak(newBreak.text); newBreak.text = "" }
                 }

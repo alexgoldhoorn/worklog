@@ -65,7 +65,11 @@ ApplicationWindow {
     // desktop keyboard one tabs through them)
     readonly property int tapFocus: Qt.platform.os === "android" ? Qt.NoFocus : Qt.StrongFocus
     // a lost focus (a popup closed, a hidden page) comes back to the pages, where the Back key is handled
-    onActiveFocusItemChanged: if (!activeFocusItem && visible) keyHost.forceActiveFocus()
+    onActiveFocusItemChanged: {
+        if (!activeFocusItem && visible)
+            keyHost.forceActiveFocus()
+        revealTimer.restart()
+    }
 
     Loader {
         id: trayLoader
@@ -87,7 +91,7 @@ ApplicationWindow {
     // Android draws the app under the status and navigation bars: keep the tabs and pages clear of them
     readonly property var safe: SafeArea.margins
 
-    // The activity does not resize or pan for the keyboard (windowSoftInputMode adjustNothing), so the pages
+    // The activity is resized for the keyboard (windowSoftInputMode adjustResize); as a fallback, if the window were not resized, the pages
     // end where the keyboard starts: how far it reaches into the content area, 0 when it is down.
     // Qt reports its rectangle in screen coordinates: mapFromGlobal gives the window's.
     function overlap(contentH, kbTop) { return kbTop > 0 && kbTop < contentH ? contentH - kbTop : 0 }
@@ -95,6 +99,33 @@ ApplicationWindow {
     readonly property real keyboardOverlap: !Qt.inputMethod.visible || Qt.inputMethod.keyboardRectangle.height <= 0 ? 0
         : overlap(window.contentItem.height, window.contentItem.mapFromGlobal(0, Qt.inputMethod.keyboardRectangle.y).y)
     // qmllint enable missing-property
+    // Android: the activity resizes for the keyboard (adjustResize), so the pages already end above it. The
+    // tab bar steps aside while it is up, which gives the fields its room, and the focused field is scrolled
+    // into view (a page's own Flickable; dialogs do it themselves).
+    readonly property bool keyboardUp: Qt.platform.os === "android" && Qt.inputMethod.visible
+    // qmllint disable missing-property
+    function revealFocus() {
+        const item = window.activeFocusItem
+        if (!item || window.inOverlay(item))
+            return
+        let f = item.parent
+        while (f && !(f.contentItem !== undefined && f.contentY !== undefined && f.contentHeight > f.height + 1))
+            f = f.parent
+        if (!f)
+            return
+        const top = item.mapToItem(f.contentItem, 0, 0).y
+        let y = f.contentY
+        if (top < y)
+            y = top - 12
+        else if (top + item.height > y + f.height)
+            y = top + item.height - f.height + 12
+        y = Math.max(0, Math.min(y, f.contentHeight - f.height))
+        if (y !== f.contentY)
+            f.contentY = y
+    }
+    // qmllint enable missing-property
+    Timer { id: revealTimer; interval: 150; onTriggered: window.revealFocus() }
+    onHeightChanged: revealTimer.restart()
 
     // ---- navigation -----------------------------------------------------------
     // Positions in the StackLayout below. The first three have a button at the bottom; the rest are
@@ -176,6 +207,7 @@ ApplicationWindow {
                 text: "⋮"
                 focusPolicy: window.tapFocus
                 name: qsTr("More screens")
+                tipSuppressed: moreMenu.visible
                 onClicked: moreMenu.open()
                 Menu {
                     id: moreMenu
@@ -206,7 +238,8 @@ ApplicationWindow {
 
     footer: Rectangle {
         color: Api.card
-        implicitHeight: navRow.implicitHeight + window.safe.bottom
+        visible: !window.keyboardUp
+        implicitHeight: window.keyboardUp ? 0 : navRow.implicitHeight + window.safe.bottom
 
         Rectangle { width: parent.width; height: 1; color: Api.line }
         RowLayout {
@@ -480,7 +513,7 @@ ApplicationWindow {
             }
             AppButton {
                 text: qsTr("Unlock")
-                highlighted: true
+                primary: true
                 Accessible.name: text
                 Layout.alignment: Qt.AlignHCenter
                 onClicked: lockScreen.ask()

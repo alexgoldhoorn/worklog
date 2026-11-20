@@ -201,7 +201,7 @@ Item {
             AppButton {
                 text: qsTr("Log as break")
                 enabled: !root.sending
-                highlighted: true
+                primary: true
                 Accessible.name: text
                 DialogButtonBox.buttonRole: DialogButtonBox.ActionRole   // not Accept: the dialog stays open until the server took the break
                 onClicked: root.logAsBreak()
