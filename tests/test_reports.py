@@ -56,7 +56,7 @@ def test_weekly_stats_small_inputs():
 def test_net_balance(conn):
     _add(conn, "2026-10-19", "09:00", "17:00")
     b = reports.net_balance(conn, {}, date(2026, 10, 20))
-    assert b == {"with_current_h": -27.0, "without_current_h": 0.0}
+    assert b == {"with_current_h": -27.0, "without_current_h": 0.0, "since": "2026-10-19"}
 
 
 def test_invoice_days_lists_worked_and_off(conn):

@@ -61,6 +61,8 @@ function showMessages(target, items, cls) {
     : el("p", { class: [cls || "", t.cls || "", t.onclick ? "link" : ""].join(" ").trim(), text: t.text, onclick: t.onclick }))));
 }
 
+// "+2.5 h extra" / "-3 h short": a signed total that says which way it goes
+const shortOrExtra = (h) => `${fmtSigned(h)} ${h < -0.005 ? "short" : "extra"}`;
 function signedCell(h, extra) {
   return el("td", { class: `num ${signClass(h)} ${extra || ""}`.trim(), text: fmtSigned(h) });
 }
@@ -235,9 +237,13 @@ function renderButtons() {
   const start = $("btn-start");
   const pause = $("btn-pause");
   const stop = $("btn-stop");
-  start.replaceChildren(s.state === "working" ? "Switch" : s.state === "break" ? "Resume" : "Start", el("small", { text: type }));
-  pause.replaceChildren(s.state === "break" ? "Change" : "Pause", el("small", { text: pauseType() || "—" }));
-  stop.replaceChildren("Stop", el("small", { text: s.state === "stopped" ? "—" : "close block" }));
+  // the small line says what the button will use; the tooltip what it does (the Qt app's ActionButtons say the same)
+  start.replaceChildren(s.state === "working" ? "Switch" : s.state === "break" ? "Resume" : "Start", el("small", { text: type === "default" ? "default type" : type }));
+  start.title = s.state === "working" ? "End this block and start a new one with this type" : s.state === "break" ? "End the break and go back to work" : "Start a work block";
+  pause.replaceChildren(s.state === "break" ? "Change" : "Pause", el("small", { text: pauseType() || "break" }));
+  pause.title = s.state === "break" ? "Change the type of this break" : "Start a break";
+  stop.replaceChildren("Stop", el("small", { text: s.state === "stopped" ? "nothing running" : "close block" }));
+  stop.title = "End the running block";
   stop.disabled = timer.busy || s.state === "stopped";
 }
 
@@ -248,13 +254,12 @@ function renderTotals() {
   const liveTag = live ? el("span", { class: "live", text: "live" }) : null;
   const todayW = s.today.work_h + run;
   const weekW = s.week.worked_h + run;
-  const weekX = weekW - s.week.expected_h;
   const weekLE = leftOrExtra(weekW, s.week.expected_h);
   const exp = s.today.expected_h || 0;
   const leftMin = Math.round((exp - todayW) * 60);
   let target;
   if (exp <= 0) target = "no hours expected today";
-  else if (leftMin <= 0) target = `target met · ${fmtSigned(todayW - exp)}`;
+  else if (leftMin <= 0) target = `target met · ${leftOrExtra(todayW, exp).text} today`;
   else if (s.state === "working") {
     const done = new Date(serverNow().getTime() + leftMin * 60000); // the server's wall clock, not the device's
     target = `done at ${pad(done.getHours())}:${pad(done.getMinutes())}`;
@@ -269,22 +274,36 @@ function renderTotals() {
     el("div", { class: "s", text: target }),
     byType ? el("div", { class: "s ell", text: byType, title: byType }) : null);
   const week = el("div", { class: "card wide" },
-    el("div", { class: "k" }, `Week ${s.week.key.slice(5)}`, el("span", { class: signClass(weekX), text: fmtSigned(weekX) })),
+    // the badge says what the figure is ("12.5 h left" / "+1.2 h extra"), never a bare signed number
+    el("div", { class: "k" }, `Week ${s.week.key.slice(5)}`,
+      weekLE.text ? el("span", { class: weekLE.cls, text: weekLE.text, title: WEEK_HELP }) : null),
     el("div", { class: "v" }, fmtNum(weekW), el("small", { text: ` / ${fmtH(s.week.expected_h)}` }), basisLink(s.week_basis_h)),
     weekStrip(s),
-    el("div", { class: "s" }, `${s.week.days_worked} day${s.week.days_worked === 1 ? "" : "s"} worked · ${fmtH(s.week.billable_h)} billable`,
-      weekLE.text ? el("span", { class: weekLE.cls, text: ` · ${weekLE.text}` }) : null));
+    el("div", { class: "s", text: `${s.week.days_worked} day${s.week.days_worked === 1 ? "" : "s"} worked · ${fmtH(s.week.billable_h)} billable` }));
+  const since = s.net.since ? fmtSince(s.net.since) : "";
   const net = el("div", { class: "card net" },
-    el("div", { class: "k", text: "Balance" }),
+    el("div", { class: "k" }, "Balance", helpDot(balanceHelp(since))),
     el("div", { class: `v ${signClass(s.net.with_current_h)}`, text: fmtSigned(s.net.with_current_h) }),
-    el("div", { class: "s", text: `${fmtSigned(s.net.without_current_h)} excl. this week` }));
+    el("div", { class: "s", text: since ? `extra hours since ${since}` : "extra hours, all weeks" }),
+    el("div", { class: "s", text: `${fmtSigned(s.net.without_current_h)} before this week` }));
+  tipHide(); // a help text of the tiles being replaced must not stay up
   $("totals").replaceChildren(today, week, net);
+}
+
+// The words for the signed hours figures (the Qt app's TimerPage uses the same texts).
+const WEEK_HELP = "Worked hours against this whole week's expected hours";
+const fmtSince = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+function balanceHelp(since) {
+  return `Hours worked minus hours expected, added up over every week${since ? ` since ${since}, your first logged day` : ""}. `
+    + "Plus means you are ahead, minus that you are behind.\n\n"
+    + "This week's full expected hours already count, so the figure is low on Monday and climbs as you work. "
+    + "\"Before this week\" is where you stood at the end of last week.";
 }
 
 // the hours a full week counts as is set on the Settings page (one editable copy of it)
 function basisLink(cur) {
   if (cur == null) return null;
-  return el("a", { class: "basis-link", href: "/settings#week-basis", title: "Hours a full week counts as", text: `${fmtNum(cur, 1)} h/wk · Settings` });
+  return el("a", { class: "basis-link", href: "/settings#week-basis", title: "Hours a full week counts as, for Balance and Reports", text: `full week ${fmtNum(cur, 1)} h · Settings` });
 }
 
 function weekStrip(s) {
@@ -400,7 +419,7 @@ function blockRow(b) {
   tr.append(
     cell("start", b.start), cell("end", b.end), typeCell,
     cell("project", b.project, "ell"), cell("client", b.client, b.client ? "" : "muted"),
-    el("td", { class: `bill ${bill[0]}`, "data-field": "billable", text: bill[1], title: "Billable: tap to cycle", tabindex: "0", role: "button",
+    el("td", { class: `bill ${bill[0]}`, "data-field": "billable", text: bill[1], title: `${billName[0].toUpperCase()}${billName.slice(1)}. Click to change (${wl.currency()} billable, ✗ not billable, – not set)`, tabindex: "0", role: "button",
       "aria-label": `${blockLabel(b)}: ${billName}. Press Enter to change`, onclick: () => cycleBillable(b),
       onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); cycleBillable(b); } } }),
     el("td", b.end ? { class: "num dur", text: dur } : { class: "num dur", text: dur, "data-open": `${b.date} ${b.start} ${b.id}` }),
@@ -436,8 +455,13 @@ async function cycleBillable(b) {
 }
 
 function renderBlocks() {
-  const heads = [["Start"], ["End"], ["Type"], ["Project"], ["Client"], [wl.currency(), "num"], ["Dur", "num"], [""]];
-  const head = el("tr", {}, ...heads.map(([t, c]) => el("th", { class: c || "", text: t })));
+  // [label, class, short label on a phone, tooltip]
+  const heads = [["Start"], ["End"], ["Type"], ["Project"], ["Client", "", "", "The client this block is billed to"],
+    ["Billable", "num", wl.currency(), `${wl.currency()} = billable, ✗ = not billable, – = not set. Click a cell to change it`],
+    ["Duration", "num", "Dur"], [""]];
+  const head = el("tr", {}, ...heads.map(([t, c, short, tip]) => (short
+    ? el("th", { class: c || "", title: tip || t }, el("span", { class: "th-long", text: t }), el("span", { class: "th-short", text: short }))
+    : el("th", { class: c || "", text: t, title: tip || null }))));
   const blocks = timer.day.blocks;
   const rows = [];
   const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
@@ -1180,6 +1204,21 @@ function hover(node, text) {
   node.addEventListener("touchend", tipHide);
   return node;
 }
+// A small "?" next to a figure or heading: hover, focus or a tap shows what it means.
+function helpDot(text) {
+  const b = el("button", { type: "button", class: "help", text: "?", "aria-label": text });
+  const show = () => { const r = b.getBoundingClientRect(); tipShow({ clientX: r.left, clientY: r.top }, text); };
+  b.addEventListener("mouseenter", show);
+  b.addEventListener("focus", show);
+  b.addEventListener("mouseleave", tipHide);
+  b.addEventListener("blur", tipHide);
+  b.addEventListener("click", (e) => {
+    e.stopPropagation();
+    show();
+    setTimeout(() => document.addEventListener("click", tipHide, { once: true })); // a tap anywhere else closes it
+  });
+  return b;
+}
 
 const niceStep = (range, ticks = 4) => {
   const raw = range / ticks, p = 10 ** Math.floor(Math.log10(raw || 1));
@@ -1226,7 +1265,7 @@ function xLabels(f, keys, group, H) {
 
 // 1. Extra hours per period: diverging bars around zero
 function chartExtra(rows, group, cur) {
-  const card = chartCard("Extra hours", "per period, vs expected");
+  const card = chartCard("Extra hours", `worked minus expected, per ${group}`);
   if (!rows.length) { card.append(el("div", { class: "empty", text: "No data" })); return card; }
   const W = 400, H = 170;
   const vals = rows.map((r) => r.extra_h);
@@ -1239,7 +1278,7 @@ function chartExtra(rows, group, cur) {
       rx: 2, class: `mark ${v >= 0 ? "pos" : "neg"}`, opacity: r.key === cur ? .55 : 1 });
     const hit = svg("rect", { x: f.x(i), y: f.m.t, width: f.slot, height: f.ih, class: "hit" });
     root.append(svg("g", { class: "band" }, hit, rect));
-    hover(hit, `${periodLong(r.key, group)}${r.key === cur ? " (in progress)" : ""}\n${fmtH(r.worked_h)} worked · ${fmtH(r.expected_h)} expected\n${fmtSigned(v)}`);
+    hover(hit, `${periodLong(r.key, group)}${r.key === cur ? " (in progress)" : ""}\n${fmtH(r.worked_h)} worked · ${fmtH(r.expected_h)} expected\n${shortOrExtra(v)}`);
   });
   root.append(xLabels(f, rows.map((r) => r.key), group, H));
   card.append(root);
@@ -1250,7 +1289,7 @@ function chartExtra(rows, group, cur) {
 function chartBalance(rows, group, cur) {
   let acc = 0;
   const pts = rows.map((r) => ({ key: r.key, v: (acc += r.extra_h), extra: r.extra_h }));
-  const card = chartCard("Balance", `cumulative extra hours${pts.length ? ` · now ${fmtSigned(pts[pts.length - 1].v)}` : ""}`);
+  const card = chartCard("Balance", `extra hours added up over the range shown${pts.length ? ` · now ${fmtSigned(pts[pts.length - 1].v)}` : ""}`);
   if (!rows.length) { card.append(el("div", { class: "empty", text: "No data" })); return card; }
   const W = 400, H = 170;
   const vals = pts.map((p) => p.v);
@@ -1265,7 +1304,7 @@ function chartBalance(rows, group, cur) {
   pts.forEach((p, i) => {
     const hit = svg("rect", { x: f.x(i), y: f.m.t, width: f.slot, height: f.ih, class: "hit" });
     root.append(hit);
-    hover(hit, `${periodLong(p.key, group)}${p.key === cur ? " (in progress)" : ""}\nbalance ${fmtSigned(p.v)}\nthis period ${fmtSigned(p.extra)}`);
+    hover(hit, `${periodLong(p.key, group)}${p.key === cur ? " (in progress)" : ""}\nbalance so far ${fmtSigned(p.v)}\nthis ${group} ${fmtSigned(p.extra)}`);
   });
   root.append(xLabels(f, rows.map((r) => r.key), group, H));
   card.append(root);
@@ -1424,29 +1463,37 @@ const reportCols = () => [
   ["key", "Period", (r) => r.key],
   ["worked", "Worked", (r) => fmtH(r.worked_h)],
   ["expected", "Expected", (r) => fmtH(r.expected_h)],
-  ["extra", "Extra", (r) => r.extra_h, "signed"],
-  ["extra40", `Extra ${fmtNum(reportAlt, 0)}h`, (r) => r.extra_alt_h, "signed"],
-  ["days", "Days", (r) => String(r.days_worked)],
-  ["equiv", "Days eq.", (r) => fmtNum(r.days_equiv, 1)],
-  ["billable", "Billable", (r) => fmtH(r.billable_h)],
+  ["extra", "Extra", (r) => r.extra_h, "signed", "Worked minus expected"],
+  ["extra40", `Extra ${fmtNum(reportAlt, 0)}h`, (r) => r.extra_alt_h, "signed", `Worked minus expected if a full week were ${fmtNum(reportAlt, 0)} h`],
+  ["days", "Days", (r) => String(r.days_worked), "", "Days with work logged"],
+  ["equiv", "Days eq.", (r) => fmtNum(r.days_equiv, 1), "", "Worked hours counted as full working days"],
+  ["billable", "Billable", (r) => fmtH(r.billable_h), "", "Hours for billable clients"],
   ["amount", wl.currency(), (r) => fmtEur(r.amount), "eur"],
 ];
 
 function table(cols, rows, rowClass) {
   // every cell carries col-<key> so the stylesheet can hide a column on phones
-  const head = el("tr", {}, ...cols.map(([key, label], i) => el("th", { class: `${i ? "num" : ""} col-${key}`.trim(), text: label })));
+  const head = el("tr", {}, ...cols.map(([key, label, , , tip], i) => el("th", { class: `${i ? "num" : ""} col-${key}`.trim(), text: label, title: tip || null })));
   const body = rows.map((r) => el("tr", { class: rowClass ? rowClass(r) : "" },
     ...cols.map(([key, , f, kind], i) => (kind === "signed" ? signedCell(f(r), `col-${key}`) : el("td", { class: `${i ? "num" : ""} ${kind || ""} col-${key}`.trim(), text: f(r) })))));
   return [el("thead", {}, head), el("tbody", {}, body)];
 }
 
 function statsTable(a, b) {
+  const alt = fmtNum(reportAlt, 0);
   const items = [
-    ["Net", "net_h"], ["Last 4 weeks", "last4_h"], [`Net at ${fmtNum(reportAlt, 0)} h`, "net_alt_h"], [`Last 4 at ${fmtNum(reportAlt, 0)} h`, "last4_alt_h"],
-    ["Min week", "min_h"], ["Q1", "q1_h"], ["Median", "median_h"], ["Q3", "q3_h"], ["Max week", "max_h"],
+    ["Total, all weeks", "net_h", "Extra hours of every week in the range, added up"],
+    ["Total, last 4 weeks", "last4_h", "Extra hours of the last four weeks, added up"],
+    [`Total at ${alt} h/week`, "net_alt_h", `The total if a full week were ${alt} h`],
+    [`Last 4 at ${alt} h/week`, "last4_alt_h", `The last four weeks if a full week were ${alt} h`],
+    ["Lowest week", "min_h", "The week with the fewest extra hours"],
+    ["Lower quartile", "q1_h", "A quarter of the weeks had fewer extra hours than this"],
+    ["Median week", "median_h", "Half of the weeks were below this, half above"],
+    ["Upper quartile", "q3_h", "A quarter of the weeks had more extra hours than this"],
+    ["Highest week", "max_h", "The week with the most extra hours"],
   ];
-  const head = el("tr", {}, el("th", { text: "Weekly stats" }), el("th", { text: "Incl. this week" }), el("th", { text: "Excl. this week" }));
-  const body = items.map(([label, k]) => el("tr", {}, el("td", { text: label }), signedCell(a[k]), signedCell(b[k])));
+  const head = el("tr", {}, el("th", { text: "Extra hours per week" }), el("th", { text: "Incl. this week" }), el("th", { text: "Excl. this week" }));
+  const body = items.map(([label, k, tip]) => el("tr", { title: tip }, el("td", { text: label }), signedCell(a[k]), signedCell(b[k])));
   return el("table", { class: "grid" }, el("thead", {}, head), el("tbody", {}, body));
 }
 
@@ -1481,6 +1528,7 @@ async function loadSummary() {
     const cols = data.rate_h == null ? reportCols().filter(([k]) => k !== "amount") : reportCols();
     $("summary").className = "grid sticky";
     $("summary").replaceChildren(...table(cols, rows, (r) => (r.key === cur ? "cur" : "")));
+    $("summary-legend").textContent = `Extra = worked minus expected · Extra ${fmtNum(reportAlt, 0)}h = the same if a full week were ${fmtNum(reportAlt, 0)} h · Days eq. = worked hours as full working days`;
     if (data.rate_h != null && rows.length) {
       const total = rows.reduce((a, r) => a + (r.amount || 0), 0);
       const bill = rows.reduce((a, r) => a + r.billable_h, 0);
@@ -1489,7 +1537,8 @@ async function loadSummary() {
     }
     $("stats").replaceChildren();
     if (data.stats) {
-      $("stats").append(el("div", { class: "scroll" }, statsTable(data.stats.with_current, data.stats.without_current)));
+      $("stats").append(el("div", { class: "scroll" }, statsTable(data.stats.with_current, data.stats.without_current)),
+        el("p", { class: "hint", text: "Extra = worked minus expected, per week, over the range above. This week's full expected hours already count, so \"Excl. this week\" is the fairer figure until the week is over." }));
     }
     await renderCharts(rows, group, current);
   } catch (err) { if (current()) reportNotice("summary", err.message); }
@@ -1526,7 +1575,7 @@ async function loadInvoice() {
     const foot = el("tr", {}, el("td", {}, el("b", { text: `${days} day${days === 1 ? "" : "s"} worked` }), ` · ${rows.length - days} off`),
       el("td", { class: "num" }, el("b", { text: fmtH(sum("worked_h")) })),
       el("td", { class: "num", text: fmtH(sum("expected_h")) }),
-      signedCell(sum("worked_h") - sum("expected_h")), el("td", { class: "num muted", text: priced ? `${fmtH(sum("billable_h"))} bill.` : "" }),
+      el("td", { class: `num ${signClass(sum("worked_h") - sum("expected_h"))}`, title: "Worked minus expected this month", text: shortOrExtra(sum("worked_h") - sum("expected_h")) }), el("td", { class: "num muted", text: priced ? `${fmtH(sum("billable_h"))} bill.` : "" }),
       priced ? el("td", { class: "num" }, el("b", { text: fmtEur(sum("amount")) })) : null);
     $("invoice-table").replaceChildren(el("thead", {}, head), el("tbody", {}, body), el("tfoot", {}, foot));
   } catch (err) { if (current()) reportNotice("invoice", err.message); }
@@ -1608,7 +1657,9 @@ function initReports() {
 // ---- days page ---------------------------------------------------------------
 
 const KEEP_SOURCES = ["default", "holiday", "before-first"];
-const SOURCE_BADGE = { holiday: ["holiday", "holiday"], manual: ["set", "set"], import: ["set", "imported"], "before-first": ["pre", "before first log"] };
+// [class, text, tooltip]
+const SOURCE_BADGE = { holiday: ["holiday", "holiday", "Public holiday: nothing expected"], manual: ["set", "edited", "Changed by you"],
+  import: ["set", "imported", "Set by an import"], "before-first": ["pre", "before first log", "Before your first logged day: nothing expected"] };
 const daysSeq = wl.sequence();
 const dayRefs = new Map(); // date -> the row's elements and its last saved values, for in-place updates
 const weekCells = new Map(); // week key -> the separator cell with the week's expected total
@@ -1631,7 +1682,7 @@ function paintDayRow(refs) {
   const badge = SOURCE_BADGE[d.source];
   refs.tr.className = [isWeekend(d.date) ? "wknd" : "", stored ? "set" : ""].join(" ").trim();
   refs.label.replaceChildren(el("span", { class: "wd", text: weekdayShort(d.date) }), String(Number(d.date.slice(8))),
-    ...(badge ? [el("span", { class: `badge ${badge[0]}`, text: badge[1] })] : []));
+    ...(badge ? [el("span", { class: `badge ${badge[0]}`, text: badge[1], title: badge[2] })] : []));
   refs.reset.replaceChildren(stored ? el("button", {
     type: "button", class: "ghost x", text: "↺", title: "Back to default", "aria-label": `Reset ${dayName(d.date)} to default`,
     onclick: () => resetDay(refs),
@@ -1727,7 +1778,7 @@ async function loadDays() {
   try {
     const rows = await api("GET", `/api/days?${q}`);
     if (!current()) return;
-    const head = el("tr", {}, ...[["Day"], ["Expected", "num"], ["Sick", "num"], ["Reason"], ["", "num"]].map(([t, c]) => el("th", { class: c || "", text: t })));
+    const head = el("tr", {}, ...[["Day"], ["Expected (h)", "num"], ["Sick (h)", "num"], ["Reason"], ["", "num"]].map(([t, c]) => el("th", { class: c || "", text: t })));
     const body = [];
     let week = null;
     dayRefs.clear();
@@ -1774,7 +1825,7 @@ function initNav() {
   more();
 }
 
-// The More menu (Add or find a date, Move, Workcal, Settings): a button that opens a list of links.
+// The More menu (Add or find a date, Move an event, Work calendar, Settings): a button that opens a list of links.
 // Enter / Space / click / ArrowDown open it, arrows move, Home / End jump, Esc closes and returns to the button.
 function initMore() {
   const btn = $("more-btn"), list = $("more-list");

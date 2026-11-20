@@ -81,7 +81,7 @@ def test_more_menu_holds_the_pages_the_tabs_do_not(client):
     html = client.get("/timer").text
     menu = html.split('id="more-list"')[1].split("</div>")[0]
     assert re.findall(r'href="([^"]+)"[^>]*>(?:<svg.*?</svg>)?([^<]+)</a>', menu) == [
-        ("/find", "Add or find a date"), ("/move", "Move"), ("/workcal", "Workcal"), ("/settings", "Settings")]
+        ("/find", "Add or find a date"), ("/move", "Move an event"), ("/workcal", "Work calendar"), ("/settings", "Settings")]
     assert 'id="more-btn"' in html and 'aria-haspopup="true"' in html and 'aria-expanded="false"' in html
     # the tabs themselves are unchanged and come first
     assert html.index("</nav>") < html.index('id="more-btn"')

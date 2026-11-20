@@ -28,7 +28,7 @@ ScrollView {
     // the timeline's lanes; each can be switched off (kept in Settings, like the web's localStorage)
     readonly property var lanes: [{ value: "work", label: qsTr("Work") }, { value: "personal", label: qsTr("Personal") },
                                   { value: "family", label: qsTr("Family") }, { value: "child", label: childName },
-                                  { value: "blocks", label: qsTr("Blocks") }]
+                                  { value: "blocks", label: qsTr("Week blocks") }]
     readonly property string childName: day && day.household && day.household.child ? day.household.child : qsTr("Child")
     property string lanesOff: ""     // "family,child"
     Settings {
@@ -69,9 +69,9 @@ ScrollView {
     function eventLabel(ev) {
         let label = ev.start + "–" + ev.end + " " + ev.title
         if (ev.layer === "duty")
-            label += ev.owner ? " · " + ev.owner : " · " + qsTr("who?")
+            label += ev.owner ? " · " + ev.owner : " · " + qsTr("who does it?")
         if (ev.layer === "personal" && ev.classification === "unclassified")
-            label += " · " + qsTr("whose?")
+            label += " · " + qsTr("whose is it?")
         if (ev.layer === "personal" && ev.creator_name && ev.lane !== "personal")
             label += " · " + qsTr("by %1").arg(ev.creator_name)
         if (ev.layer === "work" && ev.source && ev.source !== "pdf" && !/\.pdf$/i.test(ev.source))
@@ -79,7 +79,7 @@ ScrollView {
         if (ev.layer === "protected")
             label += " · " + ev.state
         if (ev.pending)
-            label += " · " + qsTr("pending")
+            label += " · " + qsTr("waiting to sync")
         return label
     }
 
@@ -142,7 +142,7 @@ ScrollView {
         if (!d)
             return ""
         const c = d.counts
-        return qsTr("Done %1 · to do %2 · meetings left %3").arg(c.done).arg(c.todo).arg(c.meetings_left === null || c.meetings_left === undefined ? qsTr("unknown") : c.meetings_left)
+        return qsTr("Tasks: %1 done, %2 to do · meetings left: %3").arg(c.done).arg(c.todo).arg(c.meetings_left === null || c.meetings_left === undefined ? qsTr("unknown") : c.meetings_left)
                + (c.unclassified ? " · " + (c.unclassified === 1 ? qsTr("1 family event to classify") : qsTr("%1 family events to classify").arg(c.unclassified)) : "")
     }
     function fmtDate(iso) { return Api.parseDate(iso).toLocaleDateString(Api.locale, "ddd d MMM") }
@@ -516,7 +516,7 @@ ScrollView {
         NoticeBanner {
             visible: !!page.day && page.day.capacity.show
             level: page.day && page.day.capacity.colour === "red" ? "error" : page.day && page.day.capacity.colour === "amber" ? "warn" : "info"
-            text: page.day ? qsTr("Load %1").arg(page.day.capacity.colour) + String(page.day.capacity.line || "").replace(/^[^A-Za-z]*Capacity:\s*\w+\.\s*/, " · ") : ""
+            text: page.day ? qsTr("Load: %1").arg(page.day.capacity.colour) + String(page.day.capacity.line || "").replace(/^[^A-Za-z]*Capacity:\s*\w+\.\s*/, " · ") : ""
         }
 
         Card {
@@ -641,7 +641,7 @@ ScrollView {
                                     Tiny {
                                         visible: evRow.ev.layer === "personal" && evRow.ev.lane === "family" && evRow.ev.classification !== "unclassified"
                                                  && !evRow.ev.pending && page.reopened.indexOf(page.evKey(evRow.ev)) < 0
-                                        text: qsTr("whose? change")
+                                        text: qsTr("change whose it is")
                                         onClicked: page.reopened = page.reopened.concat([page.evKey(evRow.ev)])   // shows the four choices again
                                     }
                                     Tiny {
@@ -690,7 +690,7 @@ ScrollView {
         }
 
         Card {
-            title: qsTr("First things")
+            title: qsTr("First up")
             visible: page.day !== null
             Repeater {
                 model: page.day ? page.day.first_things : []
@@ -710,7 +710,7 @@ ScrollView {
                         spacing: 2
                         Layout.fillWidth: true
                         Label {
-                            text: ft.modelData.kind === "duty" ? ft.modelData.title + " · " + (ft.modelData.owner || qsTr("who?"))
+                            text: ft.modelData.kind === "duty" ? ft.modelData.title + " · " + (ft.modelData.owner || qsTr("who does it?"))
                                 : ft.modelData.kind === "meeting" ? ft.modelData.title
                                 : ft.modelData.tasks.length > 0 ? qsTr("%n urgent", "", ft.modelData.tasks.length) : qsTr("Nothing urgent")
                             font.weight: Font.DemiBold
@@ -807,7 +807,7 @@ ScrollView {
             readonly property real expected: st.today && st.today.expected_h ? st.today.expected_h : 0
             readonly property bool over: st.state === "working" && st.past_stop_min > 0
             actions: Label {
-                text: workCard.w ? qsTr("week %1 of %2–%3 h").arg(page.h2(workCard.w.week_h)).arg(workCard.w.band[0]).arg(workCard.w.band[1]) : ""
+                text: workCard.w ? qsTr("worked this week: %1 h (normal %2–%3 h)").arg(page.h2(workCard.w.week_h)).arg(workCard.w.band[0]).arg(workCard.w.band[1]) : ""
                 color: Api.muted
                 font.pixelSize: 12
             }
@@ -919,7 +919,7 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Caption { text: qsTr("Top 3") }
+            Caption { text: qsTr("Top 3 tasks (Todoist)") }
             Label {
                 visible: !!workCard.w && workCard.w.top3.length === 0
                 text: qsTr("No work tasks due today.")
@@ -1002,7 +1002,7 @@ ScrollView {
                     Layout.fillWidth: true
                     Label { text: qrow.modelData.line; wrapMode: Text.Wrap; Layout.fillWidth: true }
                     Label {
-                        text: qrow.modelData.status === "failed" ? qsTr("failed: %1").arg(qrow.modelData.error) : qsTr("pending")
+                        text: qrow.modelData.status === "failed" ? qsTr("failed: %1").arg(qrow.modelData.error) : qsTr("waiting to sync")
                         color: qrow.modelData.status === "failed" ? Api.errorColor : Api.muted
                         font.pixelSize: 12
                         wrapMode: Text.Wrap
@@ -1045,7 +1045,7 @@ ScrollView {
             spacing: 2
             Layout.fillWidth: true
             Label {
-                text: Api.mdHtml(task.modelData.content) + (task.modelData.pending ? " · " + qsTr("pending") : "")
+                text: Api.mdHtml(task.modelData.content) + (task.modelData.pending ? " · " + qsTr("waiting to sync") : "")
                       + (task.modelData.priority === 4 ? " · P1" : "")
                       + ((task.modelData.labels || []).indexOf("doubt") >= 0 ? " · " + qsTr("doubt") : "")
                 textFormat: Text.StyledText

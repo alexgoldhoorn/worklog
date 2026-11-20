@@ -37,14 +37,14 @@
   <label class="wide">Title <input type="text" name="title" required maxlength="120"></label>
   <button type="submit" class="small primary">Save as approved</button>
 </form>
-<h2>Load gate <small>daily at 07:22, from work hours, body signals and runs kept</small></h2>
+<h2>Load check <small>a daily check at 07:22 of your work hours, sleep, heart rate and runs. Green is fine, amber is watch it, red is protect the week</small></h2>
 <section class="card gate" id="gate"></section>
 <h2>Work goals <small id="goals-meta"></small></h2>
 <section class="card goals" id="goals"></section>
-<h2>Gate history <small>one square per day, last 28 days: green / amber / red, number = day of month</small></h2>
+<h2>Load check history <small>one square per day, last 28 days: green / amber / red, number = day of month</small></h2>
 <section class="card history" id="history"></section>
 <details class="card settings-wrap" id="settings-wrap">
-  <summary>Balance settings <small class="hint">hard stop, run slot, hours band, calendar, Todoist project · stored in balance.db</small></summary>
+  <summary>Balance settings <small class="hint">hard stop, run slot, normal week hours, calendar, Todoist project · stored in balance.db</small></summary>
   <form class="settings" id="settings"></form>
 </details>
 {% endblock %}

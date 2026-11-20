@@ -182,7 +182,7 @@ ScrollView {
         label: periodLabel(r.key), dim: r.key === currentKey,
         parts: [{ v: r.extra_h, color: r.extra_h >= 0 ? Api.workColor : Api.errorColor }],
         tip: periodLong(r.key) + inProgress(r.key) + "\n"
-             + qsTr("%1 worked · %2 expected").arg(Api.fmtH(r.worked_h)).arg(Api.fmtH(r.expected_h)) + "\n" + Api.fmtSigned(r.extra_h)
+             + qsTr("%1 worked · %2 expected").arg(Api.fmtH(r.worked_h)).arg(Api.fmtH(r.expected_h)) + "\n" + Api.shortOrExtra(r.extra_h)
     }))
 
     readonly property var balanceRows: {
@@ -190,8 +190,8 @@ ScrollView {
         return rows.map(r => {
             acc += r.extra_h
             return { label: periodLabel(r.key), parts: [{ v: acc }],
-                     tip: periodLong(r.key) + inProgress(r.key) + "\n" + qsTr("balance %1").arg(Api.fmtSigned(acc))
-                          + "\n" + qsTr("this period %1").arg(Api.fmtSigned(r.extra_h)) }
+                     tip: periodLong(r.key) + inProgress(r.key) + "\n" + qsTr("balance so far %1").arg(Api.fmtSigned(acc))
+                          + "\n" + qsTr("this %1 %2").arg(page.group).arg(Api.fmtSigned(r.extra_h)) }
         })
     }
 
@@ -361,7 +361,7 @@ ScrollView {
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
                 Layout.preferredWidth: 1
-                Caption { text: qsTr("per period, vs expected"); font.capitalization: Font.MixedCase; font.letterSpacing: 0 }
+                Caption { text: qsTr("worked minus expected, per %1").arg(page.group); font.capitalization: Font.MixedCase; font.letterSpacing: 0 }
                 ColumnChart { rows: page.extraRows; signedAxis: true; title: qsTr("Extra hours per period") }
             }
             Card {
@@ -370,10 +370,12 @@ ScrollView {
                 Layout.rightMargin: 0
                 Layout.preferredWidth: 1
                 Caption {
-                    text: qsTr("cumulative extra hours")
+                    text: qsTr("extra hours added up over the range shown")
                           + (page.balanceRows.length ? " · " + qsTr("now %1").arg(Api.fmtSigned(page.balanceRows[page.balanceRows.length - 1].parts[0].v)) : "")
                     font.capitalization: Font.MixedCase
                     font.letterSpacing: 0
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
                 }
                 ColumnChart { rows: page.balanceRows; line: true; signedAxis: true; title: qsTr("Balance, cumulative extra hours") }
             }
@@ -453,23 +455,37 @@ ScrollView {
                             { t: Api.fmtEur(page.rows.reduce((a, r) => a + (r.amount || 0), 0)), b: true }]
                 } : null
             }
-            Caption { text: qsTr("Newest first"); font.capitalization: Font.MixedCase; font.letterSpacing: 0 }
+            Caption {
+                text: qsTr("Newest first") + " · " + qsTr("Extra = worked minus expected · Extra %1h = the same if a full week were %1 h · Days eq. = worked hours as full working days").arg(page.altWeek)
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
         }
 
         // weekly stats
         Card {
             visible: !!page.summary && !!page.summary.stats
-            title: qsTr("Weekly stats")
+            title: qsTr("Extra hours per week")
             DataTable {
                 readonly property var s: page.summary && page.summary.stats ? page.summary.stats : null
                 function cell(v) { return v === null || v === undefined ? "–" : { t: Api.fmtSigned(v), c: Api.signColor(v) } }
-                columns: [{ title: "", w: 130 }, { title: qsTr("Incl. this week"), w: 120, num: true },
+                columns: [{ title: "", w: 160 }, { title: qsTr("Incl. this week"), w: 120, num: true },
                           { title: qsTr("Excl. this week"), w: 120, num: true }]
                 rows: !s ? [] : [
-                    [qsTr("Net"), "net_h"], [qsTr("Last 4 weeks"), "last4_h"],
-                    [qsTr("Net at %1 h").arg(page.altWeek), "net_alt_h"], [qsTr("Last 4 at %1 h").arg(page.altWeek), "last4_alt_h"],
-                    [qsTr("Min week"), "min_h"], ["Q1", "q1_h"], [qsTr("Median"), "median_h"], ["Q3", "q3_h"], [qsTr("Max week"), "max_h"]
+                    [qsTr("Total, all weeks"), "net_h"], [qsTr("Total, last 4 weeks"), "last4_h"],
+                    [qsTr("Total at %1 h/week").arg(page.altWeek), "net_alt_h"], [qsTr("Last 4 at %1 h/week").arg(page.altWeek), "last4_alt_h"],
+                    [qsTr("Lowest week"), "min_h"], [qsTr("Lower quartile"), "q1_h"], [qsTr("Median week"), "median_h"],
+                    [qsTr("Upper quartile"), "q3_h"], [qsTr("Highest week"), "max_h"]
                 ].map(([label, k]) => ({ cells: [label, cell(s.with_current[k]), cell(s.without_current[k])] }))
+            }
+            Caption {
+                text: qsTr("Extra = worked minus expected, per week, over the range above. This week's full expected hours already count, so \"Excl. this week\" is the fairer figure until the week is over.")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
         }
 
@@ -510,7 +526,7 @@ ScrollView {
                 }))
                 footer: page.invoice.length ? {
                     cells: [{ t: qsTr("%n day(s)", "", daysWorked), b: true }, { t: Api.fmtH(worked), b: true }, Api.fmtH(expected),
-                            { t: Api.fmtSigned(worked - expected), c: Api.signColor(worked - expected) }, ""]
+                            { t: Api.shortOrExtra(worked - expected), c: Api.signColor(worked - expected) }, ""]
                            .concat(invPriced ? [{ t: Api.fmtEur(page.invoice.reduce((a, r) => a + (r.amount || 0), 0)), b: true }] : [])
                 } : null
             }

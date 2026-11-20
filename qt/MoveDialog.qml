@@ -301,7 +301,7 @@ AppDialog {
                 Layout.leftMargin: 0
                 Layout.rightMargin: 0
                 Caption {
-                    text: qsTr("checked against work meetings, personal and family calendars, the child, blocks, hours left and the gate")
+                    text: qsTr("checked against work meetings, personal and family calendars, the child, blocks, hours left and the load check")
                     font.capitalization: Font.MixedCase
                     font.letterSpacing: 0
                     wrapMode: Text.Wrap

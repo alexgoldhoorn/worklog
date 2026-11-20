@@ -318,6 +318,8 @@ details.card summary small { color: var(--muted); font-weight: 400; }
   .next .lbl { padding-top: 4px; }
   .next .lbl:not(:first-child) { margin-top: 6px; }
   #blocks th:nth-child(5), #blocks td:nth-child(5) { display: none; } /* client: desktop only */
+  #blocks th .th-long { display: none; }
+  #blocks th .th-short { display: inline; } /* "Billable" and "Duration" in short */
   #blocks td.ell { max-width: 6.5em; }
   #blocks th, #blocks td { padding: 6px 5px; }
   #blocks td:last-child, #blocks th:last-child { padding-left: 0; padding-right: 2px; }
@@ -601,6 +603,9 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
 .settings { display: grid; grid-template-columns: 1fr; gap: 8px; }
 .settings .srow { display: grid; grid-template-columns: minmax(140px, 220px) minmax(0, 260px); gap: 10px; align-items: center; font-size: .9rem; color: var(--fg); }
 .settings .srow input { width: 100%; }
+.th-short { display: none; }
+button.help { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; min-height: 0; padding: 0; margin-left: 6px; border-radius: 50%; border: 1px solid var(--line); background: none; font-size: .7rem; font-weight: 600; line-height: 1; color: var(--muted); cursor: help; vertical-align: middle; text-transform: none; letter-spacing: 0; flex: none; }
+button.help:hover, button.help:focus-visible { color: var(--fg); border-color: var(--muted); }
 .settings .help { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--line); font-size: .7rem; color: var(--muted); cursor: help; }
 @media (max-width: 500px) { .settings .srow { grid-template-columns: 1fr; gap: 4px; } }
 
@@ -648,7 +653,7 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
 .undo-bar button { border-color: transparent; }
 
 /* ===== review fixes ===== */
-/* More menu: Add or find a date, Move, Workcal, Settings (a sibling of the scrolling nav, so it is never clipped) */
+/* More menu: Add or find a date, Move an event, Work calendar, Settings (a sibling of the scrolling nav, so it is never clipped) */
 .more-menu { position: relative; flex: 0 0 auto; height: 100%; display: flex; align-items: center; }
 .more-btn { display: flex; align-items: center; gap: 5px; height: 100%; min-height: 0; padding: 0 12px; border: 0; border-bottom: 2px solid transparent;
   border-radius: 0; background: transparent; color: var(--muted); font-size: .95rem; }

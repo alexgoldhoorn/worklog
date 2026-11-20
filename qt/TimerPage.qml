@@ -122,13 +122,13 @@ ScrollView {
         }, e => page.error = e)
     }
 
-    // "done at 17:07", "1:20 left" or "target met · +0.5 h"
+    // "done at 17:07", "1:20 left" or "target met · +0.5 h extra today"
     function todayTarget() {
         if (todayExpH <= 0)
             return qsTr("no hours expected today")
         const leftMin = Math.round((todayExpH - todayH) * 60)
         if (leftMin <= 0)
-            return qsTr("target met · %1").arg(Api.fmtSigned(todayH - todayExpH))
+            return qsTr("target met · %1 today").arg(Api.leftOrExtra(todayH, todayExpH))
         if (timerState === "working") {
             const d = new Date(nowMs + Api.clockOffsetMs + leftMin * 60000)
             return qsTr("done at %1").arg(Api.pad(d.getHours()) + ":" + Api.pad(d.getMinutes()))
@@ -329,7 +329,9 @@ ScrollView {
                         text: page.timerState === "working" ? qsTr("Switch")
                               : page.timerState === "break" ? qsTr("Resume") : qsTr("Start")
                         subtext: page.pendingType || (page.runningBlock && page.timerState === "working"
-                                                      ? page.runningBlock.type : qsTr("default"))
+                                                      ? page.runningBlock.type : qsTr("default type"))
+                        tip: page.timerState === "working" ? qsTr("End this block and start a new one with this type")
+                             : page.timerState === "break" ? qsTr("End the break and go back to work") : qsTr("Start a work block")
                         fill: Api.workColor
                         ink: Api.workFg
                         enabled: !page.busy
@@ -343,7 +345,8 @@ ScrollView {
                     ActionButton {
                         id: pauseButton
                         text: page.timerState === "break" ? qsTr("Change") : qsTr("Pause")
-                        subtext: page.breakType
+                        subtext: page.breakType || qsTr("break")
+                        tip: page.timerState === "break" ? qsTr("Change the type of this break") : qsTr("Start a break")
                         fill: Api.breakColor
                         ink: Api.breakFg
                         // a break can start from stopped too, as on the web
@@ -355,7 +358,8 @@ ScrollView {
                     ActionButton {
                         id: stopButton
                         text: qsTr("Stop")
-                        subtext: page.timerState === "stopped" ? "—" : qsTr("close block")
+                        subtext: page.timerState === "stopped" ? qsTr("nothing running") : qsTr("close block")
+                        tip: qsTr("End the running block")
                         fill: Api.idleColor
                         ink: Api.card
                         enabled: !page.busy && page.timerState !== "stopped"
@@ -530,9 +534,9 @@ ScrollView {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.preferredWidth: page.wide ? 1.4 : 2
-                badge: Label {
-                    text: Api.fmtSigned(weekTile.extra)
-                    color: Api.signColor(weekTile.extra)
+                badge: Label {   // "12.5 h left" / "+1.2 h extra", never a bare signed number
+                    text: page.status ? Api.leftOrExtra(page.weekH, page.status.week.expected_h) : ""
+                    color: weekTile.extra > 0.005 ? Api.workColor : Api.muted
                     font.pixelSize: 12
                     font.weight: Font.DemiBold
                 }
@@ -555,12 +559,12 @@ ScrollView {
                             const base = [30, 32.5, 35, 37.5, 40]
                             return base.indexOf(cur) >= 0 ? base : base.concat([cur]).sort((a, b) => a - b)
                         }
-                        model: choices.map(v => Api.fmtNum(v, 1) + " h/wk")
+                        model: choices.map(v => qsTr("full week %1 h").arg(Api.fmtNum(v, 1)))
                         currentIndex: page.status ? choices.indexOf(page.status.week_basis_h) : -1
                         implicitHeight: 36
                         font.pixelSize: 12
                         ToolTip.visible: hovered
-                        ToolTip.text: qsTr("Hours a full week counts as")
+                        ToolTip.text: qsTr("Hours a full week counts as, for Balance and Reports")
                         onActivated: index => Api.request("PUT", "/api/settings", { week_basis_h: choices[index] }, null, e => page.error = e)
                     }
                 }
@@ -584,7 +588,10 @@ ScrollView {
             }
 
             Tile {
+                id: balanceTile
+                readonly property string since: page.status && page.status.net.since ? Api.fmtSince(page.status.net.since) : ""
                 caption: qsTr("Balance")
+                help: Api.balanceHelp(since)
                 Layout.row: 0
                 Layout.column: page.wide ? 2 : 1
                 Layout.fillWidth: true
@@ -599,7 +606,14 @@ ScrollView {
                     font.features: { "tnum": 1 }
                 }
                 Label {
-                    text: page.status ? qsTr("%1 excl. this week").arg(Api.fmtSigned(page.status.net.without_current_h)) : ""
+                    text: balanceTile.since !== "" ? qsTr("extra hours since %1").arg(balanceTile.since) : qsTr("extra hours, all weeks")
+                    color: Api.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Label {
+                    text: page.status ? qsTr("%1 before this week").arg(Api.fmtSigned(page.status.net.without_current_h)) : ""
                     color: Api.muted
                     font.pixelSize: 12
                     wrapMode: Text.Wrap

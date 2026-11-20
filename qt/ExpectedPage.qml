@@ -13,7 +13,7 @@ ScrollView {
 
     // sources the server computes; anything else is a stored override
     readonly property var computed: ["default", "holiday", "before-first"]
-    readonly property var badges: ({ holiday: qsTr("holiday"), manual: qsTr("set"), "import": qsTr("imported"),
+    readonly property var badges: ({ holiday: qsTr("holiday"), manual: qsTr("edited"), "import": qsTr("imported"),
                                      "before-first": qsTr("before first log") })
     // below this width the reason field gets its own line under the day
     readonly property bool narrow: availableWidth < 480
@@ -175,7 +175,7 @@ ScrollView {
             title: qsTr("Expected hours")
 
             Caption {
-                text: qsTr("Defaults are greyed; edited days are marked and can be reset")
+                text: qsTr("Hours you are expected to work and hours off sick, per day (0 to 24). Defaults are greyed; edited days are marked and can be reset")
                 font.capitalization: Font.MixedCase
                 font.letterSpacing: 0
                 wrapMode: Text.Wrap
@@ -191,7 +191,7 @@ ScrollView {
                     Layout.maximumWidth: page.narrow ? 100000 : 110
                     Layout.fillWidth: page.narrow
                 }
-                Caption { text: page.availableWidth < 360 ? qsTr("Exp.") : qsTr("Expected"); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: page.colW }
+                Caption { text: page.availableWidth < 360 ? qsTr("Hours") : qsTr("Expected"); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: page.colW }
                 Caption { text: qsTr("Sick"); horizontalAlignment: Text.AlignRight; Layout.preferredWidth: page.colW }
                 Caption { visible: !page.narrow; text: qsTr("Reason"); Layout.fillWidth: true }
                 Item { implicitWidth: 36 }

@@ -161,11 +161,12 @@ def _net_rows(conn, holidays, today: _date, first: str, use_cache: bool) -> list
 def net_balance(conn, holidays, today: _date, use_cache: bool = True) -> dict:
     first = expect.first_logged_day(conn)
     if first is None:
-        return {"with_current_h": 0.0, "without_current_h": 0.0}
+        return {"with_current_h": 0.0, "without_current_h": 0.0, "since": None}
     rows = _net_rows(conn, holidays, today, first, use_cache)
     s = weekly_stats(rows, model.week_key(today.isoformat()))
+    # `since` is the first logged day: the clients say from when the balance counts
     return {"with_current_h": s["with_current"]["net_h"],
-            "without_current_h": s["without_current"]["net_h"]}
+            "without_current_h": s["without_current"]["net_h"], "since": first}
 
 
 def invoice_days(conn, month_key: str, holidays, today: _date) -> list[dict]:

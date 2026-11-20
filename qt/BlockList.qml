@@ -174,7 +174,8 @@ ColumnLayout {
                                 Accessible.onPressAction: bill.clicked()
                                 onClicked: root.billableToggled(row.modelData, value === true ? false : value === false ? null : true)
                                 ToolTip.visible: hovered
-                                ToolTip.text: qsTr("Billable: tap to cycle")
+                                ToolTip.text: qsTr("Billable: %1. Tap to change (%2 yes, ✗ no, – not set)")
+                                              .arg(bill.value === true ? qsTr("yes") : bill.value === false ? qsTr("no") : qsTr("not set")).arg(Api.currency)
                                 background: Rectangle { radius: 6; color: bill.hovered ? Api.line2 : "transparent" }
                                 contentItem: Text {
                                     text: bill.value === true ? Api.currency : bill.value === false ? "✗" : "–"

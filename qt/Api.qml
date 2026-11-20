@@ -679,6 +679,19 @@ QtObject {
         return (Math.round(h * 100) / 100).toString() + " h"
     }
 
+    // "+2.5 h extra" / "-3 h short": a signed total that says which way it goes (the web's shortOrExtra)
+    function shortOrExtra(h) {
+        return h < -0.005 ? qsTr("%1 short").arg(fmtSigned(h)) : qsTr("%1 extra").arg(fmtSigned(h))
+    }
+    // "3 Mar 2025"
+    function fmtSince(iso) { return iso ? locale.toString(parseDate(iso), "d MMM yyyy") : "" }
+    // what the Timer's Balance figure means (the web's balanceHelp)
+    function balanceHelp(since) {
+        return (since ? qsTr("Hours worked minus hours expected, added up over every week since %1, your first logged day.").arg(since)
+                      : qsTr("Hours worked minus hours expected, added up over every week."))
+               + " " + qsTr("Plus means you are ahead, minus that you are behind.") + "\n\n"
+               + qsTr("This week's full expected hours already count, so the figure is low on Monday and climbs as you work. \"Before this week\" is where you stood at the end of last week.")
+    }
     function fmtSigned(h) {
         if (h === null || h === undefined)
             return "–"

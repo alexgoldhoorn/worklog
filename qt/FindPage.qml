@@ -318,7 +318,7 @@ ScrollView {
                 onToggled: v => page.prefer = page.prefer.indexOf(v) >= 0 ? page.prefer.filter(x => x !== v) : page.prefer.concat([v])
             }
             ChipRow {
-                label: qsTr("Goes in")
+                label: qsTr("Add it to")
                 model: page.labels(page.targets)
                 current: page.labelOf(page.targets, page.target)
                 onPicked: v => page.target = page.valueOf(page.targets, v)
@@ -389,7 +389,7 @@ ScrollView {
             visible: page.mode === "find"
             title: qsTr("Best options")
             Label {
-                text: qsTr("ranked by what they cost you: nothing moved, run kept, child care covered, hours band kept")
+                text: qsTr("ranked by what they cost you: nothing moved, run kept, child care covered, work hours kept normal")
                 color: Api.muted
                 font.pixelSize: 12
                 wrapMode: Text.Wrap

@@ -103,7 +103,7 @@
   // under the finger loses the tap; so only the highlight changes afterwards
   function renderPresets() {
     $("pomo-presets").replaceChildren(...PRESETS.map(([w, b]) => el("button", {
-      type: "button", class: "chip", text: `${w}/${b}`, "data-w": w, "data-b": b,
+      type: "button", class: "chip", text: `${w}/${b}`, title: `${w} min work, ${b} min break`, "data-w": w, "data-b": b,
       onclick: () => applySettings({ ...pomo.state.settings, work: w, brk: b }),
     })));
   }

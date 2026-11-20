@@ -69,7 +69,7 @@
     cap.hidden = !d.capacity.show;
     cap.className = "capacity " + d.capacity.colour;
     const line = String(d.capacity.line || "").replace(/^[^A-Za-z]*Capacity:\s*\w+\.\s*/, "");
-    cap.replaceChildren(el("strong", "kw", `Load ${d.capacity.colour}`), el("span", "", line ? " · " + line : ""));
+    cap.replaceChildren(el("strong", "kw", `Load: ${d.capacity.colour}`), el("span", "", line ? " · " + line : ""));
 
     renderTimeline(d);
     renderMirror(d);
@@ -77,7 +77,7 @@
     renderTraining(d);
     renderWork(d);
     renderQueue(d);
-    $("counts").textContent = `Done ${d.counts.done} · to do ${d.counts.todo} · meetings left ${d.counts.meetings_left == null ? "unknown" : d.counts.meetings_left}` + (d.counts.unclassified ? ` · ${d.counts.unclassified} family event${d.counts.unclassified === 1 ? "" : "s"} to classify` : "");
+    $("counts").textContent = `Tasks: ${d.counts.done} done, ${d.counts.todo} to do · meetings left: ${d.counts.meetings_left == null ? "unknown" : d.counts.meetings_left}` + (d.counts.unclassified ? ` · ${d.counts.unclassified} family event${d.counts.unclassified === 1 ? "" : "s"} to classify` : "");
   }
 
   function renderTimeline(d) {
@@ -136,8 +136,8 @@
         }
         box.title = `${ev.start}–${ev.end} ${ev.title}` + (ev.source ? ` · ${ev.source}` : "") + (ev.creator_name ? ` · created by ${ev.creator_name}` : "");
         let label = phone ? `${ev.start}–${ev.end} ${ev.title}` : `${ev.start} ${ev.title}`;
-        if (ev.layer === "duty") label += ev.owner ? ` · ${ev.owner}` : " · who?";
-        if (ev.layer === "personal" && ev.classification === "unclassified") label += " · whose?";
+        if (ev.layer === "duty") label += ev.owner ? ` · ${ev.owner}` : " · who does it?";
+        if (ev.layer === "personal" && ev.classification === "unclassified") label += " · whose is it?";
         if (ev.layer === "personal" && ev.creator_name && ev.lane !== "personal") label += ` · by ${ev.creator_name}`;
         if (ev.layer === "work" && ev.source && ev.source !== "pdf" && !/\.pdf$/i.test(ev.source)) label += ` · added by ${ev.source}`;
         if (ev.layer === "protected") label += ` · ${ev.state}`;
@@ -218,7 +218,7 @@
       if (x.kind === "duty") {
         row.appendChild(el("span", "t", x.at));
         const body = el("div", "grow");
-        body.appendChild(el("div", "title", `${x.title} · ${x.owner || "who?"}`));
+        body.appendChild(el("div", "title", `${x.title} · ${x.owner || "who does it?"}`));
         body.appendChild(el("div", "hint " + (x.fits === false ? "warn" : ""), x.fit_line));
         row.appendChild(body);
       } else if (x.kind === "meeting") {
@@ -278,9 +278,10 @@
       };
       row.appendChild(go);
     }
-    if (t.pending) row.appendChild(el("span", "pill", "pending"));
-    if (t.priority === 4) row.appendChild(el("span", "pill red", "P1"));
-    if ((t.labels || []).includes("doubt")) row.appendChild(el("span", "pill amber", "doubt"));
+    const pill = (cls, text, tip) => { const p = el("span", cls, text); p.title = tip; row.appendChild(p); };
+    if (t.pending) pill("pill", "waiting to sync", "Ticked here; not written to Todoist yet");
+    if (t.priority === 4) pill("pill red", "P1", "Todoist priority 1");
+    if ((t.labels || []).includes("doubt")) pill("pill amber", "doubt", "Todoist label \"doubt\": needs a decision");
     return row;
   }
 
@@ -304,7 +305,7 @@
 
   function renderWork(d) {
     const w = d.work, s = w.status || {};
-    $("week-line").textContent = `week ${h2(w.week_h)} of ${w.band[0]}–${w.band[1]} h`;
+    $("week-line").textContent = `worked this week: ${h2(w.week_h)} h (normal ${w.band[0]}–${w.band[1]} h)`;
     const state = w.status ? (s.state || "stopped") : "none";
     document.querySelector(".timer-row").hidden = !w.status;
     $("timer-dot").className = "dot " + state;
@@ -360,7 +361,7 @@
     for (const q of d.queue) {
       const row = el("div", "item");
       row.appendChild(el("span", "grow", q.line));
-      row.appendChild(el("span", "pill " + (q.status === "failed" ? "red" : ""), q.status === "failed" ? `failed: ${q.error}` : "pending"));
+      row.appendChild(el("span", "pill " + (q.status === "failed" ? "red" : ""), q.status === "failed" ? `failed: ${q.error}` : "waiting to sync"));
       if (q.status === "failed") {
         const r = el("button", "tiny", "Retry"); r.type = "button"; r.onclick = () => act(() => call("POST", `/api/balance/queue/${q.id}/retry`));
         const x = el("button", "tiny", "Dismiss"); x.type = "button"; x.onclick = () => act(() => call("POST", `/api/balance/queue/${q.id}/dismiss`));

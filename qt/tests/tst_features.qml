@@ -258,7 +258,7 @@ TestCase {
         p.show("")
         tryVerify(() => p.day.date === today, 5000)
         // the example household's school runs are on the timeline of a weekday
-        verify(p.countsLine(p.day).indexOf("Done") === 0)
+        verify(p.countsLine(p.day).indexOf("Tasks:") === 0)
     }
 
     function test_planner_lane_rules() {
@@ -311,9 +311,9 @@ TestCase {
         const d = { date: "2026-11-20", household: { me: "Sam", partner: "Robin", child: "Kim" } }
         compare(p.ownerBody(d, { at: "08:45", title: "School drop-off", owner: "Robin" }).owner, "Sam")
         compare(p.ownerBody(d, { at: "08:45", title: "School drop-off", owner: "Sam" }).owner, "Robin")
-        compare(p.eventLabel({ start: "09:00", end: "10:00", title: "Plan", layer: "personal", classification: "unclassified" }), "09:00–10:00 Plan · whose?")
+        compare(p.eventLabel({ start: "09:00", end: "10:00", title: "Plan", layer: "personal", classification: "unclassified" }), "09:00–10:00 Plan · whose is it?")
         compare(p.eventLabel({ start: "09:00", end: "10:00", title: "Run", layer: "protected", state: "approved" }), "09:00–10:00 Run · approved")
-        compare(p.eventLabel({ start: "09:00", end: "10:00", title: "Drop", layer: "duty", owner: "" }), "09:00–10:00 Drop · who?")
+        compare(p.eventLabel({ start: "09:00", end: "10:00", title: "Drop", layer: "duty", owner: "" }), "09:00–10:00 Drop · who does it?")
     }
 
     function test_planner_mirror_note_and_sub_line() {

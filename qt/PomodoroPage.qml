@@ -449,7 +449,7 @@ ScrollView {
             title: qsTr("Lengths")
 
             ChipRow {
-                label: qsTr("Presets")
+                label: qsTr("Presets (min work / min break)")
                 model: page.presets.map(p => p[0] + "/" + p[1])
                 current: page.st.settings.work + "/" + page.st.settings.brk
                 onPicked: value => {

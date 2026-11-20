@@ -5,7 +5,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // The balance week (the web's Week page): the seven days with work meetings, personal events and
-// planned blocks (approve / reject, with Undo), then the load gate, work goals, the 28-day gate history and
+// planned blocks (approve / reject, with Undo), then the load check, work goals, the 28-day load check history and
 // the balance settings.
 ScrollView {
     id: page
@@ -32,7 +32,7 @@ ScrollView {
     readonly property var meaning: ({
         green: qsTr("Capacity ok. Nothing to protect this week."),
         amber: qsTr("Two or more signals are up. Keep the hard stop and one easy day."),
-        red: qsTr("Work load and body signals are both up. The gate protects the week: approve the blocks below.") })
+        red: qsTr("Work load and body signals are both up. Protect the week: approve the blocks below.") })
 
     contentWidth: availableWidth
 
@@ -72,15 +72,15 @@ ScrollView {
     // [label, value, note] as the web's "The numbers behind it" table
     readonly property var gateRows: [
         [qsTr("Work last 7 days"), fmt(nums.hours_7d, " h"),
-         weekData && weekData.settings ? qsTr("band %1–%2 h").arg(weekData.settings.week_hours_min).arg(weekData.settings.week_hours_max) : ""],
+         weekData && weekData.settings ? qsTr("normal %1–%2 h").arg(weekData.settings.week_hours_min).arg(weekData.settings.week_hours_max) : ""],
         [qsTr("Work, 3-week average"), fmt(nums.hours_21d_week_avg, " h/week"), ""],
-        [qsTr("Evenings past the stop (7 d)"), fmt(nums.evenings_7d), ""],
-        [qsTr("Resting HR (7 d / usual)"), fmt(nums.rhr_7d) + " / " + fmt(nums.rhr_base), ""],
-        [qsTr("HRV (7 d / usual)"), fmt(nums.hrv_7d, " ms") + " / " + fmt(nums.hrv_base, " ms"), ""],
-        [qsTr("Sleep (7 d)"), fmt(nums.sleep_7d_h, " h") + (nums.sleep_score_7d !== null && nums.sleep_score_7d !== undefined ? qsTr(", score %1").arg(nums.sleep_score_7d) : ""), ""],
-        [qsTr("Stress (7 d / usual)"), fmt(nums.stress_7d) + " / " + fmt(nums.stress_base), ""],
-        [qsTr("Runs done / planned (14 d)"), fmt(nums.runs_done_14d) + " / " + fmt(nums.runs_planned_14d), nums.illness_open ? qsTr("illness open: runs not counted") : ""],
-        [qsTr("Heavy days you tapped (7 d)"), fmt(nums.felt_heavy_7d), ""]
+        [qsTr("Work evenings after the hard stop (last 7 days)"), fmt(nums.evenings_7d), ""],
+        [qsTr("Resting heart rate, bpm (last 7 days / your usual)"), fmt(nums.rhr_7d) + " / " + fmt(nums.rhr_base), ""],
+        [qsTr("Heart rate variability (last 7 days / your usual)"), fmt(nums.hrv_7d, " ms") + " / " + fmt(nums.hrv_base, " ms"), ""],
+        [qsTr("Sleep (last 7 days)"), fmt(nums.sleep_7d_h, " h") + (nums.sleep_score_7d !== null && nums.sleep_score_7d !== undefined ? qsTr(", score %1").arg(nums.sleep_score_7d) : ""), ""],
+        [qsTr("Stress, 0–100 (last 7 days / your usual)"), fmt(nums.stress_7d) + " / " + fmt(nums.stress_base), ""],
+        [qsTr("Runs done / planned (last 14 days)"), fmt(nums.runs_done_14d) + " / " + fmt(nums.runs_planned_14d), nums.illness_open ? qsTr("illness open: runs not counted") : ""],
+        [qsTr("Days you marked as heavy (last 7 days)"), fmt(nums.felt_heavy_7d), ""]
     ]
 
     // "Google Calendar: <state> (n block(s) waiting)" when the calendar sync is not ok, else ""
@@ -98,12 +98,13 @@ ScrollView {
     function leftText(d) { return d < 0 ? qsTr("%1 d ago").arg(-d) : d === 0 ? qsTr("today") : qsTr("in %1 d").arg(d) }
 
     // ---- balance settings (the web's card at the bottom of Week) ---------------------------------
+    readonly property string normalHelp: qsTr("Hours worked in 7 days that the load check treats as normal; more than the top counts as too much. Not the full week of Settings, which Balance and Reports use.")
     readonly property var balanceFields: [
-        { key: "hard_stop", label: qsTr("Hard stop"), time: true, help: qsTr("24h. Work past this time counts as an evening for the gate; the proposed Hard stop blocks start here.") },
+        { key: "hard_stop", label: qsTr("Hard stop"), time: true, help: qsTr("24h. Work past this time counts as an evening for the load check; the proposed Hard stop blocks start here.") },
         { key: "run_slot", label: qsTr("Run slot"), time: true, help: qsTr("24h. Where the Sunday proposal puts a planned run.") },
         { key: "run_alt_slots", label: qsTr("Run fallback slots"), help: qsTr("24h, comma-separated. Tried in order when the run slot clashes with a work meeting.") },
-        { key: "week_hours_min", label: qsTr("Week hours min"), number: true, help: qsTr("The band the gate judges work hours against (hours signal fires above max).") },
-        { key: "week_hours_max", label: qsTr("Week hours max"), number: true, help: "" },
+        { key: "week_hours_min", label: qsTr("Normal week: from (h)"), number: true, help: page.normalHelp },
+        { key: "week_hours_max", label: qsTr("Normal week: up to (h)"), number: true, help: page.normalHelp },
         { key: "gcal_calendar", label: qsTr("Google calendar"), help: qsTr("Approved blocks are mirrored to this calendar (primary with a prefix until it exists).") },
         { key: "todoist_project", label: qsTr("Todoist project"), help: qsTr("Where the top 3 and milestones come from.") },
         { key: "milestone_label", label: qsTr("Milestone label"), help: qsTr("Milestones are dated Todoist tasks in that project carrying this label; they are not stored here.") }
@@ -138,7 +139,7 @@ ScrollView {
         balanceMessage = ""
         Api.request("PUT", "/api/balance/settings", balanceBody(), function () {
             page.balanceDirty = false
-            page.balanceMessage = qsTr("Settings saved. The gate reads them on its next run.")
+            page.balanceMessage = qsTr("Settings saved. The load check reads them on its next run.")
             page.reload()
         }, e => page.balanceError = e)
     }
@@ -330,16 +331,16 @@ ScrollView {
         }
 
         Card {
-            title: qsTr("Load gate")
+            title: qsTr("Load check")
             visible: page.weekData !== null
             actions: Label {
-                text: page.gate && page.gate.colour ? qsTr("Load %1").arg(page.colourName(page.gate.colour)) : qsTr("No verdict yet")
+                text: page.gate && page.gate.colour ? qsTr("Load: %1").arg(page.colourName(page.gate.colour)) : qsTr("No verdict yet")
                 color: page.gateColor(page.gate ? page.gate.colour : "")
                 font.weight: Font.Bold
             }
 
             Caption {
-                text: qsTr("Daily at 07:22, from work hours, body signals and runs kept")
+                text: qsTr("A daily check at 07:22 of your work hours, sleep, heart rate and runs. Green is fine, amber is watch it, red is protect the week")
                 font.capitalization: Font.MixedCase
                 font.letterSpacing: 0
                 wrapMode: Text.Wrap
@@ -347,7 +348,7 @@ ScrollView {
             }
             Label {
                 visible: !(page.gate && page.gate.colour)
-                text: qsTr("The gate runs at 07:22")
+                text: qsTr("The load check runs at 07:22")
                 color: Api.muted
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
@@ -733,7 +734,7 @@ ScrollView {
                     }
                 }
             }
-            Caption { visible: goalsCard.has; text: qsTr("Top 3 today") }
+            Caption { visible: goalsCard.has; text: qsTr("Top 3 tasks today (Todoist)") }
             Label {
                 visible: goalsCard.has && goalsCard.goals.top3.length === 0
                 text: qsTr("Nothing due today in this project.")
@@ -766,7 +767,7 @@ ScrollView {
         }
 
         Card {
-            title: qsTr("Gate history")
+            title: qsTr("Load check history")
             visible: page.weekData !== null
             Label {
                 visible: !!page.weekData && page.weekData.history.length === 0
@@ -816,7 +817,7 @@ ScrollView {
                 onClicked: page.balanceOpen = !page.balanceOpen
             }
             Caption {
-                text: qsTr("Hard stop, run slot, hours band, calendar, Todoist project · stored in balance.db")
+                text: qsTr("Hard stop, run slot, normal week hours, calendar, Todoist project · stored in balance.db")
                 font.capitalization: Font.MixedCase
                 font.letterSpacing: 0
                 wrapMode: Text.Wrap
@@ -855,7 +856,7 @@ ScrollView {
             }
             Label {
                 visible: page.balanceOpen
-                text: qsTr("The gate and the Sunday proposal read them on their next run.")
+                text: qsTr("The load check and the Sunday proposal read them on their next run.")
                 color: Api.muted
                 font.pixelSize: 11
                 wrapMode: Text.Wrap

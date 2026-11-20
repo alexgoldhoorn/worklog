@@ -38,23 +38,23 @@
     const el = $("#gate");
     el.className = "card gate " + (g.colour || "");
     { const d = $("#brand-dot"); if (d) d.className = "dot " + (g.colour || ""); }
-    if (!g.colour) { el.innerHTML = '<div class="head"><span class="colour">No verdict yet</span><span class="date">the gate runs at 07:22</span></div>'; return; }
+    if (!g.colour) { el.innerHTML = '<div class="head"><span class="colour">No verdict yet</span><span class="date">the load check runs at 07:22</span></div>'; return; }
     const n = g.numbers || {};
     const fmt = (v, unit) => v == null ? "–" : `${v}${unit || ""}`;
     const rows = [
-      ["Work last 7 days", fmt(n.hours_7d, " h"), "band " + esc(data.settings.week_hours_min) + "–" + esc(data.settings.week_hours_max) + " h"],
+      ["Work last 7 days", fmt(n.hours_7d, " h"), "normal " + esc(data.settings.week_hours_min) + "–" + esc(data.settings.week_hours_max) + " h"],
       ["Work, 3-week average", fmt(n.hours_21d_week_avg, " h/week"), ""],
-      ["Evenings past the stop (7 d)", fmt(n.evenings_7d), ""],
-      ["Resting HR (7 d / usual)", `${fmt(n.rhr_7d)} / ${fmt(n.rhr_base)}`, ""],
-      ["HRV (7 d / usual)", `${fmt(n.hrv_7d, " ms")} / ${fmt(n.hrv_base, " ms")}`, ""],
-      ["Sleep (7 d)", `${fmt(n.sleep_7d_h, " h")}${n.sleep_score_7d != null ? ", score " + n.sleep_score_7d : ""}`, ""],
-      ["Stress (7 d / usual)", `${fmt(n.stress_7d)} / ${fmt(n.stress_base)}`, ""],
-      ["Runs done / planned (14 d)", `${fmt(n.runs_done_14d)} / ${fmt(n.runs_planned_14d)}`, n.illness_open ? "illness open: runs not counted" : ""],
-      ["Heavy days you tapped (7 d)", fmt(n.felt_heavy_7d), ""],
+      ["Work evenings after the hard stop (last 7 days)", fmt(n.evenings_7d), ""],
+      ["Resting heart rate, bpm (last 7 days / your usual)", `${fmt(n.rhr_7d)} / ${fmt(n.rhr_base)}`, ""],
+      ["Heart rate variability (last 7 days / your usual)", `${fmt(n.hrv_7d, " ms")} / ${fmt(n.hrv_base, " ms")}`, ""],
+      ["Sleep (last 7 days)", `${fmt(n.sleep_7d_h, " h")}${n.sleep_score_7d != null ? ", score " + n.sleep_score_7d : ""}`, ""],
+      ["Stress, 0–100 (last 7 days / your usual)", `${fmt(n.stress_7d)} / ${fmt(n.stress_base)}`, ""],
+      ["Runs done / planned (last 14 days)", `${fmt(n.runs_done_14d)} / ${fmt(n.runs_planned_14d)}`, n.illness_open ? "illness open: runs not counted" : ""],
+      ["Days you marked as heavy (last 7 days)", fmt(n.felt_heavy_7d), ""],
     ];
     const meaning = {green: "Capacity ok. Nothing to protect this week.", amber: "Two or more signals are up. Keep the hard stop and one easy day.",
-                     red: "Work load and body signals are both up. The gate protects the week: approve the blocks below."}[g.colour] || "";
-    let html = `<div class="head"><span class="colour">Load ${esc(g.colour)}</span><span class="date">verdict of ${esc(g.date)}</span>`;
+                     red: "Work load and body signals are both up. Protect the week: approve the blocks below."}[g.colour] || "";
+    let html = `<div class="head"><span class="colour">Load: ${esc(g.colour)}</span><span class="date">verdict of ${esc(g.date)}</span>`;
     if (g.pre_event) html += `<span class="date">· ${esc(g.pre_event.title)} in ${g.pre_event.days} day${g.pre_event.days === 1 ? "" : "s"}</span>`;
     html += `</div><div class="hint">${esc(meaning)}</div>`;
     html += `<h4>Why</h4>`;
@@ -184,7 +184,7 @@
     const md = (t) => (window.mdlite ? mdlite.toHtml(t) : esc(t));
     if (g.milestones.length) html += '<div class="ms">' + g.milestones.map((m) => { const d = left(m.due); const cls = d < 0 ? "past" : d <= 7 ? "soon" : ""; return `<span class="d ${cls}">${esc(m.due.slice(0, 10))}</span><span>${md(m.content)}</span><span class="left ${cls}">${d < 0 ? `${-d} d ago` : d === 0 ? "today" : `in ${d} d`}</span>`; }).join("") + "</div>";
     else html += `<div class="empty">None yet. Milestones live in Todoist, not here: give a dated task in <b>${esc(g.project)}</b> the label <code>${esc(data.settings.milestone_label)}</code> and it appears on the next sync.</div>`;
-    html += "<h3>Top 3 today</h3>";
+    html += "<h3>Top 3 tasks today (Todoist)</h3>";
     if (g.top3.length) html += "<ol>" + g.top3.map((t) => `<li class="p${t.priority}">${md(t.content)}${t.due && t.due.slice(0, 10) < data.today ? ` <span class="hint">(${esc(t.due.slice(0, 10))})</span>` : ""}</li>`).join("") + "</ol>";
     else html += '<div class="empty">Nothing due today in this project.</div>';
     if (g.due_today_or_overdue > 3) html += `<div class="hint">${g.due_today_or_overdue} due or overdue in total; the three highest priority are shown.</div>`;
@@ -200,16 +200,16 @@
   function renderSettings(s) {
     const f = $("#settings");
     const HHMM = 'class="time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]"';
-    const fields = [["hard_stop", "Hard stop", "text", "24h. Work past this time counts as an evening for the gate; the proposed Hard stop blocks start here.", HHMM],
+    const fields = [["hard_stop", "Hard stop", "text", "24h. Work past this time counts as an evening for the load check; the proposed Hard stop blocks start here.", HHMM],
       ["run_slot", "Run slot", "text", "24h. Where the Sunday proposal puts a planned run.", HHMM],
       ["run_alt_slots", "Run fallback slots", "text", "24h, comma-separated. Tried in order when the run slot clashes with a work meeting.", ""],
-      ["week_hours_min", "Week hours min", "text", "The band the gate judges work hours against (hours signal fires above max).", 'inputmode="decimal"'],
-      ["week_hours_max", "Week hours max", "text", "", 'inputmode="decimal"'],
+      ["week_hours_min", "Normal week: from (h)", "text", "Hours worked in 7 days that the load check treats as normal; more than the top counts as too much. Not the full week of Settings, which Balance and Reports use.", 'inputmode="decimal"'],
+      ["week_hours_max", "Normal week: up to (h)", "text", "Hours worked in 7 days that the load check treats as normal; more than the top counts as too much. Not the full week of Settings, which Balance and Reports use.", 'inputmode="decimal"'],
       ["gcal_calendar", "Google calendar", "text", "Approved blocks are mirrored to this calendar (primary with a 🛡 prefix until it exists).", ""],
       ["todoist_project", "Todoist project", "text", "Where the top 3 and milestones come from.", ""],
       ["milestone_label", "Milestone label", "text", "Milestones are dated Todoist tasks in that project carrying this label; they are not stored here.", ""]];
     f.innerHTML = fields.map(([k, l, t, help, extra]) => `<label class="srow"><span class="sl">${l}${help ? ` <span class="help" title="${esc(help)}" tabindex="0">?</span>` : ""}</span><input name="${k}" type="${t}" ${extra} value="${esc(s[k] ?? "")}"></label>`).join("")
-      + '<div class="hint wide">Stored in the settings table of balance.db; the gate and the Sunday proposal read them on their next run. Hover the ? for what each one does.</div><button class="save small primary" type="submit">Save</button>';
+      + '<div class="hint wide">Stored in the settings table of balance.db; the load check and the Sunday proposal read them on their next run. Hover the ? for what each one does.</div><button class="save small primary" type="submit">Save</button>';
     wl.bindTimes(f);
     f.onsubmit = async (e) => {
       e.preventDefault();
@@ -220,7 +220,7 @@
         body[k] = String(n);
       }
       await wl.locked(f.querySelector(".save"), async () => {
-        try { await api("/api/balance/settings", {method: "PUT", body}); notice("Settings saved. The gate reads them on its next run.", "ok"); await load(); }
+        try { await api("/api/balance/settings", {method: "PUT", body}); notice("Settings saved. The load check reads them on its next run.", "ok"); await load(); }
         catch (err) { notice(err.message, "error"); }
       });
     };

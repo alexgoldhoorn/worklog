@@ -6,6 +6,7 @@ import QtQuick.Controls
 AbstractButton {
     id: btn
     property string subtext
+    property string tip: ""   // what the button does, as a tooltip
     property color fill
     property color ink
 
@@ -13,7 +14,11 @@ AbstractButton {
     hoverEnabled: true
     Accessible.role: Accessible.Button
     Accessible.name: btn.subtext !== "" ? btn.text + ", " + btn.subtext : btn.text
+    Accessible.description: btn.tip
     Accessible.onPressAction: btn.clicked()
+    ToolTip.visible: hovered && btn.tip !== ""
+    ToolTip.text: btn.tip
+    ToolTip.delay: 600
     readonly property color inkNow: enabled ? ink : Api.muted
 
     background: Rectangle {
