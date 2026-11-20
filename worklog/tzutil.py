@@ -41,24 +41,27 @@ def parse_at(naive: datetime, tz: ZoneInfo | None, now: datetime) -> datetime:
     return wall(instant(naive, tz), tz)
 
 
+def fold_of(naive: datetime, tz: ZoneInfo | None) -> int | None:
+    """The fold to store for a time the timer writes: 0 or 1 inside a repeated hour, else None."""
+    if tz is None or not is_repeated(naive.replace(second=0, microsecond=0), tz):
+        return None
+    return naive.fold
+
+
+def reading(date: str, hhmm: str, fold: int | None) -> datetime:
+    """A stored date and time as a naive reading carrying its fold (NULL = first pass)."""
+    return datetime.fromisoformat(f"{date} {hhmm}").replace(fold=1 if fold else 0)
+
+
+def back_minutes(start: datetime, end: datetime, tz: ZoneInfo) -> int:
+    """Minutes the wall clock stepped back between two readings (0 if it did not): the amount to
+    add to their wall-clock difference to get the true duration."""
+    back = tz.utcoffset(start) - tz.utcoffset(end)
+    return int(back.total_seconds() // 60) if back > timedelta(0) else 0
+
+
 def elapsed_seconds(start: datetime, now: datetime, tz: ZoneInfo | None) -> float:
-    """True seconds between two readings (start is taken as the first pass of a repeated hour)."""
+    """True seconds between two readings (each carries its own fold)."""
     if tz is None:
         return (now - start).total_seconds()
-    return (instant(now, tz) - instant(start.replace(fold=0), tz)).total_seconds()
-
-
-def last_minute_before_clock_goes_back(start: datetime, tz: ZoneInfo) -> datetime | None:
-    """The latest wall minute reached, moving forward from `start`, before the wall clock steps
-    back (or the day ends). None when it never does within a day."""
-    t = instant(start.replace(fold=0), tz)
-    prev = wall(t, tz)
-    for _ in range(24 * 60 + 1):
-        t += timedelta(minutes=1)
-        cur = wall(t, tz)
-        if cur < prev:
-            return prev
-        if cur.date() != prev.date():
-            return None
-        prev = cur
-    return None
+    return (instant(now, tz) - instant(start, tz)).total_seconds()

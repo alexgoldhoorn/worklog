@@ -25,13 +25,19 @@ def amount(billable_h: float, rate: float | None) -> float | None:
 
 
 def day_totals(conn, date: str, break_types) -> dict:
-    return _totals(db.blocks_on(conn, date), break_types)
+    return _totals(db.blocks_on(conn, date), break_types, _tz(conn))
 
 
-def _totals(blocks, break_types) -> dict:
+def _tz(conn):
+    """The server's zone when the connection carries one (see db.connect): durations are then true
+    across the repeated hour."""
+    return getattr(conn, "tz", None)
+
+
+def _totals(blocks, break_types, tz=None) -> dict:
     t = {"work_h": 0.0, "other_h": 0.0, "billable_h": 0.0, "by_client": {}, "by_type": {}, "by_project": {}}
     for b in blocks:
-        h = model.hours(model.minutes(b.start, b.end))
+        h = model.hours(model.block_minutes(b, tz))
         if b.end is None:
             continue
         if model.work_type(b.type, break_types) == "other":
@@ -73,7 +79,7 @@ def grouped(conn, group: str, start: str, end: str, holidays, today: _date) -> l
     keys |= {k for k, es in exp_by.items() if any(e.expected_h for e in es)}
     rows = []
     for k in sorted(k for k in keys if k <= limit):
-        t = _totals(blocks_by.get(k, []), btypes)
+        t = _totals(blocks_by.get(k, []), btypes, _tz(conn))
         exp_h = sum(e.expected_h for e in exp_by.get(k, []))
         exp_alt = alt * exp_h / base
         days = {b.date for b in blocks_by.get(k, [])
@@ -181,7 +187,7 @@ def day_rows(conn, s: str, e: str, holidays) -> list[dict]:
         by_date.setdefault(b.date, []).append(b)
     out = []
     for key, x in exps.items():
-        t = _totals(by_date.get(key, []), btypes)
+        t = _totals(by_date.get(key, []), btypes, _tz(conn))
         w = t["work_h"]
         out.append({"date": key, "weekday": _date.fromisoformat(key).strftime("%a"),
                     "worked_h": w, "expected_h": x.expected_h, "reason": x.reason,

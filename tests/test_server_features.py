@@ -185,24 +185,132 @@ def test_elapsed_across_the_march_change_is_true_elapsed(dst):
     assert st["elapsed_min"] == 60 and st["elapsed_s"] == 3600
 
 
-def test_closing_in_the_repeated_hour_keeps_a_flagged_positive_block(dst):
+def _blocks(c):
+    return c.get("/api/day/2026-10-25").json()["blocks"]
+
+
+def test_a_block_from_the_first_to_the_second_pass_is_a_true_hour(dst):
     _at(dst, 2026, 10, 25, 2, 30)                           # first pass through 02:30
     dst.post("/api/start", json={"project": "night"})
     _at(dst, 2026, 10, 25, 2, 30, fold=1)                   # the clock went back: 02:30 again
     dst.post("/api/stop", json={})
-    b = dst.get("/api/day/2026-10-25").json()["blocks"]
-    assert [(x["start"], x["end"], x["auto_closed"]) for x in b] == [("02:30", "02:59", True)]
-    assert dst.get("/api/status").json()["needs_review"][0]["end"] == "02:59"
+    (b,) = _blocks(dst)
+    assert (b["start"], b["end"], b["auto_closed"], b["minutes"]) == ("02:30", "02:30", False, 60)
+    assert dst.get("/api/status").json()["needs_review"] == []
 
 
-def test_closing_earlier_wall_time_in_the_repeated_hour(dst):
-    _at(dst, 2026, 10, 25, 2, 50)
+def test_a_block_ending_earlier_on_the_wall_clock_in_the_second_pass(dst):
+    _at(dst, 2026, 10, 25, 2, 30)
     dst.post("/api/start", json={})
-    _at(dst, 2026, 10, 25, 2, 10, fold=1)                   # wall clock 02:10 < start 02:50
+    _at(dst, 2026, 10, 25, 2, 10, fold=1)                   # 02:30 first pass to 02:10 second pass
     dst.post("/api/pause", json={})
-    closed = [x for x in dst.get("/api/day/2026-10-25").json()["blocks"] if x["end"]][0]
-    assert (closed["start"], closed["end"], closed["auto_closed"]) == ("02:50", "02:59", True)
-    assert closed["minutes"] > 0
+    closed = [x for x in _blocks(dst) if x["end"]][0]
+    assert (closed["start"], closed["end"], closed["auto_closed"]) == ("02:30", "02:10", False)
+    assert closed["minutes"] == 40 and closed["duration"] == "00:40"
+    assert closed["flags"]["start_gt_end"] is False
+    assert dst.get("/api/day/2026-10-25").json()["totals"]["work_h"] == pytest.approx(40 / 60)
+
+
+def test_a_block_started_in_the_second_pass_has_the_true_elapsed_and_duration(dst):
+    _at(dst, 2026, 10, 25, 2, 20, fold=1)
+    dst.post("/api/start", json={})
+    _at(dst, 2026, 10, 25, 2, 50, fold=1)
+    assert dst.get("/api/status").json()["elapsed_min"] == 30      # not 90: the start is the later 02:20
+    _at(dst, 2026, 10, 25, 3, 20)
+    assert dst.get("/api/status").json()["elapsed_min"] == 60
+    dst.post("/api/stop", json={})
+    (b,) = _blocks(dst)
+    assert (b["start"], b["end"], b["minutes"]) == ("02:20", "03:20", 60)
+    row = db.connect(dst.app.state.settings.db_path).execute("SELECT start_fold, end_fold FROM blocks").fetchone()
+    assert (row["start_fold"], row["end_fold"]) == (1, None)
+
+
+def test_a_block_that_covers_the_whole_repeated_hour_counts_both_passes(dst):
+    _at(dst, 2026, 10, 25, 1, 30)
+    dst.post("/api/start", json={})
+    _at(dst, 2026, 10, 25, 3, 30)
+    dst.post("/api/stop", json={})
+    (b,) = _blocks(dst)
+    assert (b["start"], b["end"], b["minutes"]) == ("01:30", "03:30", 180)
+
+
+def test_reports_and_the_day_total_use_the_true_minutes(dst):
+    _at(dst, 2026, 10, 25, 2, 30)
+    dst.post("/api/start", json={})
+    _at(dst, 2026, 10, 25, 2, 10, fold=1)
+    dst.post("/api/stop", json={})                           # 40 true minutes
+    assert dst.get("/api/day/2026-10-25").json()["totals"]["work_h"] == pytest.approx(40 / 60)
+    rows = dst.get("/api/summary?group=week&start=2026-10-19&end=2026-10-25").json()["rows"]
+    assert rows[0]["worked_h"] == pytest.approx(40 / 60)
+
+
+def test_a_typed_block_in_the_repeated_hour_is_the_first_pass(dst):
+    r = dst.post("/api/blocks", json={"date": "2026-10-25", "start": "02:10", "end": "02:50"})
+    assert r.status_code == 200 and r.json()["minutes"] == 40
+    assert dst.post("/api/blocks", json={"date": "2026-10-25", "start": "02:50", "end": "02:10"}).status_code == 400
+
+
+def test_editing_a_time_drops_its_fold_and_an_unchanged_time_keeps_it(dst):
+    _at(dst, 2026, 10, 25, 2, 20, fold=1)
+    bid = dst.post("/api/start", json={}).json()["block"]["id"]
+    _at(dst, 2026, 10, 25, 3, 20)
+    dst.post("/api/stop", json={})
+    q = lambda: db.connect(dst.app.state.settings.db_path).execute("SELECT start_fold FROM blocks").fetchone()[0]
+    dst.put(f"/api/blocks/{bid}", json={"start": "02:20", "project": "x"})
+    assert q() == 1
+    dst.put(f"/api/blocks/{bid}", json={"start": "02:25"})
+    assert q() is None
+
+
+def test_start_in_the_second_pass_is_not_flagged_against_a_first_pass_block(dst):
+    _at(dst, 2026, 10, 25, 2, 40)
+    dst.post("/api/start", json={})
+    _at(dst, 2026, 10, 25, 2, 10, fold=1)
+    dst.post("/api/pause", json={})
+    _at(dst, 2026, 10, 25, 2, 40, fold=1)
+    dst.post("/api/stop", json={})
+    blocks = _blocks(dst)
+    assert [(b["start"], b["end"]) for b in blocks] == [("02:10", "02:40"), ("02:40", "02:10")]
+    assert not any(b["flags"]["overlap"] or b["flags"]["start_gt_end"] for b in blocks)
+
+
+def test_the_migration_adds_the_fold_columns_and_keeps_old_rows_null(tmp_path):
+    p = str(tmp_path / "old.db")
+    c = db.connect(p)
+    db.insert_block(c, db.Block(None, "2026-10-25", "02:10", "02:50", None, "dev", None, None))
+    c.execute("ALTER TABLE blocks DROP COLUMN start_fold")
+    c.execute("ALTER TABLE blocks DROP COLUMN end_fold")
+    c.execute("PRAGMA user_version = 7")
+    c.commit(); c.close()
+    c = db.connect(p)
+    r = c.execute("SELECT start_fold, end_fold FROM blocks").fetchone()
+    assert (r[0], r[1]) == (None, None) and c.execute("PRAGMA user_version").fetchone()[0] == 8
+
+
+# ---- rename a break type ----------------------------------------------------------------
+
+def test_rename_a_break_type_everywhere(client):
+    client.post("/api/pause", json={"type": "eat"})
+    client.post("/api/stop", json={})
+    client.app.state.clock = lambda: datetime(2026, 10, 20, 9, 30)
+    client.put("/api/settings", json={"default_break_type": "eat"})
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "10:00", "end": "10:30", "type": "eat"})
+    r = client.put("/api/break-types/eat", json={"name": "  Lunch "})
+    assert r.status_code == 200 and "lunch" in r.json() and "eat" not in r.json()
+    assert client.get("/api/break-types").json()[0] == "lunch"      # the default comes first
+    assert client.get("/api/settings").json()["default_break_type"] == "lunch"
+    assert {b["type"] for b in client.get("/api/day/2026-10-20").json()["blocks"]} == {"lunch"}
+    assert client.post("/api/pause", json={"type": "eat"}).status_code == 400
+
+
+def test_rename_a_break_type_errors(client):
+    assert client.put("/api/break-types/nope", json={"name": "x"}).status_code == 404
+    assert client.put("/api/break-types/eat", json={"name": " "}).status_code == 400
+    assert client.put("/api/break-types/eat", json={}).status_code == 400
+    assert client.put("/api/break-types/eat", json={"name": "SHOP"}).status_code == 400   # duplicate
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "10:00", "end": "10:30", "type": "dev"})
+    assert client.put("/api/break-types/eat", json={"name": "Dev"}).status_code == 400    # a work type
+    assert "eat" in client.get("/api/break-types").json()
 
 
 def test_a_start_and_stop_in_the_same_minute_is_still_deleted(dst):

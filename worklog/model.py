@@ -1,6 +1,7 @@
 """Pure derivations over blocks: work type, durations, flags, calendar keys."""
 from datetime import date as _date, timedelta
 
+from . import tzutil
 from .db import Block
 
 
@@ -19,6 +20,24 @@ def minutes(start: str, end: str | None) -> int | None:
     if end is None:
         return None
     return _mins(end) - _mins(start)
+
+
+def span_minutes(date: str, start: str, start_fold, end: str, end_fold, tz) -> int:
+    """Minutes between two times of one day. With a zone the wall-clock difference is corrected
+    when the clock went back between them, so both passes through the repeated hour count true
+    (02:30 first pass to 02:10 second pass is 40 minutes)."""
+    wall = minutes(start, end)
+    if tz is None:
+        return wall
+    return wall + tzutil.back_minutes(tzutil.reading(date, start, start_fold),
+                                      tzutil.reading(date, end, end_fold), tz)
+
+
+def block_minutes(b: Block, tz=None) -> int | None:
+    """A block's minutes (None while running), true across the repeated hour when `tz` is given."""
+    if b.end is None:
+        return None
+    return span_minutes(b.date, b.start, b.start_fold, b.end, b.end_fold, tz)
 
 
 def hours(m: int | None) -> float:
@@ -68,19 +87,27 @@ def week_bounds(key: str) -> tuple[str, str]:
     return monday.isoformat(), (monday + timedelta(days=6)).isoformat()
 
 
-def flags(blocks: list[Block]) -> dict[int, dict]:
+def _at(b: Block, hhmm: str, fold, tz):
+    r = tzutil.reading(b.date, hhmm, fold)
+    return tzutil.instant(r, tz) if tz is not None else r
+
+
+def flags(blocks: list[Block], tz=None) -> dict[int, dict]:
     """Per block id: `start_gt_end` (bad times) and `overlap` (starts before an earlier block
     ended). The comparison uses the latest end seen so far, so a short block inside a long one
     is flagged too."""
     out: dict[int, dict] = {}
-    covered: str | None = None  # latest end seen so far, not just the previous block's
-    for b in sorted(blocks, key=lambda x: x.start):
+    covered = None  # latest end seen so far, not just the previous block's
+    # with a zone, times are real instants, so the second pass of a repeated hour sorts after the first
+    for b in sorted(blocks, key=lambda x: _at(x, x.start, x.start_fold, tz)):
+        s = _at(b, b.start, b.start_fold, tz)
+        e = None if b.end is None else _at(b, b.end, b.end_fold, tz)
         out[b.id] = {
-            "start_gt_end": b.end is not None and b.start > b.end,
-            "overlap": covered is not None and b.start < covered,
+            "start_gt_end": e is not None and s > e,
+            "overlap": covered is not None and s < covered,
         }
-        if b.end is not None and (covered is None or b.end > covered):
-            covered = b.end
+        if e is not None and (covered is None or e > covered):
+            covered = e
     return out
 
 
@@ -96,8 +123,8 @@ def overlaps(blocks: list[Block]) -> list[tuple[Block, Block]]:
     return out
 
 
-def with_derived(b: Block, break_types) -> dict:
-    m = minutes(b.start, b.end)
+def with_derived(b: Block, break_types, tz=None) -> dict:
+    m = block_minutes(b, tz)
     wk = week_key(b.date)
     return {
         "id": b.id, "date": b.date, "start": b.start, "end": b.end,

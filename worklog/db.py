@@ -114,8 +114,18 @@ def _seed_v7(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES ('currency', '€')")
 
 
+# Which pass through a repeated hour (the clock went back) a stored time belongs to: 1 = the
+# second pass, 0 = the first, NULL = not in a repeated hour or not known (read as the first pass).
+def _seed_v8(conn: sqlite3.Connection) -> None:
+    # Existing rows stay NULL (first pass). Written as a seed so a re-run on a database that
+    # already has the columns is harmless.
+    have = {r["name"] for r in conn.execute("PRAGMA table_info(blocks)")}
+    for col in ("start_fold", "end_fold"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE blocks ADD COLUMN {col} INTEGER")
+
 MIGRATIONS = [(1, _V1, _seed_v1), (2, "", _seed_v2), (3, _V3, _seed_noop), (4, "", _seed_v4),
-              (5, "", _seed_v5), (6, "", _seed_v6), (7, _V7, _seed_v7)]
+              (5, "", _seed_v5), (6, "", _seed_v6), (7, _V7, _seed_v7), (8, "", _seed_v8)]
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -132,10 +142,17 @@ def migrate(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
-def connect(path: str, check_same_thread: bool = True) -> sqlite3.Connection:
+class Connection(sqlite3.Connection):
+    """A connection that also knows the server's zone (`tz`, a ZoneInfo or None), so block
+    durations can be true across the repeated hour. None means plain wall-clock maths."""
+    tz = None
+
+
+def connect(path: str, check_same_thread: bool = True, tz=None) -> sqlite3.Connection:
     """Open (and migrate) the store. WAL mode so the web server and host jobs can read while
     the timer writes. The directory of `path` must exist; the file is created."""
-    conn = sqlite3.connect(path, check_same_thread=check_same_thread)
+    conn = sqlite3.connect(path, check_same_thread=check_same_thread, factory=Connection)
+    conn.tz = tz
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     migrate(conn)
@@ -154,6 +171,8 @@ class Block:
     billable: bool | None
     source: str = "timer"
     auto_closed: bool = False
+    start_fold: int | None = None   # 1 = second pass through a repeated hour; None = first pass / not repeated
+    end_fold: int | None = None
 
 
 @dataclass
@@ -179,6 +198,7 @@ def _block(row: sqlite3.Row) -> Block:
         project=row["project"], type=row["type"], client=row["client"],
         billable=None if row["billable"] is None else bool(row["billable"]),
         source=row["source"], auto_closed=bool(row["auto_closed"]),
+        start_fold=row["start_fold"], end_fold=row["end_fold"],
     )
 
 
@@ -186,26 +206,31 @@ def insert_block(conn: sqlite3.Connection, b: Block, *, commit: bool = True) -> 
     now = _now()
     cur = conn.execute(
         "INSERT INTO blocks(date, start, end, project, type, client, billable, source,"
-        " auto_closed, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        " auto_closed, start_fold, end_fold, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (b.date, b.start, b.end, b.project, b.type, b.client, _to_int(b.billable),
-         b.source, int(bool(b.auto_closed)), now, now),
+         b.source, int(bool(b.auto_closed)), b.start_fold, b.end_fold, now, now),
     )
     if commit:
         conn.commit()
     return cur.lastrowid
 
 
-_BLOCK_FIELDS = {"date", "start", "end", "project", "type", "client", "billable", "source", "auto_closed"}
+_BLOCK_FIELDS = {"date", "start", "end", "project", "type", "client", "billable", "source", "auto_closed",
+                 "start_fold", "end_fold"}
 
 
 def update_block(conn: sqlite3.Connection, block_id: int, _commit: bool = True, **fields) -> Block:
     """Change the named fields. Setting `end` clears `auto_closed` unless the caller sets it,
-    so a block the user fixed no longer shows up as needing review."""
+    so a block the user fixed no longer shows up as needing review. Likewise a new `start` or
+    `end` drops its fold (a typed time is the first pass) unless the caller sets it."""
     unknown = set(fields) - _BLOCK_FIELDS
     if unknown:
         raise ValueError(f"unknown block fields: {sorted(unknown)}")
     if "end" in fields and "auto_closed" not in fields:
         fields["auto_closed"] = 0
+    for t in ("start", "end"):
+        if t in fields and f"{t}_fold" not in fields:
+            fields[f"{t}_fold"] = None
     for k in ("billable", "auto_closed"):
         if k in fields:
             fields[k] = _to_int(fields[k])
@@ -363,6 +388,20 @@ def rename_client(conn: sqlite3.Connection, old: str, new: str, billable: bool |
             conn.execute("UPDATE settings SET value = ? WHERE key = 'default_client' AND value = ?", (new, old))
         if billable is not None:
             conn.execute("UPDATE clients SET billable = ? WHERE abbrev = ?", (int(billable), new))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def rename_break_type(conn: sqlite3.Connection, old: str, new: str) -> None:
+    """Rename a break type everywhere in one transaction: the store, every block of that type and
+    the `default_break_type` setting. `new` must already be validated (lower case, unused)."""
+    try:
+        conn.execute("UPDATE break_types SET name = ? WHERE name = ?", (new, old))
+        conn.execute("UPDATE blocks SET type = ? WHERE lower(trim(type)) = ?", (new, old.lower()))
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'default_break_type' AND lower(value) = ?",
+                     (new, old.lower()))
         conn.commit()
     except Exception:
         conn.rollback()

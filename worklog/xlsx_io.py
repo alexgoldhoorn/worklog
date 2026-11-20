@@ -332,7 +332,7 @@ def export_rows(conn, start: str, end: str, holidays) -> list[dict]:
     rate = reports.rate_per_h(conn)
     out = []
     for b in db.blocks_between(conn, start, end):
-        d = model.with_derived(b, btypes)
+        d = model.with_derived(b, btypes, getattr(conn, "tz", None))
         wk = model.week_key(b.date)
         billed = d["work_type"] == "work" and b.billable and d["duration_h"] is not None
         out.append({

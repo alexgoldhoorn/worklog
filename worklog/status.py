@@ -39,7 +39,10 @@ def live_min(st: dict, now: datetime, since: _date) -> int:
     if st["state"] != "working" or not blk:
         return 0
     started = datetime.fromisoformat(f"{blk['date']} {blk['start']}")
-    lo = max(started, datetime.combine(since, datetime.min.time()))
+    midnight = datetime.combine(since, datetime.min.time())
+    if started >= midnight and st.get("elapsed_min") is not None:
+        return max(0, st["elapsed_min"])   # the server's elapsed time is already true across a clock change
+    lo = max(started, midnight)
     return max(0, int((now.replace(second=0, microsecond=0) - lo).total_seconds() // 60))
 
 

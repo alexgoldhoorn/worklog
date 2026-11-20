@@ -29,9 +29,15 @@ def auto_close(conn, now: datetime) -> list[Block]:
     if now.time() < LATE_NIGHT_END:
         cutoff -= timedelta(days=1)
     rows = conn.execute(
-        "SELECT id, start FROM blocks WHERE end IS NULL AND date < ? ORDER BY date, start, id",
+        "SELECT id, start, start_fold FROM blocks WHERE end IS NULL AND date < ? ORDER BY date, start, id",
         (cutoff.isoformat(),)).fetchall()
-    return [db.update_block(conn, r["id"], end=max(r["start"], limit), auto_closed=True) for r in rows]
+    out = []
+    for r in rows:
+        end = max(r["start"], limit)
+        # closing at its own start keeps the start's pass; a typed-style limit is the first pass
+        fold = r["start_fold"] if end == r["start"] else None
+        out.append(db.update_block(conn, r["id"], end=end, end_fold=fold, auto_closed=True))
+    return out
 
 
 def close_open(conn, now: datetime, tz=None) -> Block | None:
@@ -45,9 +51,9 @@ def close_open(conn, now: datetime, tz=None) -> Block | None:
     neither flagged when the block began at or after `auto_close_time`, both flagged when it
     began earlier. Any older block is closed at 23:59 and flagged auto_closed.
 
-    With `tz` (a ZoneInfo), a block whose wall-clock end is not after its start only because the
-    clock went back (the repeated hour) is not deleted: it ends at the last minute before the
-    clock went back and is flagged auto_closed for review."""
+    With `tz` (a ZoneInfo), start and end remember which pass through a repeated hour they were
+    read in (`start_fold`, `end_fold`), so a block that spans or starts in the second pass has its
+    true duration; only a block that lasted zero true minutes is deleted."""
     result = None
     for r in conn.execute("SELECT id FROM blocks WHERE end IS NULL ORDER BY date, start, id").fetchall():
         result = _close_one(conn, now, db.get_block(conn, r["id"]), tz)
@@ -66,25 +72,15 @@ def _close_one(conn, now: datetime, ob: Block, tz=None) -> Block | None:
             if model.minutes("00:00", hhmm) == 0:
                 return db.get_block(conn, ob.id)
             part = Block(None, today, "00:00", hhmm, ob.project, ob.type, ob.client,
-                         ob.billable, ob.source, flag)
+                         ob.billable, ob.source, flag, None, tzutil.fold_of(now, tz))
             part.id = db.insert_block(conn, part)
             return db.get_block(conn, part.id)
         return db.update_block(conn, ob.id, end="23:59", auto_closed=True)
-    if tz is not None and model.minutes(ob.start, hhmm) <= 0:
-        started = datetime.fromisoformat(f"{ob.date} {ob.start}")
-        if tzutil.elapsed_seconds(started, now, tz) >= 60:
-            # the wall clock went back while this block ran: keep it positive and let the user confirm
-            last = tzutil.last_minute_before_clock_goes_back(started, tz)
-            end = last.strftime("%H:%M") if last is not None else ob.start
-            if end <= ob.start:
-                nxt = started + timedelta(minutes=1)
-                end = nxt.strftime("%H:%M") if nxt.date() == started.date() else "23:59"
-            if end > ob.start:
-                return db.update_block(conn, ob.id, end=end, auto_closed=True)
-    if model.minutes(ob.start, hhmm) == 0:
+    fold = tzutil.fold_of(now, tz)
+    if model.span_minutes(ob.date, ob.start, ob.start_fold, hhmm, fold, tz) == 0:
         db.delete_block(conn, ob.id)
         return None
-    return db.update_block(conn, ob.id, end=hhmm, auto_closed=False)
+    return db.update_block(conn, ob.id, end=hhmm, end_fold=fold, auto_closed=False)
 
 
 def start(conn, now: datetime, type_: str | None = None, project: str | None = None,
@@ -105,7 +101,8 @@ def start(conn, now: datetime, type_: str | None = None, project: str | None = N
     client = _norm(client) or db.setting(conn, "default_client")
     row = db.clients(conn).get(client)
     billable = bool(row["billable"]) if row is not None else None
-    b = Block(None, today, hhmm, None, project, type_, client, billable, "timer")
+    b = Block(None, today, hhmm, None, project, type_, client, billable, "timer",
+              start_fold=tzutil.fold_of(now, tz))
     b.id = db.insert_block(conn, b)
     return b
 
@@ -121,7 +118,8 @@ def pause(conn, now: datetime, type_: str | None = None, tz=None) -> Block:
             and _norm(ob.type) == type_):
         return ob
     close_open(conn, now, tz)
-    b = Block(None, today, hhmm, None, None, type_, None, None, "timer")
+    b = Block(None, today, hhmm, None, None, type_, None, None, "timer",
+              start_fold=tzutil.fold_of(now, tz))
     b.id = db.insert_block(conn, b)
     return b
 
@@ -146,11 +144,11 @@ def status(conn, now: datetime, tz=None) -> dict:
     if ob is None:
         state, block, since, elapsed = "stopped", None, None, None
     else:
-        d = model.with_derived(ob, bt)
+        d = model.with_derived(ob, bt, tz)
         state = "working" if d["work_type"] == "work" else "break"
-        started = datetime.fromisoformat(f"{ob.date} {ob.start}")
+        started = tzutil.reading(ob.date, ob.start, ob.start_fold)
         block, since = d, ob.start
         elapsed = int(tzutil.elapsed_seconds(started, now.replace(second=0, microsecond=0), tz) // 60)
         elapsed_s = max(0, int(tzutil.elapsed_seconds(started, now.replace(microsecond=0), tz)))
     return {"state": state, "block": block, "since": since, "elapsed_min": elapsed, "elapsed_s": elapsed_s,
-            "date": today, "auto_closed": [model.with_derived(b, bt) for b in closed]}
+            "date": today, "auto_closed": [model.with_derived(b, bt, tz) for b in closed]}

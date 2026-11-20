@@ -29,8 +29,16 @@ _XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 # ---- dependencies / helpers -------------------------------------------------
 
+def _zone(name: str) -> ZoneInfo | None:
+    try:
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 - an unknown zone falls back to plain wall-clock maths
+        return None
+
+
 def get_conn(request: Request):
-    conn = db.connect(request.app.state.settings.db_path, check_same_thread=False)
+    conn = db.connect(request.app.state.settings.db_path, check_same_thread=False,
+                      tz=_zone(request.app.state.settings.tz))
     try:
         yield conn
     finally:
@@ -45,10 +53,7 @@ class Ctx:
         self.conn = conn
         self.now: datetime = request.app.state.clock()
         self.today: _date = self.now.date()
-        try:
-            self.tz: ZoneInfo | None = ZoneInfo(self.settings.tz)
-        except Exception:  # noqa: BLE001 - an unknown zone falls back to plain wall-clock maths
-            self.tz = None
+        self.tz: ZoneInfo | None = _zone(self.settings.tz)
         self.holidays, warn = expect.load_holidays(self.settings.holidays_path)
         self.notices: list[str] = [warn] if warn else []
         if self.holidays and not any(d.startswith(str(self.now.year)) for d in self.holidays):
@@ -76,7 +81,7 @@ def _client_default(conn, client):
 
 
 def _derived(c: Ctx, b: Block) -> dict:
-    return model.with_derived(b, db.break_types(c.conn))
+    return model.with_derived(b, db.break_types(c.conn), c.tz)
 
 
 def _opt_str(body: dict, key: str):
@@ -161,7 +166,7 @@ def _at(c: Ctx, body: dict) -> datetime:
     if now_i - at_i > _AT_MAX_AGE:
         raise ApiError("at is more than a day ago")
     ob = db.open_block(c.conn)
-    if ob and tzutil.instant(datetime.fromisoformat(f"{ob.date} {ob.start}"), c.tz) > at_i:
+    if ob and tzutil.instant(tzutil.reading(ob.date, ob.start, ob.start_fold), c.tz) > at_i:
         raise ApiError("at is before the running block started")
     return c.now if at_i >= now_i else at
 
@@ -207,11 +212,11 @@ def _extend_auto_closed(c: Ctx, at: datetime) -> None:
     nb = db._block(row) if row else None
     if nb is None or not nb.auto_closed or nb.end is None:
         return
-    if datetime.fromisoformat(f"{nb.date} {nb.start}") >= at:
+    if tzutil.instant(tzutil.reading(nb.date, nb.start, nb.start_fold), c.tz) >= tzutil.instant(at, c.tz):
         return
     day, hhmm = at.date().isoformat(), at.strftime("%H:%M")
     if nb.date == day:
-        db.update_block(conn, nb.id, end=hhmm)
+        db.update_block(conn, nb.id, end=hhmm, end_fold=tzutil.fold_of(at, c.tz))
     elif nb.date == (at.date() - timedelta(days=1)).isoformat() and at.time() < timer.LATE_NIGHT_END:
         db.update_block(conn, nb.id, end="23:59")
         if hhmm != "00:00":
@@ -296,8 +301,8 @@ def get_day(date: str, c: Ctx = Depends(ctx)):
     c.auto_close()
     bt = db.break_types(c.conn)
     blocks = db.blocks_on(c.conn, date)
-    fl = model.flags(blocks)
-    items = [{**model.with_derived(b, bt), "flags": fl[b.id]} for b in blocks]
+    fl = model.flags(blocks, c.tz)
+    items = [{**model.with_derived(b, bt, c.tz), "flags": fl[b.id]} for b in blocks]
     meetings, warn = wcal.meetings(c.settings.calendar_db_path, date, blocks)  # the open block counts too
     dismissed = db.dismissed_on(c.conn, date)
     for m in meetings:
@@ -359,8 +364,12 @@ def update_block(block_id: int, body: dict = Body(...), c: Ctx = Depends(ctx)):
             fields["date"] = date_arg(body["date"])
         if "start" in body:
             fields["start"] = loose_time(body["start"], "start")
+            if fields["start"] == cur.start:
+                fields["start_fold"] = cur.start_fold   # an unchanged time keeps its pass
         if body.get("end") is not None:
             fields["end"] = loose_time(body["end"], "end")
+            if fields["end"] == cur.end:
+                fields["end_fold"] = cur.end_fold
         elif "end" in body:
             fields["end"] = None
         if "start" in fields or "end" in fields:
@@ -715,6 +724,26 @@ def add_break_type(body: dict = Body(...), c: Ctx = Depends(ctx)):
             raise ApiError("that name is already used as a work type")
         c.conn.execute("INSERT INTO break_types(name) VALUES (?)", (name,))
         c.conn.commit()
+    return _break_names(c)
+
+
+@router.put("/api/break-types/{name}")
+def rename_break_type(name: str, body: dict = Body(...), c: Ctx = Depends(ctx)):
+    if "name" not in body:
+        raise ApiError("name is required")
+    new = _type_name(body, "name").lower()   # stored lower case, like POST
+    with _LOCK:
+        cur = _canon_break(db.break_types(c.conn), name)
+        if cur is None:
+            raise ApiError("no such break type", 404)
+        other = _canon_break(db.break_types(c.conn), new)
+        if other is not None and other != cur:
+            raise ApiError("a break type with that name already exists")
+        if other is None and c.conn.execute(
+                "SELECT 1 FROM blocks WHERE lower(trim(type)) = ? LIMIT 1", (new,)).fetchone():
+            raise ApiError("that name is already used as a work type")
+        if new != cur:
+            db.rename_break_type(c.conn, cur, new)
     return _break_names(c)
 
 
