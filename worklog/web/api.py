@@ -6,11 +6,12 @@ import math
 import re
 import threading
 from datetime import date as _date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Body, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
-from .. import calendar as wcal, db, expect, model, reports, status, timer, xlsx_io
+from .. import calendar as wcal, db, expect, model, reports, status, timer, tzutil, xlsx_io
 from ..db import Block, DayExpectation
 from ..validate import ApiError, date_arg, loose_time
 
@@ -44,6 +45,10 @@ class Ctx:
         self.conn = conn
         self.now: datetime = request.app.state.clock()
         self.today: _date = self.now.date()
+        try:
+            self.tz: ZoneInfo | None = ZoneInfo(self.settings.tz)
+        except Exception:  # noqa: BLE001 - an unknown zone falls back to plain wall-clock maths
+            self.tz = None
         self.holidays, warn = expect.load_holidays(self.settings.holidays_path)
         self.notices: list[str] = [warn] if warn else []
         if self.holidays and not any(d.startswith(str(self.now.year)) for d in self.holidays):
@@ -137,7 +142,9 @@ def _at(c: Ctx, body: dict) -> datetime:
     """The moment a timer action happened: `at` ("YYYY-MM-DDTHH:MM", server local time) when a
     client replays an action it queued while offline, else now. Never in the future, never older
     than a day, and never before the running block's start. Call it with _LOCK held: it reads the
-    running block."""
+    running block. Instants are compared in the configured zone, so an `at` in the repeated hour
+    after the clocks go back means the later pass (the earlier one if the later is still ahead),
+    and one in the skipped hour after they go forward means the valid time after the gap."""
     raw = body.get("at")
     if raw is None:
         return c.now
@@ -147,14 +154,16 @@ def _at(c: Ctx, body: dict) -> datetime:
         at = datetime.fromisoformat(raw).replace(second=0, microsecond=0, tzinfo=None)
     except ValueError:
         raise ApiError("at must look like 2026-10-20T09:30") from None
-    if at > c.now.replace(second=59, microsecond=0):
+    at = tzutil.parse_at(at, c.tz, c.now)
+    at_i, now_i = tzutil.instant(at, c.tz), tzutil.instant(c.now, c.tz)
+    if at_i > now_i.replace(second=59, microsecond=0):
         raise ApiError("at is in the future")
-    if c.now - at > _AT_MAX_AGE:
+    if now_i - at_i > _AT_MAX_AGE:
         raise ApiError("at is more than a day ago")
     ob = db.open_block(c.conn)
-    if ob and datetime.fromisoformat(f"{ob.date} {ob.start}") > at:
+    if ob and tzutil.instant(datetime.fromisoformat(f"{ob.date} {ob.start}"), c.tz) > at_i:
         raise ApiError("at is before the running block started")
-    return min(at, c.now)
+    return c.now if at_i >= now_i else at
 
 
 # ---- status -----------------------------------------------------------------
@@ -210,11 +219,25 @@ def _extend_auto_closed(c: Ctx, at: datetime) -> None:
                                         nb.billable, nb.source))
 
 
+def _request_id(body: dict) -> str | None:
+    v = body.get("request_id")
+    if v is None:
+        return None
+    if not isinstance(v, str) or not 1 <= len(v) <= 64:
+        raise ApiError("request_id must be a string of 1 to 64 characters")
+    return v
+
+
 def _timer_action(c: Ctx, b: dict, brief: bool, act):
     """Run a Start/Pause/Stop under the lock. `expect_state` (not with `at`) turns a stale tap
-    into a 409; `at` (an offline replay) first repairs a block auto-closed in the meantime."""
+    into a 409; `at` (an offline replay) first repairs a block auto-closed in the meantime.
+    A `request_id` the server already acted on does nothing and answers with the current status;
+    only an action that succeeded is remembered."""
     expected = _expect_state(b)
+    rid = _request_id(b)
     with _LOCK:
+        if rid is not None and db.request_seen(c.conn, rid):
+            return _status_payload(c, brief)
         at = _at(c, b)
         if b.get("at") is None:
             if expected is not None:
@@ -225,6 +248,8 @@ def _timer_action(c: Ctx, b: dict, brief: bool, act):
         else:
             _extend_auto_closed(c, at)
         act(at)
+        if rid is not None:
+            db.remember_request(c.conn, rid)
     return _status_payload(c, brief)
 
 
@@ -237,7 +262,7 @@ def post_start(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: boo
     if t and _canon_break(db.break_types(c.conn), t):
         raise ApiError(f"'{t}' is a break type; use pause")
     return _timer_action(c, b, brief, lambda at: timer.start(
-        c.conn, at, b.get("type"), b.get("project"), b.get("client")))
+        c.conn, at, b.get("type"), b.get("project"), b.get("client"), c.tz))
 
 
 @router.post("/api/pause")
@@ -255,12 +280,12 @@ def post_pause(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: boo
             valid = ", ".join(sorted(bt, key=lambda n: (n != first, n)))
             raise ApiError(f"unknown break type '{t}'; valid: {valid}")
         t = canon
-    return _timer_action(c, b, brief, lambda at: timer.pause(c.conn, at, t))
+    return _timer_action(c, b, brief, lambda at: timer.pause(c.conn, at, t, c.tz))
 
 
 @router.post("/api/stop")
 def post_stop(body: dict | None = Body(None), c: Ctx = Depends(ctx), brief: bool = Query(False)):
-    return _timer_action(c, _body(body), brief, lambda at: timer.stop(c.conn, at))
+    return _timer_action(c, _body(body), brief, lambda at: timer.stop(c.conn, at, c.tz))
 
 
 # ---- day --------------------------------------------------------------------
@@ -522,6 +547,7 @@ def _settings(conn) -> dict:
             "default_break_type": db.setting(conn, "default_break_type"),
             "auto_close_time": db.setting(conn, "auto_close_time"),
             "calendar_auto_add": db.setting(conn, "calendar_auto_add") == "1",
+            "currency": db.setting(conn, "currency"),
             "break_types": sorted(db.break_types(conn))}
 
 
@@ -581,9 +607,130 @@ def put_settings(body: dict = Body(...), c: Ctx = Depends(ctx)):
         if not isinstance(body["calendar_auto_add"], bool):
             raise ApiError("calendar_auto_add must be true or false")
         todo["calendar_auto_add"] = "1" if body["calendar_auto_add"] else ""
+    if "currency" in body:
+        v = body["currency"]
+        if not isinstance(v, str) or not 1 <= len(v.strip()) <= 4:
+            raise ApiError("currency must be a symbol or code of 1 to 4 characters")
+        todo["currency"] = v.strip()
     if todo:
         db.set_settings(c.conn, todo)
     return _settings(c.conn)
+
+
+# ---- clients ----------------------------------------------------------------
+
+def _client_row(conn, name: str):
+    """The client called `name` (exact, else case-insensitive), or a 404."""
+    rows = db.clients(conn)
+    if name in rows:
+        return rows[name]
+    want = name.lower()
+    row = next((r for k, r in rows.items() if k.lower() == want), None)
+    if row is None:
+        raise ApiError("no such client", 404)
+    return row
+
+
+def _client_name(v) -> str:
+    if not isinstance(v, str) or not v.strip() or len(v.strip()) > 100:
+        raise ApiError("name must be a text of 1 to 100 characters")
+    return v.strip()
+
+
+def _client_json(r) -> dict:
+    return {"name": r["abbrev"], "billable": bool(r["billable"])}
+
+
+def _client_taken(conn, name: str, except_name: str | None = None) -> bool:
+    want = name.lower()
+    return any(k.lower() == want and k != except_name for k in db.clients(conn))
+
+
+@router.get("/api/clients")
+def list_clients(c: Ctx = Depends(ctx)):
+    return [_client_json(r) for _, r in sorted(db.clients(c.conn).items(), key=lambda kv: (kv[0].lower(), kv[0]))]
+
+
+@router.post("/api/clients")
+def add_client(body: dict = Body(...), c: Ctx = Depends(ctx)):
+    name = _client_name(body.get("name"))
+    billable = _opt_bool(body, "billable")
+    with _LOCK:
+        if _client_taken(c.conn, name):
+            raise ApiError("a client with that name already exists")
+        c.conn.execute("INSERT INTO clients(abbrev, name, billable) VALUES (?, ?, ?)",
+                       (name, name, 1 if billable is None else int(billable)))
+        c.conn.commit()
+        return _client_json(db.clients(c.conn)[name])
+
+
+@router.put("/api/clients/{name}")
+def update_client(name: str, body: dict = Body(...), c: Ctx = Depends(ctx)):
+    with _LOCK:
+        old = _client_row(c.conn, name)["abbrev"]
+        new = _client_name(body["name"]) if "name" in body else old
+        billable = _opt_bool(body, "billable") if "billable" in body else None
+        if "billable" in body and billable is None:
+            raise ApiError("billable must be true or false")
+        if new != old and _client_taken(c.conn, new, except_name=old):
+            raise ApiError("a client with that name already exists")
+        db.rename_client(c.conn, old, new, billable)
+        return _client_json(db.clients(c.conn)[new])
+
+
+@router.delete("/api/clients/{name}")
+def delete_client(name: str, c: Ctx = Depends(ctx)):
+    with _LOCK:
+        cur = _client_row(c.conn, name)["abbrev"]
+        if c.conn.execute("SELECT 1 FROM blocks WHERE client = ? LIMIT 1", (cur,)).fetchone():
+            raise ApiError("client is used by blocks", 409)
+        if db.setting(c.conn, "default_client") == cur:
+            raise ApiError("client is the default_client", 409)
+        c.conn.execute("DELETE FROM clients WHERE abbrev = ?", (cur,))
+        c.conn.commit()
+    return {"ok": True}
+
+
+# ---- break types --------------------------------------------------------------
+
+def _break_names(c: Ctx) -> list[str]:
+    return status.chips(c.conn, c.today, db.break_types(c.conn))["break_types"]
+
+
+@router.get("/api/break-types")
+def list_break_types(c: Ctx = Depends(ctx)):
+    return _break_names(c)
+
+
+@router.post("/api/break-types")
+def add_break_type(body: dict = Body(...), c: Ctx = Depends(ctx)):
+    if "name" not in body:
+        raise ApiError("name is required")
+    # stored lower case: model.work_type compares a block's lower-cased type with these names
+    name = _type_name(body, "name").lower()
+    with _LOCK:
+        if _canon_break(db.break_types(c.conn), name):
+            raise ApiError("a break type with that name already exists")
+        if c.conn.execute("SELECT 1 FROM blocks WHERE lower(trim(type)) = ? LIMIT 1", (name,)).fetchone():
+            raise ApiError("that name is already used as a work type")
+        c.conn.execute("INSERT INTO break_types(name) VALUES (?)", (name,))
+        c.conn.commit()
+    return _break_names(c)
+
+
+@router.delete("/api/break-types/{name}")
+def delete_break_type(name: str, c: Ctx = Depends(ctx)):
+    with _LOCK:
+        cur = _canon_break(db.break_types(c.conn), name)
+        if cur is None:
+            raise ApiError("no such break type", 404)
+        if db.setting(c.conn, "default_break_type") == cur:
+            raise ApiError("break type is the default_break_type", 409)
+        if c.conn.execute("SELECT 1 FROM blocks WHERE lower(trim(type)) = ? LIMIT 1", (cur.lower(),)).fetchone():
+            raise ApiError("break type is used by blocks", 409)
+        c.conn.execute("DELETE FROM break_types WHERE name = ?", (cur,))
+        c.conn.commit()
+    return _break_names(c)
 
 
 @router.get("/api/heatmap")

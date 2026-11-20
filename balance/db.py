@@ -170,13 +170,15 @@ def get_block(conn, block_id: int) -> dict | None:
 
 
 def decide(conn, block_id: int, state: str) -> dict:
-    """Approve or reject a block. The sync job then creates or deletes its calendar event."""
-    if state not in ("approved", "rejected"):
-        raise ValueError("state must be approved or rejected")
+    """Approve, reject or return a block to proposed. Nothing is queued: the sync job reconciles
+    from the state (`pending_sync`), creating the calendar event of an approved block and deleting
+    the one a rejected or proposed block still has. `proposed` clears `decided_at`."""
+    if state not in STATES:
+        raise ValueError("state must be proposed, approved or rejected")
     if get_block(conn, block_id) is None:
         raise KeyError(block_id)
     conn.execute("UPDATE blocks SET state = ?, decided_at = ? WHERE id = ?",
-                 (state, _now(), block_id))
+                 (state, None if state == "proposed" else _now(), block_id))
     conn.commit()
     return get_block(conn, block_id)
 
@@ -218,10 +220,10 @@ def move_block(conn, block_id: int, date: str, start: str, end: str) -> dict:
 
 
 def pending_sync(conn) -> list[dict]:
-    """Approved blocks not yet in Google, plus rejected ones still there."""
+    """Approved blocks not yet in Google, plus rejected or proposed ones still there."""
     rows = conn.execute(
         "SELECT * FROM blocks WHERE (state = 'approved' AND gcal_event_id = '')"
-        " OR (state = 'rejected' AND gcal_event_id != '') ORDER BY date, start")
+        " OR (state IN ('rejected', 'proposed') AND gcal_event_id != '') ORDER BY date, start")
     return [dict(r) for r in rows]
 
 

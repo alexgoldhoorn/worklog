@@ -410,6 +410,7 @@
     "meet"
    ]
   },
+  "currency": "\u20ac",
   "date": "2026-10-20",
   "elapsed_min": 30,
   "elapsed_s": 1800,
@@ -583,6 +584,7 @@
     "meet"
    ]
   },
+  "currency": "\u20ac",
   "date": "2026-10-20",
   "elapsed_min": 550,
   "elapsed_s": 33000,

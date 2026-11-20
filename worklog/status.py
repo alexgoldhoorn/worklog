@@ -2,6 +2,7 @@
 compact one for small clients. Pure assembly over a connection and a clock reading; the web
 layer only supplies them."""
 import os
+from zoneinfo import ZoneInfo
 from datetime import date as _date, datetime, timedelta
 
 from . import calendar as wcal, db, model, reports, timer
@@ -81,10 +82,17 @@ def resume(conn, now: datetime, bt) -> dict | None:
     return {"type": last.type, "project": last.project} if last else None
 
 
+def _tz(settings):
+    try:
+        return ZoneInfo(settings.tz)
+    except Exception:  # noqa: BLE001 - an unknown zone must not break the status
+        return None
+
+
 def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     """Compact status for small clients (the Garmin widget): no week/month/net series."""
     today = now.date().isoformat()
-    st = timer.status(conn, now)
+    st = timer.status(conn, now, _tz(settings))
     bt = db.break_types(conn)
     blk = st["block"]
     running = live_min(st, now, now.date())
@@ -158,9 +166,10 @@ def build(conn, now: datetime, holidays, notices, settings) -> dict:
     availability is appended here."""
     t = now.date()
     today = t.isoformat()
-    out = timer.status(conn, now)
+    out = timer.status(conn, now, _tz(settings))
     out["now"] = now.replace(microsecond=0).isoformat()
     out["tz"] = settings.tz
+    out["currency"] = db.setting(conn, "currency")
     out["hard_stop"] = hard_stop(settings)
     out["past_stop_min"] = None
     blk = out.get("block")

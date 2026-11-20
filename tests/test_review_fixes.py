@@ -80,7 +80,7 @@ def test_migration_closes_all_but_the_newest_open_block(tmp_path):
     newest = db.insert_block(c, db.Block(None, D, "09:00", None, None, "dev", None, None))
     c.close()
     c = db.connect(p)   # must not crash
-    assert c.execute("PRAGMA user_version").fetchone()[0] == 6
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 7
     assert [r["id"] for r in c.execute("SELECT id FROM blocks WHERE end IS NULL")] == [newest]
     old = db.blocks_on(c, "2026-10-19")[0]
     assert (old.end, old.auto_closed) == ("17:00", True)

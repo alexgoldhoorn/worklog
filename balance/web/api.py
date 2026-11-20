@@ -84,6 +84,14 @@ def reject(request: Request, block_id: int):
     return _decide(request, block_id, "rejected")
 
 
+@router.post("/blocks/{block_id}/propose")
+@router.post("/blocks/{block_id}/proposed")
+def unpropose(request: Request, block_id: int):
+    """Undo an approve or reject: the block is proposed again (a calendar event it already has is
+    removed by the next sync)."""
+    return _decide(request, block_id, "proposed")
+
+
 def _decide(request, block_id, state):
     conn = _conn(request)
     try:

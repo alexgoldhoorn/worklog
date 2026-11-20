@@ -100,8 +100,22 @@ def _seed_v6(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_one_open ON blocks((1)) WHERE end IS NULL")
 
 
+_V7 = """
+CREATE TABLE IF NOT EXISTS timer_requests(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+"""
+
+
+def _seed_v7(conn: sqlite3.Connection) -> None:
+    # Display currency (a symbol or code); amounts are never converted.
+    conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES ('currency', '€')")
+
+
 MIGRATIONS = [(1, _V1, _seed_v1), (2, "", _seed_v2), (3, _V3, _seed_noop), (4, "", _seed_v4),
-              (5, "", _seed_v5), (6, "", _seed_v6)]
+              (5, "", _seed_v5), (6, "", _seed_v6), (7, _V7, _seed_v7)]
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -315,3 +329,41 @@ def undismiss_proposal(conn: sqlite3.Connection, date: str, start: str, title: s
 def dismissed_on(conn: sqlite3.Connection, date: str) -> set[tuple[str, str]]:
     return {(r["start"], r["title"]) for r in conn.execute(
         "SELECT start, title FROM proposal_dismissals WHERE date = ?", (date,))}
+
+
+# ---- idempotent timer actions ------------------------------------------------------
+
+KEEP_REQUEST_IDS = 500
+
+
+def request_seen(conn: sqlite3.Connection, request_id: str) -> bool:
+    return conn.execute("SELECT 1 FROM timer_requests WHERE request_id = ?", (request_id,)).fetchone() is not None
+
+
+def remember_request(conn: sqlite3.Connection, request_id: str) -> None:
+    """Record an id a timer action succeeded for; only the newest KEEP_REQUEST_IDS are kept."""
+    conn.execute("INSERT OR IGNORE INTO timer_requests(request_id, created_at) VALUES (?, ?)",
+                 (request_id, _now()))
+    conn.execute("DELETE FROM timer_requests WHERE id <= (SELECT MAX(id) FROM timer_requests) - ?",
+                 (KEEP_REQUEST_IDS,))
+    conn.commit()
+
+
+# ---- clients and break types -----------------------------------------------------------
+
+def rename_client(conn: sqlite3.Connection, old: str, new: str, billable: bool | None) -> None:
+    """Rename a client (its `abbrev`, the value blocks carry) and/or set its billable flag, with the
+    blocks and the `default_client` setting following the rename, in one transaction. Existing
+    blocks keep their own `billable`."""
+    try:
+        if new != old:
+            conn.execute("UPDATE clients SET abbrev = ?, name = CASE WHEN name = ? THEN ? ELSE name END"
+                         " WHERE abbrev = ?", (new, old, new, old))
+            conn.execute("UPDATE blocks SET client = ? WHERE client = ?", (new, old))
+            conn.execute("UPDATE settings SET value = ? WHERE key = 'default_client' AND value = ?", (new, old))
+        if billable is not None:
+            conn.execute("UPDATE clients SET billable = ? WHERE abbrev = ?", (int(billable), new))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
