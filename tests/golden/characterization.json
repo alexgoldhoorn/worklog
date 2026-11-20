@@ -440,6 +440,10 @@
    "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
   ],
   "past_stop_min": 0,
+  "resume": {
+   "project": "alpha",
+   "type": "dev"
+  },
   "running_min": 30,
   "since": "09:00",
   "state": "working",
@@ -609,6 +613,10 @@
    "Overlap Mon 19 Oct: 09:00\u201313:00 dev and 12:00\u201314:00 meet \u00b7 both count in full"
   ],
   "past_stop_min": 40,
+  "resume": {
+   "project": "alpha",
+   "type": "dev"
+  },
   "running_min": 550,
   "since": "09:00",
   "state": "working",

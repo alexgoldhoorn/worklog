@@ -2,7 +2,7 @@ from worklog import db
 
 
 def test_fresh_db_has_schema_and_seeds(conn):
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert "eat" in db.break_types(conn) and "dev" not in db.break_types(conn)
     assert db.clients(conn)["ACME"]["name"] == "Acme"
@@ -23,6 +23,7 @@ def test_block_crud_and_ordering(conn):
 
 def test_open_block_is_newest_unclosed(conn):
     assert db.open_block(conn) is None
+    conn.execute("DROP INDEX idx_blocks_one_open")   # data from before the index may hold several
     db.insert_block(conn, db.Block(None, "2026-10-19", "17:00", None, None, "dev", "ACME", True))
     newest = db.insert_block(conn, db.Block(None, "2026-10-20", "09:00", None, None, "dev", "ACME", True))
     assert db.open_block(conn).id == newest
@@ -43,7 +44,7 @@ def test_connect_twice_is_idempotent(tmp_path):
 
 
 def test_schema_is_v3_with_dismissals(conn):
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
     db.dismiss_proposal(conn, "2026-10-20", "09:15", None)
     db.dismiss_proposal(conn, "2026-10-20", "09:15", None)  # idempotent
     assert db.dismissed_on(conn, "2026-10-20") == {("09:15", "")}
@@ -59,13 +60,13 @@ def test_v2_db_upgrades_to_v3(tmp_path):
     c.commit()
     c.close()
     c = db.connect(p)
-    assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 6
     assert c.execute("SELECT name FROM sqlite_master WHERE name = 'proposal_dismissals'").fetchone() is not None
     c.close()
 
 
 def test_schema_is_v4_with_pomo_break_type(conn):
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == 6
     assert "pomo" in db.break_types(conn)
 
 
@@ -77,6 +78,6 @@ def test_v3_db_upgrades_to_v4(tmp_path):
     c.commit()
     c.close()
     c = db.connect(p)
-    assert c.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert c.execute("PRAGMA user_version").fetchone()[0] == 6
     assert "pomo" in db.break_types(c)
     c.close()

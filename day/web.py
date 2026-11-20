@@ -2,6 +2,7 @@
 (Todoist, the annotation overlay) go to the balance queue; prep notes are stored directly."""
 import os
 import re
+import uuid
 from datetime import date as _date, timedelta
 
 from fastapi import APIRouter, Body, Depends, File, Request, UploadFile
@@ -90,9 +91,24 @@ def _item(body: dict) -> _slots.Item:
     kind = raw.get("kind") or "personal"
     if kind not in ("run", "gym", "meeting", "personal", "work"):
         raise ApiError("item.kind must be run, gym, meeting, personal or work")
-    prefer = [p for p in (raw.get("prefer") or []) if p in ("morning", "afternoon", "evening", "not_school_runs")]
-    return _slots.Item(title=title, minutes=minutes, kind=kind, travel_before=int(raw.get("travel_before") or 0),
-                       travel_after=int(raw.get("travel_after") or 0), prefer=prefer, ref=raw.get("ref") or body.get("ref"))
+    prefs = raw.get("prefer") or []
+    if not isinstance(prefs, list):
+        raise ApiError("item.prefer must be a list")
+    prefer = [p for p in prefs if p in ("morning", "afternoon", "evening", "not_school_runs")]
+    return _slots.Item(title=title, minutes=minutes, kind=kind, travel_before=_travel(raw, "travel_before"),
+                       travel_after=_travel(raw, "travel_after"), prefer=prefer, ref=raw.get("ref") or body.get("ref"))
+
+
+def _travel(raw: dict, key: str) -> int:
+    """Minutes of travel before/after: a missing value is 0; anything but a whole number 0-480 is a 400."""
+    v = raw.get(key) or 0
+    try:
+        minutes = int(v)
+    except (TypeError, ValueError):
+        raise ApiError(f"item.{key} must be a number of minutes") from None
+    if isinstance(v, bool) or not 0 <= minutes <= 480:
+        raise ApiError(f"item.{key} must be 0-480 minutes")
+    return minutes
 
 
 def _range(body: dict, today: _date) -> list[str]:
@@ -218,12 +234,21 @@ def post_find(request: Request, body: dict = Body(...)):
                                 note="from Find a date", state="approved", source="manual")
             out["blocks"].append(bdb.get_block(conn, bid))
         else:
-            td = body.get("todoist") or {}
+            td = obj(body.get("todoist"), "todoist")
             if not (td.get("project") and td.get("priority") and td.get("due_string")):
                 raise ApiError("todoist needs project, priority and due_string (the task policy)")
+            try:
+                priority = int(td["priority"])
+            except (TypeError, ValueError):
+                priority = 0
+            if isinstance(td["priority"], bool) or not 1 <= priority <= 4:
+                raise ApiError("todoist.priority must be a number from 1 to 4")
+            if not isinstance(td["project"], str) or not isinstance(td["due_string"], str):
+                raise ApiError("todoist.project and todoist.due_string must be strings")
+            labels = str_list(td.get("labels"), "todoist.labels")
             out["queued"].append(bdb.enqueue(conn, "todoist_add", {"content": item.title, "project": td["project"],
-                                                                   "priority": int(td["priority"]), "due_string": td["due_string"],
-                                                                   "labels": td.get("labels") or []},
+                                                                   "priority": priority, "due_string": td["due_string"],
+                                                                   "labels": labels},
                                              f"Todoist: {item.title}", flag_dir=flag))
         return out
     finally:
@@ -398,14 +423,42 @@ async def post_calendar_pdf(request: Request, file: UploadFile = File(...)):
     if not data.startswith(b"%PDF"):
         raise ApiError("that is not a PDF")
     safe = re.sub(r"[^A-Za-z0-9._ ()-]+", "_", name)[:120] or "calendar.pdf"
-    stamp = _date.today().isoformat()
-    target = os.path.join(inbox, f"{stamp}_{safe}")
+    stamp = request.app.state.clock().date().isoformat()   # the configured timezone, not the host's
     try:
-        with open(target, "wb") as f:
-            f.write(data)
+        saved = _save_into_inbox(inbox, f"{stamp}_{safe}", data)
     except OSError as e:
         raise ApiError(f"could not save into the inbox: {e}", 503)
-    return {"saved": os.path.basename(target), "note": "imported into the work calendar within 15 minutes"}
+    return {"saved": saved, "note": "imported into the work calendar within 15 minutes"}
+
+
+def _save_into_inbox(inbox: str, name: str, data: bytes) -> str:
+    """Write `data` as `name` in `inbox` without ever showing the import job a half-written file
+    or overwriting a different one: it goes to a temp name first, then is linked under the final
+    name; a taken name gets a numeric suffix (an identical file already there is simply kept)."""
+    tmp = os.path.join(inbox, f".upload-{uuid.uuid4().hex}.tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+    stem, ext = os.path.splitext(name)
+    try:
+        for n in range(0, 1000):
+            candidate = name if n == 0 else f"{stem}-{n}{ext}"
+            target = os.path.join(inbox, candidate)
+            try:
+                os.link(tmp, target)       # fails if the name exists: no overwrite
+                return candidate
+            except FileExistsError:
+                with open(target, "rb") as f:
+                    if f.read(len(data) + 1) == data:
+                        return candidate
+            except OSError:                # no hard links on this filesystem
+                if os.path.exists(target):
+                    continue
+                os.rename(tmp, target)
+                return candidate
+        raise OSError("too many files with that name in the inbox")
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 
 @router.post("/refresh")

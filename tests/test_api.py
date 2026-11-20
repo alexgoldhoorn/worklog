@@ -42,7 +42,10 @@ def test_edit_client_resets_billable_and_flags_are_informational(client, app):
     assert b["billable"] is True
     e = client.put(f"/api/blocks/{b['id']}", json={"client": None}).json()
     assert e["billable"] is None
-    client.put(f"/api/blocks/{b['id']}", json={"end": "08:30"})
+    assert client.put(f"/api/blocks/{b['id']}", json={"end": "08:30"}).status_code == 400   # new edits cannot do this
+    from worklog import db
+    c = db.connect(app.state.settings.db_path)   # an imported row can still be inverted
+    c.execute("UPDATE blocks SET end = '08:30' WHERE id = ?", (b["id"],)); c.commit(); c.close()
     day = client.get("/api/day/2026-10-20").json()
     assert day["blocks"][0]["flags"]["start_gt_end"] is True
     assert client.delete(f"/api/blocks/{b['id']}").status_code == 200
@@ -658,6 +661,7 @@ def test_single_open_block(client):
 def test_close_open_closes_all(conn):
     from worklog import timer
     from worklog.db import Block, insert_block
+    conn.execute("DROP INDEX idx_blocks_one_open")   # data from before the index may hold several
     insert_block(conn, Block(None, "2026-10-20", "08:00", None, None, "dev", None, None, "manual"))
     insert_block(conn, Block(None, "2026-10-20", "08:30", None, None, "dev", None, None, "manual"))
     timer.close_open(conn, datetime(2026, 10, 20, 9, 0))

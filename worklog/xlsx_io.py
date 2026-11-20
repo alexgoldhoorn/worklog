@@ -191,7 +191,7 @@ def _parse_csv(data: bytes, parsed: ParsedFile) -> None:
     text = data.decode("utf-8-sig")
     first = text.splitlines()[0] if text.strip() else ""
     delimiter = ";" if first.count(";") > first.count(",") else ","
-    rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    rows = [[_csv_unescape(c) for c in r] for r in csv.reader(io.StringIO(text), delimiter=delimiter)]
     if rows:
         _log_rows(rows[0], rows[1:], parsed)
 
@@ -208,42 +208,81 @@ def parse_rows(path_or_file, filename: str) -> ParsedFile:
 
 # ---- import ----------------------------------------------------------------
 
+def running_block_in_range(conn, parsed: ParsedFile) -> dict | None:
+    """The running block that a replace import of `parsed` would delete (its date lies inside the
+    file's date range), as {date, start, type}, else None."""
+    if not parsed.blocks:
+        return None
+    lo, hi = min(b.date for b in parsed.blocks), max(b.date for b in parsed.blocks)
+    ob = conn.execute("SELECT date, start, type FROM blocks WHERE end IS NULL AND date BETWEEN ? AND ?",
+                      (lo, hi)).fetchone()
+    return None if ob is None else {"date": ob["date"], "start": ob["start"], "type": ob["type"]}
+
+
 def import_blocks(conn, parsed: ParsedFile, mode: str) -> dict:
+    """Import in one transaction: an error anywhere rolls everything back, nothing is lost.
+    A row without `end` becomes the running block only if none is running (or being kept);
+    otherwise it is skipped and reported in `errors`."""
     if mode not in ("merge", "replace"):
         raise ValueError(f"unknown import mode: {mode!r}")
-    conn.executemany("INSERT OR IGNORE INTO break_types(name) VALUES (?)", [(t,) for t in parsed.break_types])
-    conn.executemany(
-        "INSERT INTO clients(abbrev, name) VALUES (?, ?)"
-        " ON CONFLICT(abbrev) DO UPDATE SET name = excluded.name", parsed.clients)
-    conn.commit()
     inserted = updated = deleted = 0
-    if mode == "replace" and parsed.blocks:
-        lo, hi = min(b.date for b in parsed.blocks), max(b.date for b in parsed.blocks)
-        deleted = conn.execute("DELETE FROM blocks WHERE date BETWEEN ? AND ?", (lo, hi)).rowcount
+    errors = list(parsed.errors)
+    deleted_running = None
+    try:
+        if not conn.in_transaction:
+            conn.execute("BEGIN")
+        conn.executemany("INSERT OR IGNORE INTO break_types(name) VALUES (?)", [(t,) for t in parsed.break_types])
+        conn.executemany(
+            "INSERT INTO clients(abbrev, name) VALUES (?, ?)"
+            " ON CONFLICT(abbrev) DO UPDATE SET name = excluded.name", parsed.clients)
+        if mode == "replace" and parsed.blocks:
+            lo, hi = min(b.date for b in parsed.blocks), max(b.date for b in parsed.blocks)
+            deleted_running = running_block_in_range(conn, parsed)
+            deleted = conn.execute("DELETE FROM blocks WHERE date BETWEEN ? AND ?", (lo, hi)).rowcount
+        for b in parsed.blocks:
+            b.source = "import"
+            existing = None
+            if mode == "merge":
+                existing = conn.execute("SELECT id FROM blocks WHERE date = ? AND start = ? ORDER BY id LIMIT 1",
+                                        (b.date, b.start)).fetchone()
+            if b.end is None:
+                other = conn.execute("SELECT id FROM blocks WHERE end IS NULL AND id IS NOT ? LIMIT 1",
+                                     (existing["id"] if existing else None,)).fetchone()
+                if other:
+                    errors.append(f"{b.date} {b.start}: another block is already running, row skipped")
+                    continue
+            if existing:
+                db.update_block(conn, existing["id"], _commit=False, end=b.end, project=b.project, type=b.type,
+                                client=b.client, billable=b.billable, source="import")
+                updated += 1
+            else:
+                db.insert_block(conn, b, commit=False)
+                inserted += 1
         conn.commit()
-    for b in parsed.blocks:
-        b.source = "import"
-        existing = None
-        if mode == "merge":
-            existing = conn.execute("SELECT id FROM blocks WHERE date = ? AND start = ? ORDER BY id LIMIT 1",
-                                    (b.date, b.start)).fetchone()
-        if existing:
-            db.update_block(conn, existing["id"], end=b.end, project=b.project, type=b.type,
-                            client=b.client, billable=b.billable, source="import")
-            updated += 1
-        else:
-            db.insert_block(conn, b)
-            inserted += 1
+    except BaseException:
+        conn.rollback()
+        raise
     return {"inserted": inserted, "updated": updated, "deleted": deleted,
-            "skipped": parsed.skipped, "errors": list(parsed.errors)}
+            "deleted_running": deleted_running, "skipped": parsed.skipped, "errors": errors}
 
 
 def import_workdays(conn, parsed: ParsedFile, holidays: dict[str, str]) -> int:
+    """Store the weekly expectations in one transaction (all or none)."""
+    try:
+        stored = _import_workdays(conn, parsed, holidays)
+        conn.commit()
+        return stored
+    except BaseException:
+        conn.rollback()
+        raise
+
+
+def _import_workdays(conn, parsed: ParsedFile, holidays: dict[str, str]) -> int:
     stored = 0
 
     def put(day, hours, sick, reason):
         nonlocal stored
-        db.set_expectation(conn, db.DayExpectation(day, hours, sick, reason, "import"))
+        db.set_expectation(conn, db.DayExpectation(day, hours, sick, reason, "import"), commit=False)
         stored += 1
 
     for w in parsed.workdays:
@@ -310,8 +349,28 @@ def export_rows(conn, start: str, end: str, holidays) -> list[dict]:
     return out
 
 
+_FORMULA_START = re.compile(r"'*[=+\-@]")
+_CSV_QUOTED = re.compile(r"'+[=+\-@]")
+
+
 def _csv_value(v):
-    return ("TRUE" if v else "FALSE") if isinstance(v, bool) else v
+    if isinstance(v, bool):
+        return "TRUE" if v else "FALSE"
+    if isinstance(v, str) and _FORMULA_START.match(v):
+        return "'" + v   # a spreadsheet must not read the cell as a formula; import removes one quote
+    return v
+
+
+def _csv_unescape(v: str) -> str:
+    return v[1:] if _CSV_QUOTED.match(v) else v
+
+
+def _append(ws, values) -> None:
+    """Append a row; text that starts like a formula is stored as a string cell, unchanged."""
+    ws.append(values)
+    for cell in ws[ws.max_row]:
+        if isinstance(cell.value, str) and cell.value[:1] in ("=", "+", "-", "@"):
+            cell.data_type = "s"
 
 
 def export_csv(rows: list[dict]) -> bytes:
@@ -327,12 +386,12 @@ def export_xlsx(conn, rows: list[dict], start: str, end: str, holidays, today: _
     wb = openpyxl.Workbook()
     log = wb.active
     log.title = "log"
-    log.append(EXPORT_COLUMNS)
+    _append(log, EXPORT_COLUMNS)
     for r in rows:
-        log.append([r[c] for c in EXPORT_COLUMNS])
+        _append(log, [r[c] for c in EXPORT_COLUMNS])
 
     wd = wb.create_sheet("workday")
-    wd.append(["year", "week", "year-week", "workdays", "workhours", "sick hours", "comment"])
+    _append(wd, ["year", "week", "year-week", "workdays", "workhours", "sick hours", "comment"])
     first_day = expect.first_logged_day(conn)
     for g in reports.grouped(conn, "week", start, end, holidays, today):
         year, week = g["key"].split("-")
@@ -341,24 +400,24 @@ def export_xlsx(conn, rows: list[dict], start: str, end: str, holidays, today: _
         for e in expect.expected_between(conn, wstart, wend, holidays, first_day).values():
             if e.reason and e.reason not in reasons:
                 reasons.append(e.reason)
-        wd.append([int(year), int(week), g["key"], g["expected_h"] / 7, g["expected_h"],
+        _append(wd, [int(year), int(week), g["key"], g["expected_h"] / 7, g["expected_h"],
                    g["sick_h"], "; ".join(reasons)])
 
     sm = wb.create_sheet("summary")
-    sm.append(SUMMARY_COLUMNS)
+    _append(sm, SUMMARY_COLUMNS)
     for g in reports.grouped(conn, "week", start, end, holidays, today):
-        sm.append([g["key"], g["worked_h"], g["expected_h"], g["extra_h"], g["extra_alt_h"],
+        _append(sm, [g["key"], g["worked_h"], g["expected_h"], g["extra_h"], g["extra_alt_h"],
                    g["days_worked"], g["days_equiv"], g["billable_h"],
                    "" if g["amount"] is None else g["amount"]])
 
     meta = wb.create_sheet("meta")
-    meta.append(["break types"])
+    _append(meta, ["break types"])
     for t in sorted(db.break_types(conn)):
-        meta.append([t])
+        _append(meta, [t])
     cl = wb.create_sheet("clients")
-    cl.append(["Abrev", "Name"])
+    _append(cl, ["Abrev", "Name"])
     for abbrev, row in sorted(db.clients(conn).items()):
-        cl.append([abbrev, row["name"]])
+        _append(cl, [abbrev, row["name"]])
 
     buf = io.BytesIO()
     wb.save(buf)

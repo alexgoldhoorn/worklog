@@ -90,8 +90,18 @@ def _seed_v5(conn: sqlite3.Connection) -> None:
     conn.execute("INSERT OR IGNORE INTO settings(key, value) VALUES ('calendar_auto_add', '')")
 
 
+def _seed_v6(conn: sqlite3.Connection) -> None:
+    # At most one running block, enforced by the store. A database that already holds several
+    # keeps the newest running; the others end at their own start, flagged for review.
+    rows = conn.execute("SELECT id FROM blocks WHERE end IS NULL ORDER BY date, start, id").fetchall()
+    for r in rows[:-1]:
+        conn.execute("UPDATE blocks SET end = start, auto_closed = 1, updated_at = ? WHERE id = ?",
+                     (_now(), r["id"]))
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_one_open ON blocks((1)) WHERE end IS NULL")
+
+
 MIGRATIONS = [(1, _V1, _seed_v1), (2, "", _seed_v2), (3, _V3, _seed_noop), (4, "", _seed_v4),
-              (5, "", _seed_v5)]
+              (5, "", _seed_v5), (6, "", _seed_v6)]
 
 
 def migrate(conn: sqlite3.Connection) -> None:
@@ -158,7 +168,7 @@ def _block(row: sqlite3.Row) -> Block:
     )
 
 
-def insert_block(conn: sqlite3.Connection, b: Block) -> int:
+def insert_block(conn: sqlite3.Connection, b: Block, *, commit: bool = True) -> int:
     now = _now()
     cur = conn.execute(
         "INSERT INTO blocks(date, start, end, project, type, client, billable, source,"
@@ -166,14 +176,15 @@ def insert_block(conn: sqlite3.Connection, b: Block) -> int:
         (b.date, b.start, b.end, b.project, b.type, b.client, _to_int(b.billable),
          b.source, int(bool(b.auto_closed)), now, now),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.lastrowid
 
 
 _BLOCK_FIELDS = {"date", "start", "end", "project", "type", "client", "billable", "source", "auto_closed"}
 
 
-def update_block(conn: sqlite3.Connection, block_id: int, **fields) -> Block:
+def update_block(conn: sqlite3.Connection, block_id: int, _commit: bool = True, **fields) -> Block:
     """Change the named fields. Setting `end` clears `auto_closed` unless the caller sets it,
     so a block the user fixed no longer shows up as needing review."""
     unknown = set(fields) - _BLOCK_FIELDS
@@ -187,7 +198,8 @@ def update_block(conn: sqlite3.Connection, block_id: int, **fields) -> Block:
     fields["updated_at"] = _now()
     sets = ", ".join(f"{k} = ?" for k in fields)
     conn.execute(f"UPDATE blocks SET {sets} WHERE id = ?", (*fields.values(), block_id))
-    conn.commit()
+    if _commit:
+        conn.commit()
     return get_block(conn, block_id)
 
 
@@ -241,10 +253,20 @@ def setting(conn: sqlite3.Connection, key: str) -> str:
 
 
 def set_setting(conn: sqlite3.Connection, key: str, value: str) -> None:
-    conn.execute(
-        "INSERT INTO settings(key, value) VALUES (?, ?)"
-        " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
-    conn.commit()
+    set_settings(conn, {key: value})
+
+
+def set_settings(conn: sqlite3.Connection, values: dict[str, str]) -> None:
+    """Store several settings in one transaction: all or none."""
+    try:
+        for key, value in values.items():
+            conn.execute(
+                "INSERT INTO settings(key, value) VALUES (?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _expectation(r: sqlite3.Row) -> DayExpectation:
@@ -256,13 +278,14 @@ def get_expectation(conn: sqlite3.Connection, date: str) -> DayExpectation | Non
     return _expectation(r) if r else None
 
 
-def set_expectation(conn: sqlite3.Connection, e: DayExpectation) -> None:
+def set_expectation(conn: sqlite3.Connection, e: DayExpectation, *, commit: bool = True) -> None:
     conn.execute(
         "INSERT INTO day_expectations(date, expected_h, sick_h, reason, source) VALUES (?,?,?,?,?)"
         " ON CONFLICT(date) DO UPDATE SET expected_h=excluded.expected_h, sick_h=excluded.sick_h,"
         " reason=excluded.reason, source=excluded.source",
         (e.date, e.expected_h, e.sick_h, e.reason, e.source))
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def delete_expectation(conn: sqlite3.Connection, date: str) -> None:

@@ -57,14 +57,13 @@ def expected_between(conn, start: str, end: str, holidays, first_day: str | None
     stored = db.expectations_between(conn, start, end)
     workday_h = default_workday_h(conn)
     out: dict[str, db.DayExpectation] = {}
-    d, last = _date.fromisoformat(start), _date.fromisoformat(end)
-    while d <= last:
-        key = d.isoformat()
+    first, last = _date.fromisoformat(start), _date.fromisoformat(end)
+    for i in range((last - first).days + 1):   # indexed, so 9999-12-31 cannot overflow the date type
+        key = (first + timedelta(days=i)).isoformat()
         e = stored.get(key) or _default(key, holidays, workday_h)
         if first_day is not None and key < first_day:
             e = db.DayExpectation(key, 0, e.sick_h, e.reason, "before-first")
         out[key] = e
-        d += timedelta(days=1)
     return out
 
 

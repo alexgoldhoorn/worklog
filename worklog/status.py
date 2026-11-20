@@ -75,6 +75,12 @@ def last_work_block(conn, now: datetime, bt) -> Block | None:
     return max(prev, key=lambda b: (b.date, b.start), default=None)
 
 
+def resume(conn, now: datetime, bt) -> dict | None:
+    """What a Start continues: the last work block's {type, project}, or None."""
+    last = last_work_block(conn, now, bt)
+    return {"type": last.type, "project": last.project} if last else None
+
+
 def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     """Compact status for small clients (the Garmin widget): no week/month/net series."""
     today = now.date().isoformat()
@@ -82,14 +88,13 @@ def brief(conn, now: datetime, holidays, notices, settings) -> dict:
     bt = db.break_types(conn)
     blk = st["block"]
     running = live_min(st, now, now.date())
-    last = last_work_block(conn, now, bt)
     return {"state": st["state"], "date": st["date"], "since": st["since"], "elapsed_s": st["elapsed_s"],
             # the server's wall clock, so a client can stamp `at` on actions it queues while offline
             "now": now.replace(microsecond=0).isoformat(),
             "type": blk["type"] if blk else None, "project": blk["project"] if blk else None,
             "today_work_h": round(reports.day_totals(conn, today, bt)["work_h"] + running / 60, 2),
-            "resume": {"type": last.type, "project": last.project} if last else None,
-            # break types for the watch's Pause picker: eat first, then by recent use
+            "resume": resume(conn, now, bt),
+            # break types for the watch's Pause picker: the default break first, then by recent use
             "breaks": chips(conn, now.date(), bt)["break_types"]}
 
 
@@ -141,9 +146,11 @@ def chips(conn, today: _date, break_types) -> dict:
     def top(d):
         return [k for k, _ in sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[:8]]
 
+    default_break = db.setting(conn, "default_break_type")
+
     return {"types": top(types), "projects": top(projects),
-            # eat first, then the break types by recent use, then the rest alphabetically
-            "break_types": sorted(break_types, key=lambda n: (n != "eat", -breaks.get(n, 0), n))}
+            # the default break type first, then the break types by recent use, then alphabetically
+            "break_types": sorted(break_types, key=lambda n: (n != default_break, -breaks.get(n, 0), n))}
 
 
 def build(conn, now: datetime, holidays, notices, settings) -> dict:
@@ -181,4 +188,5 @@ def build(conn, now: datetime, holidays, notices, settings) -> dict:
     out["overlap_details"] = det
     out["notices"] = notices + ([cal_warn] if cal_warn else [])
     out["chips"] = chips(conn, t, bt)
+    out["resume"] = resume(conn, now, bt)
     return out

@@ -42,7 +42,8 @@ def close_open(conn, now: datetime) -> Block | None:
 
     A late-night block (dated yesterday, acted on before LATE_NIGHT_END, so auto_close left it
     open) is split at midnight: yesterday's part ends 23:59, today's part runs 00:00 to now,
-    neither flagged. Any older block is closed at 23:59 and flagged auto_closed."""
+    neither flagged when the block began at or after `auto_close_time`, both flagged when it
+    began earlier. Any older block is closed at 23:59 and flagged auto_closed."""
     result = None
     for r in conn.execute("SELECT id FROM blocks WHERE end IS NULL ORDER BY date, start, id").fetchall():
         result = _close_one(conn, now, db.get_block(conn, r["id"]))
@@ -54,11 +55,14 @@ def _close_one(conn, now: datetime, ob: Block) -> Block | None:
     if ob.date < today:
         yesterday = (now.date() - timedelta(days=1)).isoformat()
         if ob.date == yesterday and now.time() < LATE_NIGHT_END:
-            db.update_block(conn, ob.id, end="23:59", auto_closed=False)
+            # A block that began before the auto-close time was probably forgotten, not worked
+            # through the night: both parts are flagged so the user confirms them.
+            flag = ob.start < db.setting(conn, "auto_close_time")
+            db.update_block(conn, ob.id, end="23:59", auto_closed=flag)
             if model.minutes("00:00", hhmm) == 0:
                 return db.get_block(conn, ob.id)
             part = Block(None, today, "00:00", hhmm, ob.project, ob.type, ob.client,
-                         ob.billable, ob.source)
+                         ob.billable, ob.source, flag)
             part.id = db.insert_block(conn, part)
             return db.get_block(conn, part.id)
         return db.update_block(conn, ob.id, end="23:59", auto_closed=True)

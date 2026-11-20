@@ -11,10 +11,10 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import config, db
-from ..auth import BasicAuth
+from ..auth import BasicAuth, SecurityHeaders
 from ..csrf import CrossSiteGuard
 from ..config import Settings
-from .api import ApiError, router
+from .api import ApiError, MAX_UPLOAD_BYTES, router
 from .pages import router as pages_router
 from balance.web.api import router as balance_router
 from day.web import router as day_router
@@ -65,6 +65,12 @@ def create_app(settings: Settings) -> FastAPI:
     async def _http(_request, exc: StarletteHTTPException):
         return JSONResponse({"error": str(exc.detail)}, status_code=exc.status_code)
 
+    @app.exception_handler(Exception)
+    async def _unexpected(request, exc: Exception):
+        logging.getLogger(__name__).error("unhandled error on %s %s", request.method, request.url.path,
+                                          exc_info=(type(exc), exc, exc.__traceback__))
+        return JSONResponse({"error": "internal error"}, status_code=500)
+
     app.include_router(router)
     app.include_router(pages_router)
     app.include_router(balance_router)
@@ -80,6 +86,20 @@ def create_app(settings: Settings) -> FastAPI:
         if request.url.path.startswith("/static/") or "text/html" in response.headers.get("content-type", ""):
             response.headers.setdefault("Cache-Control", "no-cache")
         return response
+
+    @app.middleware("http")
+    async def _upload_limit(request, call_next):
+        # Refuse an oversized import before its body is read (the handler checks the real size too).
+        if request.url.path == "/api/import" and request.method == "POST":
+            try:
+                declared = int(request.headers.get("content-length", "0"))
+            except ValueError:
+                declared = 0
+            if declared > MAX_UPLOAD_BYTES + 64 * 1024:
+                return JSONResponse({"error": f"file too large ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB max)"},
+                                    status_code=413)
+        return await call_next(request)
+
     @app.middleware("http")
     async def _drop_balance_cache(request, call_next):
         # Any write may change a closed week; the stamp check catches writes from other processes.
@@ -94,6 +114,7 @@ def create_app(settings: Settings) -> FastAPI:
     else:
         logging.getLogger(__name__).warning(
             "authentication is off: set WORKLOG_AUTH_USER and WORKLOG_AUTH_PASSWORD_HASH to require a login")
+    app.add_middleware(SecurityHeaders)   # outermost: the 401 and the 413 carry the headers too
     return app
 
 
