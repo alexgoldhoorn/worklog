@@ -12,7 +12,8 @@ ApplicationWindow {
     visible: false   // WindowState shows it once the saved geometry is applied (and not for --minimized)
     title: qsTr("Worklog")
 
-    Material.theme: Material.System
+    // the palette (Api) and the Material controls follow the same scheme: a mismatch left white labels on white buttons
+    Material.theme: Api.dark ? Material.Dark : Material.Light
     Material.accent: Api.accent
     Material.background: Api.bg
     color: Api.bg
@@ -21,10 +22,9 @@ ApplicationWindow {
     readonly property var trayCtl: trayLoader.item
     readonly property bool hidesToTray: Api.trayCapable && Api.trayKeep && !!trayCtl && trayCtl.available
     onClosing: close => {
-        // Android's back key: from Week, Pomodoro or a screen of the More menu it leads back to the Timer first
-        if (Qt.platform.os === "android" && window.current !== window.navTimer) {
+        // Android's back key, if it ever arrives as a close request (the Back key handling below is the normal path)
+        if (Qt.platform.os === "android" && window.goBack()) {
             close.accepted = false
-            window.current = window.navTimer
             return
         }
         if (hidesToTray) {
@@ -34,6 +34,39 @@ ApplicationWindow {
             Qt.quit()
         }
     }
+    // ---- the Back key (Android) ---------------------------------------------------------------
+    // Qt 6.12 delivers Back to QML as Key_Back and does not call onClosing for it. From Week, Pomodoro or a
+    // screen of the More menu it leads to the Timer; on the Timer the system gets it (home screen).
+    // True when it moved somewhere. The tests call it.
+    function goBack() {
+        if (window.current === window.navTimer)
+            return false
+        window.current = window.navTimer
+        return true
+    }
+    // an open menu, dialog or picker holds the focus and closes itself on Back: the key is left to it
+    function inOverlay(item) {
+        for (let it = item; it; it = it.parent)
+            if (it === keyHost.Overlay.overlay)
+                return true
+        return false
+    }
+    readonly property bool popupFocus: window.activeFocusItem ? window.inOverlay(window.activeFocusItem) : false
+    // A shortcut sees the key wherever the focus is (on a button of the tab bar, or nowhere), so it comes
+    // first; the focus scope around the pages (keyHost, below) is the second net.
+    Shortcut {
+        id: backShortcut
+        sequences: ["Back"]
+        context: Qt.ApplicationShortcut
+        enabled: Qt.platform.os === "android" && window.current !== window.navTimer && !window.popupFocus
+        onActivated: window.goBack()
+    }
+    // Taps on the header and the tab bar must not take the focus from the pages (Android only: with a
+    // desktop keyboard one tabs through them)
+    readonly property int tapFocus: Qt.platform.os === "android" ? Qt.NoFocus : Qt.StrongFocus
+    // a lost focus (a popup closed, a hidden page) comes back to the pages, where the Back key is handled
+    onActiveFocusItemChanged: if (!activeFocusItem && visible) keyHost.forceActiveFocus()
+
     Loader {
         id: trayLoader
         active: Api.trayCapable
@@ -53,6 +86,15 @@ ApplicationWindow {
 
     // Android draws the app under the status and navigation bars: keep the tabs and pages clear of them
     readonly property var safe: SafeArea.margins
+
+    // The activity does not resize or pan for the keyboard (windowSoftInputMode adjustNothing), so the pages
+    // end where the keyboard starts: how far it reaches into the content area, 0 when it is down.
+    // Qt reports its rectangle in screen coordinates: mapFromGlobal gives the window's.
+    function overlap(contentH, kbTop) { return kbTop > 0 && kbTop < contentH ? contentH - kbTop : 0 }
+    // qmllint disable missing-property
+    readonly property real keyboardOverlap: !Qt.inputMethod.visible || Qt.inputMethod.keyboardRectangle.height <= 0 ? 0
+        : overlap(window.contentItem.height, window.contentItem.mapFromGlobal(0, Qt.inputMethod.keyboardRectangle.y).y)
+    // qmllint enable missing-property
 
     // ---- navigation -----------------------------------------------------------
     // Positions in the StackLayout below. The first three have a button at the bottom; the rest are
@@ -85,43 +127,39 @@ ApplicationWindow {
             anchors.rightMargin: window.safe.right + 4
             spacing: 0
 
-            ToolButton {
+            AppIconButton {
                 visible: window.inMore
                 text: "‹"
-                font.pixelSize: 24
-                implicitWidth: 48
-                Accessible.name: qsTr("Back to the Timer")
-                Accessible.role: Accessible.Button
+                focusPolicy: window.tapFocus
+                name: qsTr("Back to the Timer")
                 onClicked: window.current = window.navTimer
             }
             // the Today screen: step a day, or tap the date for the calendar
-            ToolButton {
+            AppIconButton {
                 visible: window.current === window.navTimer
                 text: "‹"
-                font.pixelSize: 24
-                implicitWidth: 48
-                Accessible.name: qsTr("Previous day")
-                Accessible.role: Accessible.Button
+                focusPolicy: window.tapFocus
+                name: qsTr("Previous day")
                 onClicked: todayScreen.step(-1)
             }
-            ToolButton {
+            AppButton {
+                flat: true
+                flatInk: Api.fg
                 visible: window.current === window.navTimer
                 text: todayScreen.heading
-                font.pixelSize: 16
                 font.weight: Font.DemiBold
                 font.capitalization: Font.MixedCase
                 Layout.fillWidth: true
+                focusPolicy: window.tapFocus
                 Accessible.name: qsTr("Pick a date, now %1").arg(todayScreen.date)
                 Accessible.role: Accessible.Button
                 onClicked: todayScreen.pickDate()
             }
-            ToolButton {
+            AppIconButton {
                 visible: window.current === window.navTimer
                 text: "›"
-                font.pixelSize: 24
-                implicitWidth: 48
-                Accessible.name: qsTr("Next day")
-                Accessible.role: Accessible.Button
+                focusPolicy: window.tapFocus
+                name: qsTr("Next day")
                 onClicked: todayScreen.step(1)
             }
             Label {
@@ -134,21 +172,31 @@ ApplicationWindow {
                 leftPadding: window.inMore ? 4 : 12
                 Layout.fillWidth: true
             }
-            ToolButton {
+            AppIconButton {
                 text: "⋮"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("More screens")
-                Accessible.role: Accessible.ButtonMenu
+                focusPolicy: window.tapFocus
+                name: qsTr("More screens")
                 onClicked: moreMenu.open()
                 Menu {
                     id: moreMenu
                     y: parent.height
+                    // an opaque themed panel (the default one let the page show through) and rows of one height
+                    background: Rectangle {
+                        implicitWidth: 240
+                        color: Api.card
+                        border.color: Api.line
+                        radius: 6
+                    }
                     MoreItem { text: window.titles[window.navDay]; iconName: window.icons[window.navDay]; onTriggered: window.current = window.navDay }
                     MoreItem { text: window.titles[window.navReports]; iconName: window.icons[window.navReports]; onTriggered: window.current = window.navReports }
                     MoreItem { text: window.titles[window.navExpected]; iconName: window.icons[window.navExpected]; onTriggered: window.current = window.navExpected }
                     MoreItem { text: window.titles[window.navFind]; iconName: window.icons[window.navFind]; onTriggered: window.current = window.navFind }
-                    MenuSeparator {}
+                    MenuSeparator {
+                        padding: 0
+                        topPadding: 4
+                        bottomPadding: 4
+                        contentItem: Rectangle { implicitHeight: 1; color: Api.line }
+                    }
                     MoreItem { text: window.titles[window.navSettings]; iconName: window.icons[window.navSettings]; onTriggered: window.current = window.navSettings }
                 }
             }
@@ -197,6 +245,11 @@ ApplicationWindow {
     component MoreItem: MenuItem {
         id: more
         property string iconName
+        implicitHeight: 48
+        topPadding: 0
+        bottomPadding: 0
+        leftPadding: 16
+        rightPadding: 16
         contentItem: RowLayout {
             spacing: 12
             NavIcon { name: more.iconName; color: Api.muted; size: 20 }
@@ -212,6 +265,7 @@ ApplicationWindow {
         implicitHeight: 56
         Layout.fillWidth: true
         Layout.preferredWidth: 1
+        focusPolicy: Qt.platform.os === "android" ? Qt.NoFocus : Qt.StrongFocus
         Accessible.name: text
         Accessible.role: Accessible.PageTab
         contentItem: Item {
@@ -280,24 +334,26 @@ ApplicationWindow {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 text: qsTr("Retry now")
                 flat: true
+                focusPolicy: window.tapFocus
                 Accessible.name: text
                 onClicked: Api.flushQueue()
             }
-            Button {
+            AppButton {
                 text: qsTr("Discard")
                 flat: true
+                destructive: true
+                focusPolicy: window.tapFocus
                 Accessible.name: qsTr("Discard the waiting actions")
                 onClicked: discardDialog.open()
             }
         }
     }
-    Dialog {
+    AppDialog {
         id: discardDialog
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         title: qsTr("Discard waiting actions?")
         width: Math.min(parent ? parent.width - 32 : 320, 400)
@@ -310,44 +366,63 @@ ApplicationWindow {
         onAccepted: Api.dropQueue("")
     }
 
-    StackLayout {
-        id: stack
+    // every page sits inside this scope, so a key nobody on a page wants (Back) ends up here
+    FocusScope {
+        id: keyHost
         anchors.top: queueStrip.bottom
         anchors.bottom: parent.bottom
+        anchors.bottomMargin: window.keyboardOverlap
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.leftMargin: window.safe.left
         anchors.rightMargin: window.safe.right
-        currentIndex: window.current
-        // a hidden page's text field keeps the focus and would swallow the next page's shortcuts
-        onCurrentIndexChanged: stack.forceActiveFocus()
-        TodayPage { id: todayScreen }
-        WeekPage {
-            onAddToCalendar: {
-                findPage.mode = "add"
-                window.current = window.navFind
+        focus: true
+        property bool backHandled: false
+        Keys.onBackPressed: event => {
+            keyHost.backHandled = window.goBack()
+            event.accepted = keyHost.backHandled
+        }
+        Keys.onReleased: event => {
+            if (event.key === Qt.Key_Back && keyHost.backHandled) {
+                keyHost.backHandled = false
+                event.accepted = true
             }
         }
-        PomodoroPage {
-            onAttention: {
-                window.current = window.navPomodoro
-                window.alert(0)   // flash the taskbar entry until the window is activated
+
+        StackLayout {
+            id: stack
+            anchors.fill: parent
+            currentIndex: window.current
+            // a hidden page's text field keeps the focus and would swallow the next page's shortcuts
+            onCurrentIndexChanged: stack.forceActiveFocus()
+            TodayPage { id: todayScreen }
+            WeekPage {
+                onAddToCalendar: {
+                    findPage.mode = "add"
+                    window.current = window.navFind
+                }
             }
+            PomodoroPage {
+                onAttention: {
+                    window.current = window.navPomodoro
+                    window.alert(0)   // flash the taskbar entry until the window is activated
+                }
+            }
+            PlannerPage {
+                onAddRequested: {
+                    findPage.mode = "add"
+                    window.current = window.navFind
+                }
+                onFindRequested: {
+                    findPage.mode = "find"
+                    window.current = window.navFind
+                }
+            }
+            ReportsPage {}
+            ExpectedPage {}
+            FindPage { id: findPage }
+            SettingsPage {}
         }
-        PlannerPage {
-            onAddRequested: {
-                findPage.mode = "add"
-                window.current = window.navFind
-            }
-            onFindRequested: {
-                findPage.mode = "find"
-                window.current = window.navFind
-            }
-        }
-        ReportsPage {}
-        ExpectedPage {}
-        FindPage { id: findPage }
-        SettingsPage {}
     }
 
     // Android, "Require fingerprint/face to open": covers everything until Biometric confirms
@@ -403,7 +478,7 @@ ApplicationWindow {
                 horizontalAlignment: Text.AlignHCenter
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 text: qsTr("Unlock")
                 highlighted: true
                 Accessible.name: text

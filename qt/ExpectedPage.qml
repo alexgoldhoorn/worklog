@@ -146,12 +146,9 @@ ScrollView {
             Layout.topMargin: 12
             Layout.leftMargin: 12
             Layout.rightMargin: 12
-            ToolButton {
+            AppIconButton {
                 text: "‹"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("Previous month")
-                Accessible.role: Accessible.Button
+                name: qsTr("Previous month")
                 onClicked: page.shiftMonth(-1)
             }
             Label {
@@ -161,12 +158,9 @@ ScrollView {
                 horizontalAlignment: Text.AlignHCenter
                 Layout.fillWidth: true
             }
-            ToolButton {
+            AppIconButton {
                 text: "›"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("Next month")
-                Accessible.role: Accessible.Button
+                name: qsTr("Next month")
                 onClicked: page.shiftMonth(1)
             }
         }
@@ -184,6 +178,8 @@ ScrollView {
                 text: qsTr("Defaults are greyed; edited days are marked and can be reset")
                 font.capitalization: Font.MixedCase
                 font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
 
             RowLayout {   // column heads
@@ -345,17 +341,13 @@ ScrollView {
                                 Layout.columnSpan: page.narrow ? 4 : 5
                                 Layout.fillWidth: true
                             }
-                            ToolButton {
+                            AppIconButton {
                                 text: "↺"
                                 enabled: dr.stored
                                 opacity: dr.stored ? 1 : 0
-                                implicitWidth: 36
                                 Layout.row: 0
                                 Layout.column: page.narrow ? 3 : 4
-                                Accessible.name: qsTr("Back to default")
-                                Accessible.role: Accessible.Button
-                                ToolTip.visible: hovered
-                                ToolTip.text: qsTr("Back to default")
+                                name: qsTr("Back to default")
                                 onClicked: Api.request("DELETE", "/api/days/" + rowLoader.date, undefined, null, e => page.error = e)
                             }
                         }

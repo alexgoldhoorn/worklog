@@ -40,11 +40,11 @@ Popup {
             wrapMode: Text.Wrap
             Layout.fillWidth: true
         }
-        Button {
+        AppButton {
             visible: bar.undoFn !== null
             text: bar.actionText
             flat: true
-            Material.foreground: Material.color(Material.Green, Material.Shade300)
+            flatInk: Material.color(Material.Green, Material.Shade300)
             onClicked: {
                 bar.close()
                 bar.undoFn()

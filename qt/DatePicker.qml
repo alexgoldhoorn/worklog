@@ -85,6 +85,9 @@ Popup {
         close()
     }
 
+    // qmllint disable missing-property
+    onAboutToShow: Qt.inputMethod.hide()   // opened from a field: the keyboard would cover the calendar
+    // qmllint enable missing-property
     onOpened: contentItem.forceActiveFocus()
 
     contentItem: ColumnLayout {
@@ -102,11 +105,10 @@ Popup {
 
         RowLayout {
             Layout.fillWidth: true
-            ToolButton {
+            AppIconButton {
                 text: "‹"
                 focusPolicy: Qt.NoFocus
-                Accessible.name: qsTr("Previous month")
-                Accessible.role: Accessible.Button
+                name: qsTr("Previous month")
                 onClicked: picker.stepMonth(-1)
             }
             Label {
@@ -115,11 +117,10 @@ Popup {
                 font.weight: Font.DemiBold
                 text: new Date(picker.viewYear, picker.viewMonth, 1).toLocaleDateString(Api.locale, "MMMM yyyy")
             }
-            ToolButton {
+            AppIconButton {
                 text: "›"
                 focusPolicy: Qt.NoFocus
-                Accessible.name: qsTr("Next month")
-                Accessible.role: Accessible.Button
+                name: qsTr("Next month")
                 onClicked: picker.stepMonth(1)
             }
         }
@@ -198,14 +199,14 @@ Popup {
 
         RowLayout {
             Layout.fillWidth: true
-            Button {
+            AppButton {
                 text: qsTr("Today")
                 flat: true
                 focusPolicy: Qt.NoFocus
                 onClicked: picker.pick(Api.today())
             }
             Item { Layout.fillWidth: true }
-            Button {
+            AppButton {
                 text: qsTr("Close")
                 flat: true
                 focusPolicy: Qt.NoFocus

@@ -27,7 +27,7 @@ ScrollView {
                 return  // a slower answer for a day we already left
             page.day = d
             page.error = ""
-        }, e => page.error = e)
+        }, e => { if (page) page.error = e })
     }
 
     onDateChanged: {
@@ -91,13 +91,10 @@ ScrollView {
 
                 RowLayout {
                     Layout.fillWidth: true
-                    ToolButton {
+                    AppIconButton {
                         visible: page.showArrows
                         text: "‹"
-                        font.pixelSize: 24
-                        implicitWidth: 48
-                        Accessible.name: qsTr("Previous day")
-                        Accessible.role: Accessible.Button
+                        name: qsTr("Previous day")
                         onClicked: page.date = Api.addDays(page.date, -1)
                     }
                     ColumnLayout {   // tap the date to pick any day
@@ -124,13 +121,10 @@ ScrollView {
                             Layout.fillWidth: true
                         }
                     }
-                    ToolButton {
+                    AppIconButton {
                         visible: page.showArrows
                         text: "›"
-                        font.pixelSize: 24
-                        implicitWidth: 48
-                        Accessible.name: qsTr("Next day")
-                        Accessible.role: Accessible.Button
+                        name: qsTr("Next day")
                         onClicked: page.date = Api.addDays(page.date, 1)
                     }
                 }
@@ -142,9 +136,9 @@ ScrollView {
                     Stat { caption: qsTr("Billable"); value: page.day ? Api.fmtHM(page.day.totals.billable_h) : "–" }
                 }
 
-                Button {
+                AppButton {
                     visible: !page.isToday
-                    text: qsTr("Back to today")
+                    text: qsTr("Today")
                     flat: true
                     Layout.alignment: Qt.AlignHCenter
                     onClicked: page.date = Api.today()
@@ -170,11 +164,9 @@ ScrollView {
         // ---- blocks -----------------------------------------------------------
         Card {
             title: qsTr("Blocks")
-            actions: RoundButton {
+            actions: AppRoundButton {
                 text: "+"
                 font.pixelSize: 20
-                highlighted: true
-                Material.elevation: 1
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Add block")
                 Accessible.name: qsTr("Add block")

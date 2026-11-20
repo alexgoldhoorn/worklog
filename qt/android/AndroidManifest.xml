@@ -46,6 +46,7 @@
             android:label="Worklog"
             android:launchMode="singleTop"
             android:screenOrientation="unspecified"
+            android:windowSoftInputMode="adjustNothing"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

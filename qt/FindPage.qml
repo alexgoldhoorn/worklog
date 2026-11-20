@@ -258,30 +258,30 @@ ScrollView {
                 onAccepted: page.mode === "add" ? page.add() : page.find()
             }
             // ---- "I know when": the date and the times
-            RowLayout {
+            // the date, then From and To; below 420 the date has its own line so the fields keep a usable width
+            GridLayout {
                 visible: page.mode === "add"
-                spacing: 8
+                columns: page.availableWidth < 420 ? 2 : 3
+                columnSpacing: 8
+                rowSpacing: 4
                 Layout.fillWidth: true
-                Button {
+                AppButton {
                     text: page.dayLabel(page.addDate)
                     flat: true
+                    Layout.columnSpan: page.availableWidth < 420 ? 2 : 1
                     Accessible.name: qsTr("Date, now %1").arg(page.addDate)
                     Accessible.role: Accessible.Button
                     onClicked: addPicker.openFor(page.addDate)
                 }
-                TextField {
-                    placeholderText: qsTr("From")
+                TimeField {
                     text: page.addStart
-                    inputMethodHints: Qt.ImhTime
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("Start time")
                     onTextEdited: { page.addStart = text; page.putDone = false }
                 }
-                TextField {
-                    placeholderText: qsTr("To")
+                TimeField {
                     text: page.addEnd
-                    inputMethodHints: Qt.ImhTime
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("End time")
@@ -345,7 +345,7 @@ ScrollView {
                     onActivated: i => page.priority = page.priorities[i].v
                 }
             }
-            Button {
+            AppButton {
                 visible: page.mode === "find"
                 text: page.busy ? qsTr("Finding…") : qsTr("Find")
                 enabled: !page.busy
@@ -363,7 +363,7 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 visible: page.mode === "add"
                 text: qsTr("Add")
                 enabled: page.canAdd && !page.putDone && !page.putting
@@ -461,7 +461,7 @@ ScrollView {
                                 Layout.fillWidth: true
                             }
                         }
-                        Button {
+                        AppButton {
                             text: qsTr("Pick")
                             flat: true
                             Accessible.name: qsTr("Pick %1").arg(page.dayLabel(row.modelData.date) + " " + row.modelData.start)
@@ -490,7 +490,7 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 visible: page.chosen !== null
                 text: qsTr("Put it in")
                 enabled: !page.putDone && !page.putting

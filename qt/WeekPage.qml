@@ -277,12 +277,9 @@ ScrollView {
             Layout.topMargin: 12
             Layout.leftMargin: 12
             Layout.rightMargin: 12
-            ToolButton {
+            AppIconButton {
                 text: "‹"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("Previous week")
-                Accessible.role: Accessible.Button
+                name: qsTr("Previous week")
                 onClicked: page.shift(-7)
             }
             ColumnLayout {
@@ -305,18 +302,16 @@ ScrollView {
                     Layout.fillWidth: true
                 }
             }
-            ToolButton {
+            AppButton {
+                flat: true
                 text: qsTr("Today")
                 Accessible.name: qsTr("This week")
                 Accessible.role: Accessible.Button
                 onClicked: page.start = ""
             }
-            ToolButton {
+            AppIconButton {
                 text: "›"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("Next week")
-                Accessible.role: Accessible.Button
+                name: qsTr("Next week")
                 onClicked: page.shift(7)
             }
         }
@@ -447,16 +442,20 @@ ScrollView {
             visible: page.weekData !== null
             title: qsTr("Protected time")
 
-            component Act: RowLayout {
+            // the button, and what it is for beside it (below it on a narrow screen, where the text got a few words a line)
+            component Act: GridLayout {
                 id: act
                 property string label
                 property string hint
                 signal clicked()
-                spacing: 12
+                columns: page.availableWidth < 420 ? 1 : 2
+                columnSpacing: 12
+                rowSpacing: 4
                 Layout.fillWidth: true
-                Button {
+                AppButton {
                     text: act.label
                     Layout.preferredWidth: 150
+                    Layout.fillWidth: page.availableWidth < 420
                     Accessible.name: act.label
                     Accessible.description: act.hint
                     Accessible.role: Accessible.Button
@@ -546,7 +545,7 @@ ScrollView {
                         Accessible.name: qsTr("Date")
                         MouseArea { anchors.fill: parent; onClicked: datePicker.openFor(dateField.text) }
                     }
-                    Button {
+                    AppButton {
                         text: qsTr("Pick")
                         flat: true
                         Accessible.name: qsTr("Pick a date")
@@ -554,21 +553,17 @@ ScrollView {
                         onClicked: datePicker.openFor(dateField.text)
                     }
                 }
-                TextField {
+                TimeField {
                     id: fromField
-                    placeholderText: qsTr("From HH:MM")
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("From")
-                    onEditingFinished: text = Api.normTime(text)
                 }
-                TextField {
+                TimeField {
                     id: toField
-                    placeholderText: qsTr("To HH:MM")
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Accessible.name: qsTr("To")
-                    onEditingFinished: text = Api.normTime(text)
                 }
                 ComboBox {
                     id: kindBox
@@ -604,8 +599,9 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 text: qsTr("Save as approved")
+                highlighted: true
                 enabled: page.formProblem === ""
                 Accessible.name: text
                 Accessible.role: Accessible.Button
@@ -661,18 +657,18 @@ ScrollView {
                                 Layout.fillWidth: true
                             }
                         }
-                        ToolButton {
+                        AppIconButton {
                             visible: !!row.modelData.block && row.modelData.block.state === "proposed"
                             text: "✓"
-                            Accessible.name: qsTr("Approve %1").arg(row.modelData.text)
-                            Accessible.role: Accessible.Button
+                            ink: Api.accent
+                            name: qsTr("Approve %1").arg(row.modelData.text)
                             onClicked: page.decide(row.modelData.block.id, "approve")
                         }
-                        ToolButton {
+                        AppIconButton {
                             visible: !!row.modelData.block
                             text: "✗"
-                            Accessible.name: qsTr("Reject %1").arg(row.modelData.text)
-                            Accessible.role: Accessible.Button
+                            ink: Api.errorColor
+                            name: qsTr("Reject %1").arg(row.modelData.text)
                             onClicked: page.reject(row.modelData.block)
                         }
                     }
@@ -879,7 +875,7 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 visible: page.balanceOpen
                 text: qsTr("Save")
                 highlighted: true
@@ -891,9 +887,8 @@ ScrollView {
         Item { implicitHeight: 12 }
     }
 
-    Dialog {
+    AppDialog {
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         visible: page.confirmId >= 0
         title: qsTr("Remove this approved block?")

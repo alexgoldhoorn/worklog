@@ -44,6 +44,8 @@ def main() -> int:
                    TZ="Europe/Amsterdam", PYTHONPATH=str(REPO))
         Path(tmp, "balance").mkdir()   # the Week page reads the balance store
         env.update(BALANCE_DB=str(Path(tmp, "b.db")), BALANCE_STATE_DIR=str(Path(tmp, "balance")))
+        Path(tmp, "inbox").mkdir()   # the Day page uploads an Outlook PDF here
+        env["WORK_CALENDAR_INBOX"] = str(Path(tmp, "inbox"))
         env["DAY_RULES"] = str(REPO / "day" / "rules.example.json")   # the Find page's planner: the example household only
         for k in ("WORKLOG_AUTH_USER", "WORKLOG_AUTH_PASSWORD_HASH"):
             env.pop(k, None)

@@ -3,14 +3,16 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import QtCore
+import WorkLogApp
 
 // The Day planner (the web's Day page, `day.js` / `templates/day.html`, API in `day/web.py`): one day's
 // timeline of work meetings, personal and family events, the child's duties and protected blocks, the
 // first things to do, training, work today, and the writes that still wait for the host. Needs the
 // planner's balance store on the server; without it the page shows the server's message (503).
 // The timeline is one list sorted by start, as the web does on a phone, with a pill for the lane.
-// Left to the web: Move, the work-calendar PDF upload and the Start / Pause / Stop row (the Timer has them).
+// Move (MoveDialog), the work-calendar PDF upload, the timer row and "work on this" are here too, as on the web.
 // Not to be confused with DayPage.qml, which is the Timer screen on another day (the old Log).
 ScrollView {
     id: page
@@ -145,6 +147,37 @@ ScrollView {
     }
     function fmtDate(iso) { return Api.parseDate(iso).toLocaleDateString(Api.locale, "ddd d MMM") }
 
+    // ---- the timer row and "work on this" (day.js: renderWork, taskRow) ------------------------------
+    // the work card's status ("working" | "break" | "stopped"; "none" when the server sent no status)
+    function timerState(d) {
+        const w = d && d.work ? d.work : null
+        return w && w.status ? (w.status.state || "stopped") : "none"
+    }
+    // "Working · meeting · project · since 09:12", "Break · since 10:30" or "Not working"
+    function timerLine(d) {
+        const s = d && d.work && d.work.status ? d.work.status : {}
+        const st = timerState(d)
+        return st === "working" ? qsTr("Working") + (s.block && s.block.type ? " · " + s.block.type : "")
+                                  + (s.block && s.block.project ? " · " + s.block.project : "") + " · " + qsTr("since %1").arg(s.since || "")
+             : st === "break" ? qsTr("Break · since %1").arg(s.since || "") : qsTr("Not working")
+    }
+    // the type chips (today only, at most six)
+    function chipTypes(d) {
+        const s = d && d.work && d.work.status ? d.work.status : null
+        return d && d.is_today && s && s.chips ? (s.chips.types || []).slice(0, 6) : []
+    }
+    // a Todoist task's text as the block's project: markdown links flattened, 80 characters
+    function plainTitle(content) { return Api.mdPlain(String(content || "")).trim().slice(0, 80) }
+    // What "work on this" sends: the running block is retitled in place, otherwise the timer starts on the task
+    // (with the type picked while stopped). { method, path, body }
+    function workOnRequest(d, task, pendingType) {
+        const st = d && d.work && d.work.status ? d.work.status : null
+        const project = plainTitle(task.content)
+        if (st && st.state === "working" && st.block)
+            return { method: "PUT", path: "/api/blocks/" + st.block.id, body: { project: project, require_open: true } }
+        return { method: "POST", path: "/api/start", body: pendingType ? { project: project, type: pendingType } : { project: project } }
+    }
+
     // ---- loading ----------------------------------------------------------------------------------
 
     function reload() {
@@ -194,6 +227,78 @@ ScrollView {
         })
     }
     function completeTask(id) { post("/api/day/task/" + encodeURIComponent(id) + "/complete") }
+
+    // the type chip picked while the timer is stopped; the next Start uses it
+    property string pendingType: ""
+    property bool timerBusy: false
+    function timerDone() { timerBusy = false }
+    function timerFailed(e) { timerBusy = false; error = e }
+    function timerQueued() { timerBusy = false; info = qsTr("Saved offline, it is sent when the server answers") }
+    function startTimer() {
+        if (timerBusy) return
+        timerBusy = true
+        const body = pendingType ? { type: pendingType } : {}
+        pendingType = ""
+        Api.timerAction("/api/start", body, timerDone, timerFailed, timerQueued)
+    }
+    function pauseTimer() {
+        if (timerBusy) return
+        timerBusy = true
+        Api.timerAction("/api/pause", {}, timerDone, timerFailed, timerQueued)
+    }
+    function stopTimer() {
+        if (timerBusy) return
+        timerBusy = true
+        Api.timerAction("/api/stop", {}, timerDone, timerFailed, timerQueued)
+    }
+    // a type chip: retypes the running block, or picks the type for the next Start
+    function pickType(name) {
+        const st = day && day.work ? day.work.status : null
+        if (st && st.state === "working" && st.block)
+            Api.request("PUT", "/api/blocks/" + st.block.id, { type: name, require_open: true }, null, e => page.error = e)
+        else
+            pendingType = pendingType === name ? "" : name
+    }
+    function workOn(task) {
+        if (timerBusy || !day) return
+        const r = workOnRequest(day, task, pendingType)
+        if (r.method === "PUT") {
+            Api.request("PUT", r.path, r.body, null, e => page.error = e)
+        } else {
+            timerBusy = true
+            pendingType = ""
+            Api.timerAction(r.path, r.body, timerDone, timerFailed, timerQueued)
+        }
+    }
+
+    // ---- Move and the PDF upload ---------------------------------------------------------------
+    function openMove(kind, id, uid) { moveDialog.openFor(day, kind, id, uid) }
+    property alias moveDialogItem: moveDialog   // tests
+    MoveDialog {
+        id: moveDialog
+        onMoved: date => page.show(date)
+    }
+
+    // The Outlook calendar PDF goes into the planner's inbox (POST /api/day/calendar-pdf, 12 MB at most);
+    // the host job imports it within 15 minutes.
+    property alias uploaderItem: uploader   // tests
+    function uploadPdf(fileUrl) {
+        info = ""
+        error = ""
+        uploader.upload(Api.baseUrl + "/api/day/calendar-pdf", Api.authHeader(), fileUrl, "file", 12 * 1024 * 1024)
+    }
+    FileUploader {
+        id: uploader
+        onFinished: out => { page.info = qsTr("Saved %1: %2.").arg(out.saved).arg(out.note) }
+        onFailed: msg => { page.info = ""; page.error = qsTr("Upload failed: %1").arg(msg) }
+    }
+    FileDialog {
+        id: pdfDialog
+        title: qsTr("Upload Outlook PDF")
+        fileMode: FileDialog.OpenFile
+        nameFilters: [qsTr("PDF files (*.pdf)")]
+        onAccepted: page.uploadPdf(selectedFile)
+    }
     function logMeeting(ev) {
         post("/api/calendar/add", { date: day.date, start: ev.start, end: ev.end, title: ev.title })
     }
@@ -228,17 +333,16 @@ ScrollView {
     }
     property alias classifyDialogItem: classifyDialog   // tests
 
-    Dialog {
+    AppDialog {
         id: classifyDialog
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         title: page.askEv ? qsTr("Mark \"%1\" as %2?").arg(page.askEv.title).arg(page.askWho) : ""
         width: Math.min(parent ? parent.width - 32 : 320, 420)
         Material.accent: Api.accent
         // Esc or a tap outside is Cancel: nothing is saved
         onRejected: page.askEv = null
-        contentItem: ColumnLayout {
+        contentItem: ScrollBody {
             spacing: 12
             Label {
                 text: qsTr("Save it for this occurrence only, or for every event with this title. Esc or Cancel saves nothing.")
@@ -246,20 +350,20 @@ ScrollView {
                 color: Api.muted
                 Layout.fillWidth: true
             }
-            Button {
+            AppButton {
                 text: qsTr("Only this one")
                 highlighted: true
                 Accessible.name: text
                 Layout.fillWidth: true
                 onClicked: page.answer("once")
             }
-            Button {
+            AppButton {
                 text: qsTr("Always for this title")
                 Accessible.name: text
                 Layout.fillWidth: true
                 onClicked: page.answer("always")
             }
-            Button {
+            AppButton {
                 text: qsTr("Cancel")
                 flat: true
                 Accessible.name: text
@@ -270,10 +374,9 @@ ScrollView {
     }
 
     property var prepMeeting: null
-    Dialog {
+    AppDialog {
         id: prepDialog
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         title: page.prepMeeting ? qsTr("Prep for %1").arg(page.prepMeeting.title) : ""
         width: Math.min(parent ? parent.width - 32 : 320, 420)
@@ -286,7 +389,7 @@ ScrollView {
             prepText.text = p ? p.text || "" : ""
         }
         onAccepted: page.savePrep(page.prepMeeting, Math.round(minutes), prepText.text.trim())
-        contentItem: ColumnLayout {
+        contentItem: ScrollBody {
             spacing: 8
             Caption { text: qsTr("Prep minutes (0–480)") }
             TextField {
@@ -313,20 +416,12 @@ ScrollView {
     }
 
     // a small action button inside an event row
-    component Tiny: Button {
-        id: tiny
+    // the small text actions of an event row: the shared flat button
+    component Tiny: AppButton {
         flat: true
-        implicitHeight: 36
-        leftPadding: 10
-        rightPadding: 10
         font.pixelSize: 13
         Accessible.name: text
         Accessible.role: Accessible.Button
-        background: Rectangle {
-            radius: 6
-            color: tiny.down ? Qt.alpha(Api.accent, 0.18) : "transparent"
-            border.color: Api.line
-        }
     }
 
     // ---- layout -------------------------------------------------------------------------------------
@@ -340,12 +435,9 @@ ScrollView {
             Layout.topMargin: 12
             Layout.leftMargin: 12
             Layout.rightMargin: 12
-            ToolButton {
+            AppIconButton {
                 text: "‹"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("Previous day")
-                Accessible.role: Accessible.Button
+                name: qsTr("Previous day")
                 onClicked: page.step(-1)
             }
             ColumnLayout {
@@ -368,18 +460,16 @@ ScrollView {
                     Layout.fillWidth: true
                 }
             }
-            ToolButton {
+            AppButton {
+                flat: true
                 text: qsTr("Today")
                 Accessible.name: qsTr("Back to today")
                 Accessible.role: Accessible.Button
                 onClicked: page.show("")
             }
-            ToolButton {
+            AppIconButton {
                 text: "›"
-                font.pixelSize: 22
-                implicitWidth: 48
-                Accessible.name: qsTr("Next day")
-                Accessible.role: Accessible.Button
+                name: qsTr("Next day")
                 onClicked: page.step(1)
             }
         }
@@ -388,27 +478,24 @@ ScrollView {
             Layout.rightMargin: 12
             Layout.fillWidth: true
             spacing: 8
-            Button {
+            AppButton {
                 text: qsTr("Refresh")
                 flat: true
-                Material.foreground: Api.accent
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Ask the host sync to refresh the snapshots")
                 Accessible.name: text
                 onClicked: page.refreshSnapshots()
             }
             Item { Layout.fillWidth: true }
-            Button {
+            AppButton {
                 text: qsTr("Add")
                 flat: true
-                Material.foreground: Api.accent
                 Accessible.name: qsTr("Add a meeting or appointment at a time you know")
                 onClicked: page.addRequested()
             }
-            Button {
+            AppButton {
                 text: qsTr("Find a date")
                 flat: true
-                Material.foreground: Api.accent
                 Accessible.name: text
                 onClicked: page.findRequested()
             }
@@ -564,15 +651,29 @@ ScrollView {
                                         onClicked: page.logMeeting(evRow.ev)
                                     }
                                     Tiny {
-                                        visible: evRow.ev.layer === "protected" && evRow.ev.state === "proposed"
-                                        text: "✓"
-                                        Accessible.name: qsTr("Approve %1–%2 %3").arg(evRow.ev.start).arg(evRow.ev.end).arg(evRow.ev.title)
-                                        onClicked: page.post("/api/balance/blocks/" + evRow.ev.id + "/approve")
+                                        visible: evRow.ev.layer === "personal" && !!evRow.ev.uid && !evRow.ev.pending
+                                        text: qsTr("Move")
+                                        Accessible.name: qsTr("Move %1").arg(evRow.ev.title)
+                                        onClicked: page.openMove("personal", 0, evRow.ev.uid)
                                     }
                                     Tiny {
+                                        visible: evRow.ev.layer === "protected" && evRow.ev.state === "approved" && !!evRow.ev.id
+                                        text: qsTr("Move")
+                                        Accessible.name: qsTr("Move %1–%2 %3").arg(evRow.ev.start).arg(evRow.ev.end).arg(evRow.ev.title)
+                                        onClicked: page.openMove(evRow.ev.kind === "run" ? "run" : "block", evRow.ev.id, "")
+                                    }
+                                    AppIconButton {
+                                        visible: evRow.ev.layer === "protected" && evRow.ev.state === "proposed"
+                                        text: "✓"
+                                        ink: Api.accent
+                                        name: qsTr("Approve %1–%2 %3").arg(evRow.ev.start).arg(evRow.ev.end).arg(evRow.ev.title)
+                                        onClicked: page.post("/api/balance/blocks/" + evRow.ev.id + "/approve")
+                                    }
+                                    AppIconButton {
                                         visible: evRow.ev.layer === "protected" && evRow.ev.state === "proposed"
                                         text: "✗"
-                                        Accessible.name: qsTr("Reject %1–%2 %3").arg(evRow.ev.start).arg(evRow.ev.end).arg(evRow.ev.title)
+                                        ink: Api.errorColor
+                                        name: qsTr("Reject %1–%2 %3").arg(evRow.ev.start).arg(evRow.ev.end).arg(evRow.ev.title)
                                         onClicked: page.post("/api/balance/blocks/" + evRow.ev.id + "/reject")
                                     }
                                     Tiny {
@@ -688,6 +789,12 @@ ScrollView {
                         Layout.fillWidth: true
                     }
                 }
+                Tiny {
+                    text: qsTr("Move")
+                    Layout.alignment: Qt.AlignTop
+                    Accessible.name: qsTr("Move the run: see where it fits")
+                    onClicked: page.openMove("run", 0, "")
+                }
             }
         }
 
@@ -703,6 +810,90 @@ ScrollView {
                 text: workCard.w ? qsTr("week %1 of %2–%3 h").arg(page.h2(workCard.w.week_h)).arg(workCard.w.band[0]).arg(workCard.w.band[1]) : ""
                 color: Api.muted
                 font.pixelSize: 12
+            }
+            RowLayout {
+                visible: page.timerState(page.day) !== "none"
+                spacing: 8
+                Layout.fillWidth: true
+                Rectangle {
+                    implicitWidth: 10
+                    implicitHeight: 10
+                    radius: 5
+                    Layout.alignment: Qt.AlignTop
+                    Layout.topMargin: 5
+                    color: page.timerState(page.day) === "working" ? Api.workColor
+                         : page.timerState(page.day) === "break" ? Api.breakColor : Api.idleColor
+                }
+                Label {
+                    text: page.timerLine(page.day)
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    Accessible.name: text
+                }
+            }
+            Flow {
+                visible: page.timerState(page.day) !== "none"
+                spacing: 6
+                Layout.fillWidth: true
+                AppButton {
+                    visible: page.timerState(page.day) !== "working"
+                    text: qsTr("Start")
+                    enabled: !page.timerBusy
+                    Accessible.name: text
+                    onClicked: page.startTimer()
+                }
+                AppButton {
+                    visible: page.timerState(page.day) === "working"
+                    text: qsTr("Pause")
+                    enabled: !page.timerBusy
+                    Accessible.name: text
+                    onClicked: page.pauseTimer()
+                }
+                AppButton {
+                    visible: page.timerState(page.day) !== "stopped"
+                    text: qsTr("Stop")
+                    enabled: !page.timerBusy
+                    Accessible.name: text
+                    onClicked: page.stopTimer()
+                }
+            }
+            Flow {
+                visible: page.chipTypes(page.day).length > 0
+                spacing: 6
+                Layout.fillWidth: true
+                Accessible.name: qsTr("Types")
+                Repeater {
+                    model: page.chipTypes(page.day)
+                    delegate: AbstractButton {
+                        id: typeChip
+                        required property string modelData
+                        readonly property var blk: page.day && page.day.work && page.day.work.status ? page.day.work.status.block : null
+                        readonly property bool on: page.timerState(page.day) === "working" ? !!blk && blk.type === modelData
+                                                                                         : page.pendingType === modelData
+                        text: modelData
+                        implicitHeight: 32
+                        leftPadding: 12
+                        rightPadding: 12
+                        Accessible.role: Accessible.CheckBox
+                        Accessible.name: modelData
+                        Accessible.checkable: true
+                        Accessible.checked: on
+                        Accessible.onPressAction: typeChip.clicked()
+                        onClicked: page.pickType(modelData)
+                        contentItem: Label {
+                            text: typeChip.text
+                            color: typeChip.on ? Api.accentFg : Api.fg
+                            font.pixelSize: 13
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        background: Rectangle {
+                            radius: 16
+                            color: typeChip.on ? Api.accent : "transparent"
+                            border.color: typeChip.on ? "transparent" : Api.line
+                        }
+                    }
+                }
             }
             Rectangle {
                 Layout.fillWidth: true
@@ -790,6 +981,13 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
+            AppButton {
+                text: uploader.busy ? qsTr("Uploading…") : qsTr("Upload Outlook PDF")
+                flat: true
+                enabled: !uploader.busy
+                Accessible.name: qsTr("Upload an Outlook calendar PDF export")
+                onClicked: pdfDialog.open()
+            }
         }
 
         Card {
@@ -843,14 +1041,26 @@ ScrollView {
             Accessible.name: qsTr("Done: %1").arg(Api.mdPlain(task.modelData.content))
             onToggled: page.completeTask(task.modelData.id)
         }
-        Label {
-            text: Api.mdHtml(task.modelData.content) + (task.modelData.pending ? " · " + qsTr("pending") : "")
-                  + (task.modelData.priority === 4 ? " · P1" : "")
-            textFormat: Text.StyledText
-            font.strikeout: !!task.modelData.done
-            wrapMode: Text.Wrap
+        ColumnLayout {
+            spacing: 2
             Layout.fillWidth: true
-            onLinkActivated: link => Qt.openUrlExternally(link)
+            Label {
+                text: Api.mdHtml(task.modelData.content) + (task.modelData.pending ? " · " + qsTr("pending") : "")
+                      + (task.modelData.priority === 4 ? " · P1" : "")
+                      + ((task.modelData.labels || []).indexOf("doubt") >= 0 ? " · " + qsTr("doubt") : "")
+                textFormat: Text.StyledText
+                font.strikeout: !!task.modelData.done
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+                onLinkActivated: link => Qt.openUrlExternally(link)
+            }
+            Tiny {
+                visible: !task.modelData.done && !!page.day && page.day.is_today
+                text: "▶ " + qsTr("work on this")
+                Accessible.name: qsTr("Start the timer on this task")
+                enabled: !page.timerBusy
+                onClicked: page.workOn(task.modelData)
+            }
         }
     }
 }

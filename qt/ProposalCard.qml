@@ -68,7 +68,7 @@ Card {
             RowLayout {
                 visible: !meeting.logged
                 Layout.alignment: Qt.AlignRight
-                Button {
+                AppButton {
                     visible: !meeting.dismissed
                     text: qsTr("Dismiss")
                     flat: true
@@ -76,7 +76,7 @@ Card {
                                            { date: card.date, start: meeting.modelData.start, title: meeting.modelData.title },
                                            null, e => card.failed(e))
                 }
-                Button {
+                AppButton {
                     text: qsTr("Add as meeting")
                     highlighted: !meeting.dismissed
                     flat: meeting.dismissed

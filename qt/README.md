@@ -13,14 +13,14 @@ The web UI (`worklog/web/static/`) is the reference for behaviour. The app mirro
 | **Timer** | Start, Switch, Pause and Stop; type, project and break chips; today, week and balance tiles; the work calendar's meetings to add; today's blocks with gaps to fill. The arrows and the date in the header go to any other day: its blocks and totals, with add, edit, delete (with Undo) and move |
 | **Week** | The planner's week: meetings, personal events, proposed and approved blocks (approve or reject, with an Undo that puts the block back to proposed), the load gate with its numbers, signals and calendar sync warning, work goals with links, the gate history and the balance settings |
 | **Pomodoro** | A countdown per device that offers to pause or resume the log at each interval and never acts on its own |
-| More › **Day** | The day planner: the timeline (work, personal, family, the child's duties, protected blocks) with lanes you can switch off, whose-is-this choices (me, us, partner, child: only this one, always for this title, or cancel), who takes a duty, first things, prep notes, training, work today with task ticks, the work-calendar state and the writes that still wait for the host |
+| More › **Day** | The day planner: the timeline (work, personal, family, the child's duties, protected blocks) with lanes you can switch off, whose-is-this choices (me, us, partner, child: only this one, always for this title, or cancel), who takes a duty, first things, prep notes, training, work today with the timer row (Start, Pause, Stop, type chips) and task ticks with "work on this", the work-calendar state with an Outlook PDF upload, the writes that still wait for the host, and Move: pick a planned run, block or event, see where it fits and what the day looks like with it moved |
 | More › **Reports** | Summary per week, month, quarter or year; charts; weekly stats; the monthly invoice; CSV/XLSX export |
 | More › **Expected hours** | Expected and sick hours per day |
 | More › **Add or find a date** | Put a meeting or appointment in a calendar at a time you know, or let it find the best free slot per day ("where does this fit") |
-| More › **Settings** | Server and login (with Test connection, which checks the typed address and login without saving them), week length, rate, currency, the server's defaults, the clients (add, rename, billable, delete) and break types (add, delete), and the options below |
+| More › **Settings** | Server and login (with Test connection, which checks the typed address and login without saving them), week length, rate, currency, the server's defaults, the clients (add, rename, billable, delete) and break types (add, rename, delete), and the options below |
 
 Timer, Week and Pomodoro are the buttons at the bottom; the rest is under the ⋮ menu in the header.
-The names, their order and the icons are the same as in the web's navigation. The web has Day as its own tab and a More menu (Add or find a date, Move, Workcal, Settings); the app puts Day first in its More menu.
+The names, their order and the icons are the same as in the web's navigation. The web has Day as its own tab and a More menu (Add or find a date, Move, Workcal, Settings); the app puts Day first in its More menu and opens Move from the Day page's "Move" buttons.
 
 Day, Week and Add or find a date need the server's planner (`BALANCE_DB`, `BALANCE_STATE_DIR`, `DAY_RULES`; see
 [docs/host-integration.md](../docs/host-integration.md)). Without it they show the server's message.
@@ -49,8 +49,10 @@ actions imply and marks it as waiting. Edits to blocks are not queued. A strip o
 - Optional fingerprint/face (or screen lock) before the app opens; it locks again after 2 minutes in
   the background. The widget, tile and notification stay usable while it is locked.
 - The password is encrypted with a key in the Android Keystore. App data is excluded from backups.
+- A dialog stays between the status bar and the on-screen keyboard, and scrolls when it is taller than that.
+- The system Back key leads from Week, Pomodoro or a More screen back to the Timer, and closes an open menu or dialog first; on the Timer it sends the app to the home screen.
 
-Not in the app: import (XLSX/CSV), the planner's Move and Workcal pages, the work-calendar PDF upload and "work on this task" on the Day page.
+Not in the app: import (XLSX/CSV) and the planner's Workcal page (paste, cancel, notes).
 Use the web UI for those. The app is in English only.
 
 ## First start

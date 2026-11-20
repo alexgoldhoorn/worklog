@@ -1,6 +1,5 @@
 import QtQuick
 import QtCore
-import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import WorkLogApp
@@ -16,12 +15,12 @@ RowLayout {
 
     spacing: 6
 
-    Button {
+    AppButton {
         text: "CSV"
         flat: true
         onClicked: { root.format = "csv"; saveDialog.open() }
     }
-    Button {
+    AppButton {
         text: "XLSX"
         flat: true
         onClicked: { root.format = "xlsx"; saveDialog.open() }

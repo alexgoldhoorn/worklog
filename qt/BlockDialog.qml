@@ -4,7 +4,7 @@ import QtQuick.Controls.Material
 import QtQuick.Layouts
 
 // Create or edit one block. open with editBlock(block) or newBlock(date).
-Dialog {
+AppDialog {
     id: dlg
     property var block: null      // null while creating
     property string date: ""
@@ -117,14 +117,8 @@ Dialog {
     readonly property bool needsConfirm: !!block && !!block.auto_closed
 
     modal: true
-    anchors.centerIn: Overlay.overlay
     width: Math.min(420, parent ? parent.width - 32 : 420)
-    // the soft keyboard covers the lower part of the window: the content scrolls in what is left
-    readonly property real keyboardH: Qt.inputMethod.visible ? Qt.inputMethod.keyboardRectangle.height : 0
-    readonly property real maxH: (parent ? parent.height : 600) - keyboardH - 16
-    height: Math.min(implicitHeight, maxH)
-    topMargin: 8
-    bottomMargin: keyboardH + 8
+    // AppDialog keeps it between the status bar and the keyboard; the Flickable below scrolls
     title: block ? qsTr("Edit block") : qsTr("New block")
 
     function editBlock(b) {
@@ -204,20 +198,20 @@ Dialog {
     }
 
     footer: DialogButtonBox {
-        Button {
+        AppButton {
             visible: dlg.block !== null
             text: qsTr("Delete")
             flat: true
-            Material.foreground: Api.errorColor
+            destructive: true
             DialogButtonBox.buttonRole: DialogButtonBox.DestructiveRole
             onClicked: dlg.deleteBlock()
         }
-        Button {
+        AppButton {
             text: qsTr("Cancel")
             flat: true
             DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
         }
-        Button {
+        AppButton {
             text: dlg.needsConfirm ? qsTr("Confirm") : qsTr("Save")
             enabled: dlg.valid
             highlighted: true
@@ -250,7 +244,7 @@ Dialog {
             Keys.onEnterPressed: dlg.saveIfValid()
 
             Caption { text: qsTr("Date") }
-            Button {
+            AppButton {
                 id: dateButton
                 text: Api.parseDate(dlg.date || Api.today()).toLocaleDateString(Api.locale, "dddd d MMMM yyyy")
                 flat: true
@@ -268,15 +262,10 @@ Dialog {
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
                     Caption { text: qsTr("Start") }
-                    TextField {
+                    TimeField {
                         id: startField
-                        placeholderText: qsTr("e.g. 700 or 19:00")
-                        validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
-                        inputMethodHints: Qt.ImhPreferNumbers
-                        selectByMouse: true
                         Accessible.name: qsTr("Start time")
-                        onActiveFocusChanged: if (activeFocus) { selectAll(); dlg.reveal(startField) }
-                        onEditingFinished: text = Api.normTime(text)
+                        onActiveFocusChanged: if (activeFocus) dlg.reveal(startField)
                         Layout.fillWidth: true
                     }
                 }
@@ -284,16 +273,11 @@ Dialog {
                     spacing: 4
                     Layout.fillWidth: true
                     Layout.preferredWidth: 1
-                    Caption { text: qsTr("End") }
-                    TextField {
+                    Caption { text: dlg.needsEnd ? qsTr("End") : qsTr("End (empty = running)") }
+                    TimeField {
                         id: endField
-                        placeholderText: dlg.needsEnd ? qsTr("Required") : qsTr("empty = running")
-                        validator: RegularExpressionValidator { regularExpression: /^[\d:.hH]{0,5}$/ }
-                        inputMethodHints: Qt.ImhPreferNumbers
-                        selectByMouse: true
                         Accessible.name: qsTr("End time")
-                        onActiveFocusChanged: if (activeFocus) { selectAll(); dlg.reveal(endField) }
-                        onEditingFinished: text = Api.normTime(text)
+                        onActiveFocusChanged: if (activeFocus) dlg.reveal(endField)
                         Layout.fillWidth: true
                     }
                 }

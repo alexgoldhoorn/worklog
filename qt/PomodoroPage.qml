@@ -417,7 +417,7 @@ ScrollView {
                 spacing: 8
                 Repeater {
                     model: page.card ? page.card.buttons : []
-                    delegate: Button {
+                    delegate: AppButton {
                         required property var modelData
                         text: modelData.text
                         highlighted: !!modelData.primary

@@ -96,16 +96,14 @@ ColumnLayout {
                     font.pixelSize: 12
                     Layout.fillWidth: true
                 }
-                Button {
+                AppButton {
                     text: qsTr("+ work")
                     flat: true
-                    font.pixelSize: 12
                     onClicked: root.fillGap(row.modelData.start, row.modelData.end, false)
                 }
-                Button {
+                AppButton {
                     text: qsTr("+ break")
                     flat: true
-                    font.pixelSize: 12
                     onClicked: root.fillGap(row.modelData.start, row.modelData.end, true)
                 }
             }

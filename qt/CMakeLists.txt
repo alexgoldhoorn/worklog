@@ -39,6 +39,14 @@ set(WL_QML_FILES
     DayPage.qml
     WeekPage.qml
     PlannerPage.qml
+    MoveDialog.qml
+    AppButton.qml
+    AppDialog.qml
+    ScrollBody.qml
+    TimeField.qml
+    AppSwitch.qml
+    AppRoundButton.qml
+    AppIconButton.qml
     FindPage.qml
     ChipMulti.qml
     SettingsPage.qml
@@ -72,6 +80,8 @@ set(WL_QML_FILES
 set(WL_SOURCES
     filedownloader.h
     filedownloader.cpp
+    fileuploader.h
+    fileuploader.cpp
     notifier.h
     notifier.cpp
     secretstore.h

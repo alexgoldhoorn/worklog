@@ -11,7 +11,8 @@ Item {
     readonly property string date: viewDate || today
     readonly property bool isToday: viewDate === ""
     readonly property string heading: {
-        const d = Api.parseDate(date).toLocaleDateString(Api.locale, "ddd d MMM")
+        // "Tue 20 Oct", with the year when it is not this year (the web's fmtDayTitle)
+        const d = Api.parseDate(date).toLocaleDateString(Api.locale, date.slice(0, 4) === Api.today().slice(0, 4) ? "ddd d MMM" : "ddd d MMM yyyy")
         return isToday ? qsTr("Today · %1").arg(d) : d
     }
 

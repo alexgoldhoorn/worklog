@@ -138,6 +138,7 @@ ScrollView {
     property string clientsError: ""
     property string breakError: ""
     property string renaming: ""        // the client the rename dialog is for
+    property string renamingBreak: ""   // the break type the other rename dialog is for
     function loadLists() {
         Api.request("GET", "/api/clients", undefined, function (l) { if (page) page.clients = l }, function (e) { if (page) page.clientsError = e })
         Api.request("GET", "/api/break-types", undefined, function (l) { if (page) page.breakList = l }, function (e) { if (page) page.breakError = e })
@@ -166,6 +167,9 @@ ScrollView {
     }
     function addBreak(name) {
         listCall("POST", "/api/break-types", { name: name.trim() }, e => page.breakError = e)
+    }
+    function renameBreak(name, to) {
+        listCall("PUT", "/api/break-types/" + encodeURIComponent(name), { name: to.trim() }, e => page.breakError = e)
     }
     function deleteBreak(name) {
         listCall("DELETE", "/api/break-types/" + encodeURIComponent(name), undefined, e => page.breakError = e)
@@ -200,6 +204,8 @@ ScrollView {
             if (!section || section === "currency")
                 page.fillCurrency(s)
         }, function (e) {
+            if (!weekField)   // the page was gone
+                return
             page.connected = false
             page.serverMessage = e
         })
@@ -258,8 +264,12 @@ ScrollView {
                     onAccepted: connectButton.clicked()
                 }
             }
-            RowLayout {
-                spacing: 8
+            // user and password side by side on a wide screen; below 420 the user has its own line, so the
+            // password field is wide enough to show what is typed
+            GridLayout {
+                columns: page.availableWidth < 420 ? 2 : 3
+                columnSpacing: 8
+                rowSpacing: 4
                 Layout.fillWidth: true
                 Layout.leftMargin: 18
                 TextField {
@@ -267,6 +277,7 @@ ScrollView {
                     text: Api.username
                     placeholderText: qsTr("User")
                     Layout.fillWidth: true
+                    Layout.columnSpan: page.availableWidth < 420 ? 2 : 1
                     onAccepted: connectButton.clicked()
                 }
                 TextField {
@@ -278,7 +289,8 @@ ScrollView {
                     Layout.fillWidth: true
                     onAccepted: connectButton.clicked()
                 }
-                ToolButton {
+                AppButton {
+                    flat: true
                     id: showPassword
                     checkable: true
                     text: checked ? qsTr("Hide") : qsTr("Show")
@@ -307,7 +319,7 @@ ScrollView {
                     opacity: page.connected ? 0.7 : 1
                     wrapMode: Text.Wrap
                 }
-                Button {
+                AppButton {
                     id: signOutButton
                     visible: Api.username !== "" || Api.password !== ""
                     text: qsTr("Sign out")
@@ -316,7 +328,7 @@ ScrollView {
                     Accessible.role: Accessible.Button
                     onClicked: signOutDialog.open()
                 }
-                Button {
+                AppButton {
                     id: testButton
                     text: page.testing ? qsTr("Testing…") : qsTr("Test connection")
                     flat: true
@@ -325,7 +337,7 @@ ScrollView {
                     Accessible.role: Accessible.Button
                     onClicked: page.testNow()
                 }
-                Button {
+                AppButton {
                     id: connectButton
                     text: qsTr("Connect")
                     highlighted: true
@@ -348,7 +360,7 @@ ScrollView {
                 Layout.fillWidth: true
             }
             // Android only: the saved login opens after a fingerprint/face (or the screen lock)
-            Switch {
+            AppSwitch {
                 id: unlockSwitch
                 visible: Qt.platform.os === "android" && Biometric.isAvailable()
                 text: qsTr("Ask for fingerprint or face when the app opens")
@@ -388,7 +400,7 @@ ScrollView {
             visible: Qt.platform.os !== "android"
             title: qsTr("Keyboard")
 
-            Switch {
+            AppSwitch {
                 id: shortcutSwitch
                 text: qsTr("Single-key shortcuts (S, P, X, 1–6, arrows)")
                 checked: Api.keyShortcuts
@@ -408,12 +420,12 @@ ScrollView {
             visible: Api.trayCapable
             title: qsTr("Tray and hotkey")
 
-            Switch {
+            AppSwitch {
                 text: qsTr("Keep running in the tray")
                 checked: Api.trayKeep
                 onToggled: Api.trayKeep = checked
             }
-            Switch {
+            AppSwitch {
                 text: qsTr("Start with Windows, minimised to the tray")
                 visible: Autostart.supported
                 checked: Autostart.enabled
@@ -430,7 +442,7 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Switch {
+            AppSwitch {
                 text: qsTr("Global start/pause hotkey")
                 checked: Api.hotkeyOn
                 onToggled: Api.hotkeyOn = checked
@@ -448,7 +460,7 @@ ScrollView {
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
-            Switch {
+            AppSwitch {
                 text: qsTr("Ask when I come back after being away")
                 visible: IdleMonitor.available
                 checked: Api.idleOn
@@ -472,7 +484,7 @@ ScrollView {
                     Accessible.name: qsTr("Minutes away before asking")
                 }
             }
-            Switch {
+            AppSwitch {
                 text: qsTr("Bring the window to the front to ask")
                 visible: IdleMonitor.available
                 enabled: Api.idleOn
@@ -505,8 +517,9 @@ ScrollView {
                     Accessible.name: qsTr("Full week (hours)")
                     onTextEdited: page.hoursMessage = ""
                 }
-                Button {
+                AppButton {
                     text: qsTr("Save")
+                    highlighted: true
                     enabled: page.weekHours >= 1 && page.weekHours <= 80
                     onClicked: page.save({ week_basis_h: page.weekHours }, m => page.hoursMessage = m, "hours")
                 }
@@ -544,8 +557,9 @@ ScrollView {
                     Layout.preferredWidth: 110
                     Accessible.name: qsTr("Rate unit")
                 }
-                Button {
+                AppButton {
                     text: qsTr("Save")
+                    highlighted: true
                     enabled: rateField.text.trim() === "" || isFinite(page.parseRate(rateField.text))
                     onClicked: page.save({ rate: rateField.text.trim() === "" ? null : page.parseRate(rateField.text),
                                            rate_unit: unitBox.currentText }, m => page.rateMessage = m, "rate")
@@ -589,14 +603,13 @@ ScrollView {
                 Accessible.name: qsTr("Default break type")
             }
             Caption { text: qsTr("Close a forgotten block at (HH:MM)") }
-            TextField {
+            TimeField {
                 id: closeField
-                inputMethodHints: Qt.ImhTime
                 Layout.fillWidth: true
                 Accessible.name: qsTr("Auto-close time")
                 onTextEdited: page.defaultsMessage = ""
             }
-            Switch {
+            AppSwitch {
                 id: autoAddSwitch
                 text: qsTr("Add finished meetings on their own")
                 Layout.fillWidth: true
@@ -616,8 +629,9 @@ ScrollView {
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
                 }
-                Button {
+                AppButton {
                     text: qsTr("Save")
+                    highlighted: true
                     enabled: typeField.text.trim() !== "" && breakBox.currentIndex >= 0
                              && /^\d{1,2}[:.h]?\d{2}$/.test(closeField.text.trim())
                     onClicked: page.save({ default_type: typeField.text.trim(), default_client: clientField.text.trim() || null,
@@ -648,8 +662,9 @@ ScrollView {
                     Accessible.name: qsTr("Currency")
                     onTextEdited: page.currencyMessage = ""
                 }
-                Button {
+                AppButton {
                     text: qsTr("Save")
+                    highlighted: true
                     enabled: page.currencyValid
                     onClicked: page.save({ currency: currencyField.text.trim() }, m => page.currencyMessage = m, "currency")
                 }
@@ -679,44 +694,51 @@ ScrollView {
             }
             Repeater {
                 model: page.clients
-                delegate: RowLayout {
+                // the name on its own line, then the controls: a long name never squeezes them
+                delegate: ColumnLayout {
                     id: crow
                     required property var modelData
-                    spacing: 4
+                    spacing: 0
                     Layout.fillWidth: true
-                    Label { text: crow.modelData.name; elide: Text.ElideRight; Layout.fillWidth: true }
-                    Switch {
-                        text: qsTr("Billable")
-                        checked: crow.modelData.billable
-                        Accessible.name: qsTr("%1 is billable").arg(crow.modelData.name)
-                        onToggled: page.setBillable(crow.modelData.name, checked)
-                    }
-                    ToolButton {
-                        text: qsTr("Rename")
-                        Accessible.name: qsTr("Rename %1").arg(crow.modelData.name)
-                        onClicked: { page.renaming = crow.modelData.name; renameField.text = crow.modelData.name; renameDialog.open() }
-                    }
-                    ToolButton {
-                        text: "✗"
-                        Accessible.name: qsTr("Delete %1").arg(crow.modelData.name)
-                        onClicked: page.deleteClient(crow.modelData.name)
+                    Label { text: crow.modelData.name; wrapMode: Text.Wrap; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                    RowLayout {
+                        spacing: 4
+                        Layout.fillWidth: true
+                        AppSwitch {
+                            text: qsTr("Billable")
+                            checked: crow.modelData.billable
+                            Accessible.name: qsTr("%1 is billable").arg(crow.modelData.name)
+                            onToggled: page.setBillable(crow.modelData.name, checked)
+                        }
+                        AppIconButton {
+                            text: "✎"
+                            name: qsTr("Rename %1").arg(crow.modelData.name)
+                            onClicked: { page.renaming = crow.modelData.name; renameField.text = crow.modelData.name; renameDialog.open() }
+                        }
+                        AppIconButton {
+                            text: "×"
+                            name: qsTr("Delete %1").arg(crow.modelData.name)
+                            onClicked: page.deleteClient(crow.modelData.name)
+                        }
                     }
                 }
             }
+            TextField {
+                id: newClient
+                placeholderText: qsTr("New client")
+                maximumLength: 100
+                Layout.fillWidth: true
+                Accessible.name: qsTr("New client name")
+                onAccepted: addClientButton.clicked()
+            }
             RowLayout {
                 Layout.fillWidth: true
-                TextField {
-                    id: newClient
-                    placeholderText: qsTr("New client")
-                    maximumLength: 100
-                    Layout.fillWidth: true
-                    Accessible.name: qsTr("New client name")
-                    onAccepted: addClientButton.clicked()
-                }
                 CheckBox { id: newClientBillable; text: qsTr("Billable"); checked: true }
-                Button {
+                Item { Layout.fillWidth: true }
+                AppButton {
                     id: addClientButton
                     text: qsTr("Add")
+                    highlighted: true
                     enabled: newClient.text.trim() !== ""
                     onClicked: { page.addClient(newClient.text, newClientBillable.checked); newClient.text = "" }
                 }
@@ -751,26 +773,31 @@ ScrollView {
                         required property var modelData
                         required property int index
                         implicitHeight: 36
-                        implicitWidth: bname.implicitWidth + bdel.implicitWidth + 20
+                        implicitWidth: brow.implicitWidth + 20
                         radius: 18
                         color: "transparent"
                         border.color: bchip.index === 0 ? Api.accent : Api.line
-                        Label {
-                            id: bname
+                        Row {
+                            id: brow
                             anchors.left: parent.left
                             anchors.leftMargin: 12
                             anchors.verticalCenter: parent.verticalCenter
-                            text: bchip.modelData + (bchip.index === 0 ? " · " + qsTr("default") : "")
-                        }
-                        ToolButton {
-                            id: bdel
-                            anchors.right: parent.right
-                            anchors.verticalCenter: parent.verticalCenter
-                            implicitWidth: 32
-                            implicitHeight: 32
-                            text: "✗"
-                            Accessible.name: qsTr("Delete break type %1").arg(bchip.modelData)
-                            onClicked: page.deleteBreak(bchip.modelData)
+                            spacing: 0
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                rightPadding: 4
+                                text: bchip.modelData + (bchip.index === 0 ? " · " + qsTr("default") : "")
+                            }
+                            AppIconButton {
+                                text: "✎"
+                                name: qsTr("Rename break type %1").arg(bchip.modelData)
+                                onClicked: { page.renamingBreak = bchip.modelData; renameBreakField.text = bchip.modelData; renameBreakDialog.open() }
+                            }
+                            AppIconButton {
+                                text: "×"
+                                name: qsTr("Delete break type %1").arg(bchip.modelData)
+                                onClicked: page.deleteBreak(bchip.modelData)
+                            }
                         }
                     }
                 }
@@ -785,9 +812,10 @@ ScrollView {
                     Accessible.name: qsTr("New break type name")
                     onAccepted: addBreakButton.clicked()
                 }
-                Button {
+                AppButton {
                     id: addBreakButton
                     text: qsTr("Add")
+                    highlighted: true
                     enabled: newBreak.text.trim() !== ""
                     onClicked: { page.addBreak(newBreak.text); newBreak.text = "" }
                 }
@@ -825,17 +853,16 @@ ScrollView {
         Item { implicitHeight: 8 }
     }
 
-    Dialog {
+    AppDialog {
         id: renameDialog
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         title: qsTr("Rename %1").arg(page.renaming)
         width: Math.min(parent ? parent.width - 32 : 320, 400)
         standardButtons: Dialog.Save | Dialog.Cancel
         Material.accent: Api.accent
         onAccepted: page.renameClient(page.renaming, renameField.text)
-        contentItem: ColumnLayout {
+        contentItem: ScrollBody {
             Label {
                 text: qsTr("Blocks and the default client with this name follow the new name.")
                 wrapMode: Text.Wrap
@@ -852,10 +879,35 @@ ScrollView {
         }
     }
 
-    Dialog {
+    AppDialog {
+        id: renameBreakDialog
+        parent: Overlay.overlay
+        modal: true
+        title: qsTr("Rename %1").arg(page.renamingBreak)
+        width: Math.min(parent ? parent.width - 32 : 320, 400)
+        standardButtons: Dialog.Save | Dialog.Cancel
+        Material.accent: Api.accent
+        onAccepted: page.renameBreak(page.renamingBreak, renameBreakField.text)
+        contentItem: ScrollBody {
+            Label {
+                text: qsTr("Blocks and the default break type with this name follow the new name. Names are kept in lower case.")
+                wrapMode: Text.Wrap
+                color: Api.muted
+                Layout.fillWidth: true
+            }
+            TextField {
+                id: renameBreakField
+                maximumLength: 40
+                Layout.fillWidth: true
+                Accessible.name: qsTr("New name")
+                onAccepted: renameBreakDialog.accept()
+            }
+        }
+    }
+
+    AppDialog {
         id: signOutDialog
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         title: qsTr("Sign out?")
         width: Math.min(parent ? parent.width - 32 : 320, 400)

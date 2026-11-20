@@ -44,11 +44,11 @@ Pane {
             font.pixelSize: 18
             opacity: 0.5
         }
-        Button {
+        AppButton {
             visible: banner.isLogin
             text: qsTr("Settings")
             flat: true
-            Material.foreground: banner.tone
+            flatInk: banner.tone
             topInset: 0
             bottomInset: 0
             onClicked: Api.settingsRequested()

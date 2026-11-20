@@ -266,7 +266,7 @@ ScrollView {
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
-                        Button {
+                        AppButton {
                             visible: page.unreachableAtStart
                             text: qsTr("Retry")
                             flat: true
@@ -619,11 +619,9 @@ ScrollView {
         // ---- today ------------------------------------------------------------
         Card {
             title: qsTr("Today")
-            actions: RoundButton {
+            actions: AppRoundButton {
                 text: "+"
                 font.pixelSize: 20
-                highlighted: true
-                Material.elevation: 1
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("Add block")
                 Accessible.name: qsTr("Add block")

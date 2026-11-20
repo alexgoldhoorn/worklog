@@ -173,17 +173,16 @@ Item {
         dialog.close()
     }
 
-    Dialog {
+    AppDialog {
         id: dialog
         parent: Overlay.overlay
-        anchors.centerIn: parent
         modal: true
         closePolicy: Popup.NoAutoClose
         title: qsTr("Welcome back")
         width: Math.min(parent ? parent.width - 32 : 320, 400)
         Material.accent: Api.accent
 
-        contentItem: ColumnLayout {
+        contentItem: ScrollBody {
             spacing: 8
             Label {
                 text: root.pending ? root.question(root.pending) : ""
@@ -199,7 +198,7 @@ Item {
             }
         }
         footer: DialogButtonBox {
-            Button {
+            AppButton {
                 text: qsTr("Log as break")
                 enabled: !root.sending
                 highlighted: true
@@ -207,7 +206,7 @@ Item {
                 DialogButtonBox.buttonRole: DialogButtonBox.ActionRole   // not Accept: the dialog stays open until the server took the break
                 onClicked: root.logAsBreak()
             }
-            Button {
+            AppButton {
                 text: qsTr("Keep as work")
                 enabled: !root.sending
                 Accessible.name: text

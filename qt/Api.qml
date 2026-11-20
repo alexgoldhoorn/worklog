@@ -42,7 +42,7 @@ QtObject {
     }
     property bool hotkeyCapturing: false   // the Settings field is waiting for a key: release the hotkey so it can be pressed
     property string hotkeyError: ""   // set by TrayController when the hotkey could not be registered
-    readonly property bool trayCapable: Qt.platform.os === "windows"
+    property bool trayCapable: Qt.platform.os === "windows"   // not readonly: the tests switch it off (no QApplication there)
     // Android: fingerprint/face (or the screen lock) before the saved password is read (Settings switch)
     property bool requireUnlock: false
     // true until Biometric confirms; requests wait and Main.qml shows a locked screen

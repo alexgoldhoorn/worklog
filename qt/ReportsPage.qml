@@ -270,8 +270,11 @@ ScrollView {
                     page.setRange(r.start, r.end)
                 }
             }
-            RowLayout {
-                spacing: 8
+            // From and To side by side on a wide screen; below 420 each gets its own line, so the placeholders fit
+            GridLayout {
+                columns: page.availableWidth < 420 ? 2 : 4
+                columnSpacing: 8
+                rowSpacing: 4
                 Layout.fillWidth: true
                 TextField {
                     id: startField
@@ -281,7 +284,8 @@ ScrollView {
                     Accessible.name: qsTr("From date")
                     onEditingFinished: page.typedDate("start", text)
                 }
-                ToolButton {
+                AppButton {
+                    flat: true
                     text: qsTr("Pick")
                     Accessible.name: qsTr("Pick the from date")
                     Accessible.role: Accessible.Button
@@ -295,7 +299,8 @@ ScrollView {
                     Accessible.name: qsTr("To date")
                     onEditingFinished: page.typedDate("end", text)
                 }
-                ToolButton {
+                AppButton {
+                    flat: true
                     text: qsTr("Pick")
                     Accessible.name: qsTr("Pick the to date")
                     Accessible.role: Accessible.Button
@@ -472,22 +477,18 @@ ScrollView {
         Card {
             title: qsTr("Invoice")
             actions: RowLayout {
-                ToolButton {
+                AppIconButton {
                     text: "‹"
-                    font.pixelSize: 18
-                    Accessible.name: qsTr("Previous month")
-                    Accessible.role: Accessible.Button
+                    name: qsTr("Previous month")
                     onClicked: page.shiftInvoice(-1)
                 }
                 Label {
                     text: Api.parseDate(page.invoiceMonth + "-01").toLocaleDateString(Api.locale, "MMM yyyy")
                     font.weight: Font.DemiBold
                 }
-                ToolButton {
+                AppIconButton {
                     text: "›"
-                    font.pixelSize: 18
-                    Accessible.name: qsTr("Next month")
-                    Accessible.role: Accessible.Button
+                    name: qsTr("Next month")
                     onClicked: page.shiftInvoice(1)
                 }
             }
