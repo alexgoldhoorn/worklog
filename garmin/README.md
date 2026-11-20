@@ -76,7 +76,7 @@ PowerShell:
 
 ```powershell
 $sdk = "$env:APPDATA\Garmin\ConnectIQ\Sdks\connectiq-sdk-win-9.3.0-2026-10-20-95888f262\bin"
-& "$sdk\monkeydo.bat" garmin\bin\test.prg fr965 /t   # unit tests: expect PASSED (passed=14)
+& "$sdk\monkeydo.bat" garmin\bin\test.prg fr965 /t   # unit tests: expect PASSED (passed=16)
 & "$sdk\monkeydo.bat" garmin\bin\worklog.prg fr965   # the widget; it opens as the glance
 ```
 

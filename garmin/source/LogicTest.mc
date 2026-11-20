@@ -89,9 +89,32 @@ function testGlanceCache(logger as Logger) as Boolean {
         & check(logger, Logic.cachedLine(c, 1120, false), "Working 2:16 · acme")
         & check(logger, Logic.cachedLine(c, 1120, true), "Working 2:16 ?")
         & check(logger, Logic.cachedLine(c, 1601, false), "Working 2:24 ?")
-        & check(logger, Logic.cachedLine(c, 900, false), "Working 2:14 · acme")
+        & check(logger, Logic.cachedLine(c, 900, false), "Working 2:14 ?")
         & check(logger, Logic.cachedLine(stopped, 1050, false), "Stopped · 6.5 h")
         & check(logger, Logic.cachedLine(stopped, 9000, false), "Stopped · 6.5 h ?");
+}
+
+(:test)
+function testCacheStale(logger as Logger) as Boolean {
+    return check(logger, Logic.cacheStale(1599, 1000), false)
+        & check(logger, Logic.cacheStale(1600, 1000), false)
+        & check(logger, Logic.cacheStale(1601, 1000), true)
+        & check(logger, Logic.cacheStale(1000, 1000), false)
+        & check(logger, Logic.cacheStale(1000, null), true)
+        & check(logger, Logic.cacheStale(1000, 0), true)
+        & check(logger, Logic.cacheStale(900, 1000), true)
+        & check(logger, Logic.cacheAge(1234, 1000), 234)
+        & check(logger, Logic.cacheAge(900, 1000), null)
+        & check(logger, Logic.cacheAge(1000, 0), null);
+}
+
+(:test)
+function testCachedLineNoTime(logger as Logger) as Boolean {
+    // A cache without a usable time is marked stale and its elapsed time is not advanced.
+    var c = {"s" => "working", "e" => 60, "p" => "acme", "t" => 0};
+    var missing = {"s" => "break", "e" => 720};
+    return check(logger, Logic.cachedLine(c, 1700000000, false), "Working 0:01 ?")
+        & check(logger, Logic.cachedLine(missing, 1700000000, false), "On break 0:12 ?");
 }
 
 (:test)

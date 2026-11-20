@@ -140,20 +140,33 @@ module Logic {
         return out;
     }
 
+    //! Seconds since the cache entry was received (receivedAt, wall clock epoch seconds), or null
+    //! when there is no usable time: missing, zero, or a clock that went backwards (now < receivedAt).
+    (:glance)
+    function cacheAge(nowSec as Number, receivedAt) as Number or Null {
+        if (!(receivedAt instanceof Number) || receivedAt <= 0 || nowSec < receivedAt) {
+            return null;
+        }
+        return nowSec - receivedAt;
+    }
+
+    //! A cache entry is stale when it has no usable time or is older than 10 minutes (600 s).
+    (:glance)
+    function cacheStale(nowSec as Number, receivedAt) as Boolean {
+        var age = cacheAge(nowSec, receivedAt);
+        return age == null || age > 600;
+    }
+
     //! Glance line from a cache entry: elapsed advanced by the time since it was stored; a
-    //! trailing " ?" when older than 10 minutes or when `old` (the refresh failed). The glance
+    //! trailing " ?" when stale (see cacheStale) or when `old` (the refresh failed). The glance
     //! is narrow (about 16 characters), so a marked line drops the project to keep the "?" visible.
     (:glance)
     function cachedLine(c as Dictionary, nowSec as Number, old as Boolean) as String {
-        var t = c["t"];
-        var age = t instanceof Number ? nowSec - t : 0;
-        if (age < 0) {
-            age = 0;
-        }
-        var stale = old || age > 600;
+        var age = cacheAge(nowSec, c["t"]);
+        var stale = old || age == null || age > 600;
         var e = c["e"];
         var st = {"state" => c["s"], "project" => stale ? null : c["p"], "today_work_h" => c["h"],
-            "elapsed_s" => e instanceof Number ? e + age : null} as Dictionary;
+            "elapsed_s" => e instanceof Number ? (age == null ? e : e + age) : null} as Dictionary;
         var line = glanceLine(st);
         return stale ? line + " ?" : line;
     }
