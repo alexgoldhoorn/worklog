@@ -5,12 +5,13 @@ import pytest
 
 @pytest.mark.parametrize("path,ids", [
     ("/timer", ["btn-start", "btn-pause", "btn-stop", "blocks", "proposals", "totals",
-           "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint",
-           "defaults", "def-type", "def-client", "def-break", "def-close", "def-autoadd", "def-save"]),
+           "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint"]),
+    ("/settings", ["settings-notices", "defaults", "def-type", "def-client", "def-break", "def-close", "def-autoadd", "def-save", "def-msg",
+                   "rate", "rate-unit", "rate-hint", "basis", "basis-seg", "basis-hint", "pref-shortcuts"]),
     ("/", ["day-chips", "day-start", "timeline", "top3", "day-add", "day-find", "find-dialog", "find-form", "find-close", "f-date"]),
     ("/find", ["find-form", "f-what", "f-date", "f-start", "f-end", "find-submit", "options", "put-btn", "find-notices"]),
     ("/week", ["propose", "outlook", "add", "add-cal"]),
-    ("/reports", ["group", "start", "end", "invoice", "rate", "rate-unit", "rate-hint", "charts", "basis", "basis-seg", "basis-hint"]),
+    ("/reports", ["group", "start", "end", "invoice", "charts", "reports-notices", "import-form", "import-result"]),
     ("/days", ["days"]),
     ("/pomodoro", ["pomo-clock", "pomo-phase", "pomo-bar", "pomo-start", "pomo-pause", "pomo-plus", "pomo-reset", "pomo-log",
                    "pomo-card", "pomo-work", "pomo-break", "pomo-long", "pomo-rounds", "pomo-presets", "pomo-beep", "pomo-notices"])])
@@ -71,6 +72,72 @@ def test_day_page_nav_marks_day(client):
 def test_nav_has_the_app_order_and_names(client):
     nav = client.get("/timer").text.split("<nav>")[1].split("</nav>")[0]
     assert re.findall(r"</svg>([^<]+)</a>", nav) == ["Timer", "Week", "Pomodoro", "Day", "Reports", "Expected hours"]
+
+
+def test_more_menu_holds_the_pages_the_tabs_do_not(client):
+    html = client.get("/timer").text
+    menu = html.split('id="more-list"')[1].split("</div>")[0]
+    assert re.findall(r'href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [
+        ("/find", "Add or find a date"), ("/move", "Move"), ("/workcal", "Workcal"), ("/settings", "Settings")]
+    assert 'id="more-btn"' in html and 'aria-haspopup="true"' in html and 'aria-expanded="false"' in html
+    # the tabs themselves are unchanged and come first
+    assert html.index("</nav>") < html.index('id="more-btn"')
+    for page in ("/find", "/move", "/workcal", "/settings"):
+        assert re.search(r'id="more-btn" class="more-btn on"', client.get(page).text), page
+    assert 'class="more-btn on"' not in html
+
+
+def test_settings_page_and_links_where_settings_used_to_be(client):
+    assert 'id="def-save"' not in client.get("/timer").text and 'href="/settings"' in client.get("/timer").text
+    reports = client.get("/reports").text
+    assert 'id="rate"' not in reports and 'id="basis"' not in reports and 'href="/settings"' in reports
+    js = client.get("/static/app.js").text
+    assert "basisSelect" not in js and "/settings#week-basis" in js
+
+
+def test_root_opens_the_day_planner_only_when_it_is_configured(app, client):
+    assert client.get("/", follow_redirects=False).status_code == 200
+    app.state.settings.balance_db_path = None
+    r = client.get("/", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/timer"
+    assert client.get("/").status_code == 200 and 'id="blocks"' in client.get("/").text   # followed: the Timer, no error page
+
+
+def test_core_script_loads_first_and_is_served(client):
+    html = client.get("/timer").text
+    assert html.index("/static/core.js") < html.index("/static/app.js")
+    js = client.get("/static/core.js").text
+    assert "window.wl" in js and "Cannot reach the server" in js and "Server error (" in js
+    assert client.get("/static/core.js").headers["cache-control"] == "no-cache"
+
+
+def test_pages_share_one_fetch_wrapper(client):
+    # one wrapper (core.js) instead of a fetch per page; the pages keep only uploads of their own out of it
+    for name in ("app.js", "day.js", "week.js", "find.js", "move.js", "workcal.js"):
+        js = client.get(f"/static/{name}").text
+        assert "await fetch(" not in js, name
+
+
+def test_server_clock_not_device_clock(client):
+    for name in ("day.js", "week.js", "find.js", "move.js", "workcal.js", "pomodoro.js"):
+        js = client.get(f"/static/{name}").text
+        assert "toISOString" not in js and "new Date()" not in js, name
+    assert "Date.now() - new Date(" not in client.get("/static/app.js").text
+
+
+def test_wording_shared_with_the_qt_app(client):
+    html = client.get("/timer").text
+    assert "Work calendar <small>· the day's meetings</small>" in html
+    js = client.get("/static/app.js").text
+    assert '"Add as meeting"' in js and '"Dismiss"' in js
+    find = client.get("/find").text
+    assert "Length (min)" in find and "Travel each way (min)" in find and "Fill in the form and press Find." in find
+    assert "Defaults are greyed; edited days are marked and can be reset" in client.get("/days").text
+
+
+def test_no_hard_coded_default_types_in_the_timer(client):
+    js = client.get("/static/app.js").text
+    assert '"eat"' not in js and '"dev"' not in js and "status.resume" in js.replace("timer.status.resume", "status.resume")
 
 
 def test_timer_navigation_stays_on_timer(client):
@@ -158,6 +225,6 @@ def test_manifest_and_icons(client):
     r = client.get("/static/manifest.webmanifest")
     assert r.status_code == 200 and "manifest" in r.headers["content-type"]
     m = r.json()
-    assert m["name"] == "worklog" and m["display"] == "standalone" and m["start_url"] == "/"
+    assert m["name"] == "worklog" and m["display"] == "standalone" and m["start_url"] == "/timer"
     for icon in m["icons"]:
         assert client.get(icon["src"]).status_code == 200

@@ -5,25 +5,24 @@
   let start = null;                            // Monday of the shown week (ISO) or null = this week
   let data = null;
 
-  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  const esc = wl.esc;
   const hm = (s) => { const [h, m] = s.split(":").map(Number); return h + m / 60; };
-  const fmtDay = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", {weekday: "short", day: "2-digit", month: "2-digit"});
+  const fmtDay = (iso) => wl.dayLabel(iso);   // "Tue 20 Oct"
   const notice = (text, cls = "") => { const p = document.createElement("p"); p.className = cls; p.textContent = text; $("#notices").replaceChildren(p); };
 
-  async function api(path, opts = {}) {
-    const r = await fetch(path, Object.assign({headers: {"Content-Type": "application/json"}}, opts));
-    const ct = r.headers.get("content-type") || "";
-    const body = ct.includes("json") ? await r.json() : await r.text();
-    if (!r.ok) throw new Error(body.error || body || r.statusText);
-    return body;
-  }
+  // wl.call (core.js): JSON errors read as the server's message, a proxy's HTML page as "Server error (502)"
+  const api = (path, opts = {}) => wl.call(opts.method || "GET", path, opts.body);
+  const nextLoad = wl.sequence();
 
   async function load() {
+    const current = nextLoad();
     try {
-      data = await api("/api/balance/week" + (start ? "?start=" + start : ""));
+      const fresh = await api("/api/balance/week" + (start ? "?start=" + start : ""));
+      if (!current()) return;   // an older answer arriving after a newer request is dropped
+      data = fresh;
       $("#notices").replaceChildren();
       render();
-    } catch (e) { notice("Could not load: " + e.message, "error"); }
+    } catch (e) { if (current()) notice("Could not load: " + e.message, "error"); }
   }
 
   function render() {
@@ -62,7 +61,7 @@
     if (g.signals && g.signals.length) html += "<ul>" + g.signals.map((s) => `<li>${esc(s.text)}</li>`).join("") + "</ul>";
     else html += `<div class="hint">No signal firing.</div>`;
     if (g.protect) html += `<h4>Protect</h4><div class="protect">${esc(g.protect)}</div>`;
-    html += `<h4>The numbers behind it</h4><table class="numtable">${rows.map(([k, v, note]) => `<tr><td>${esc(k)}</td><td class="v">${v}</td><td class="hint">${note}</td></tr>`).join("")}</table>`;
+    html += `<h4>The numbers behind it</h4><table class="numtable">${rows.map(([k, v, note]) => `<tr><td>${esc(k)}</td><td class="v">${esc(v)}</td><td class="hint">${esc(note)}</td></tr>`).join("")}</table>`;
     if (g.gaps && g.gaps.length) html += `<div class="gaps">No data: ${esc(g.gaps.join(", "))}</div>`;
     if (sync && sync.google && sync.google !== "ok") html += `<div class="gaps">Google Calendar: ${esc(sync.google)} (${sync.pending || 0} block(s) waiting)</div>`;
     el.innerHTML = html;
@@ -70,7 +69,7 @@
 
   function renderWeek() {
     const hardStop = data.settings.hard_stop || "18:00";
-    const nowD = new Date();
+    const nowD = wl.serverNow();   // the server's clock (core.js), not the device's
     const todayIso = data.today;
     const grid = document.createElement("div");
     grid.className = "wgrid";
@@ -129,23 +128,27 @@
     place(el, b.start, b.end);
     el.title = (b.note || "") + ` [${b.state}, ${b.source}]`;
     el.innerHTML = `<span class="t">${esc(b.start)}–${esc(b.end)}</span> ${esc(b.title)}`;
+    const what = `${b.start}–${b.end} ${b.title}`;
+    const button = (cls, text, label, fn) => {
+      const x = document.createElement("button");
+      x.type = "button"; x.className = cls; x.textContent = text; x.title = label; x.setAttribute("aria-label", `${label} ${what}`);
+      x.onclick = fn;
+      return x;
+    };
+    const btns = document.createElement("div"); btns.className = "btns";
     if (b.state === "proposed") {
-      const btns = document.createElement("div"); btns.className = "btns";
-      const ok = document.createElement("button"); ok.className = "primary"; ok.textContent = "✓";
-      ok.onclick = () => decide(b.id, "approve");
-      const no = document.createElement("button"); no.className = "danger"; no.textContent = "✗";
-      no.onclick = () => decide(b.id, "reject");
-      btns.append(ok, no); el.appendChild(btns);
+      // proposals are cheap to redo: ✓ and ✗ act at once
+      btns.append(button("primary", "✓", "Approve", () => decide(b.id, "approve")),
+                  button("danger", "✗", "Reject", () => decide(b.id, "reject")));
     }
     if (b.state === "approved") {
       const mv = document.createElement("a"); mv.className = "mv"; mv.textContent = "move";
       mv.href = `/move?kind=${b.kind === "run" ? "run" : "block"}&date=${b.date}&id=${b.id}`; el.appendChild(mv);
+      // an approved block is on the calendar: removing it asks first (no hidden double-click)
+      const ask = b.source !== "manual" ? "Remove this approved block? It will be removed from Google Calendar on the next sync." : "Remove this approved block?";
+      btns.append(button("danger", "✗", "Remove", () => { if (confirm(ask)) decide(b.id, "reject"); }));
     }
-    if (b.state === "approved" && b.source !== "manual") {
-      el.ondblclick = () => { if (confirm("Reject this block? It will be removed from Google Calendar on the next sync.")) decide(b.id, "reject"); };
-    } else if (b.state === "approved") {
-      el.ondblclick = () => { if (confirm("Remove this block?")) decide(b.id, "reject"); };
-    }
+    if (btns.children.length) el.appendChild(btns);
     return el;
   }
 
@@ -193,8 +196,10 @@
     f.onsubmit = async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(f).entries());
-      try { await api("/api/balance/settings", {method: "PUT", body: JSON.stringify(body)}); notice("Settings saved. The gate reads them on its next run.", "ok"); await load(); }
-      catch (err) { notice(err.message, "error"); }
+      await wl.locked(f.querySelector(".save"), async () => {
+        try { await api("/api/balance/settings", {method: "PUT", body}); notice("Settings saved. The gate reads them on its next run.", "ok"); await load(); }
+        catch (err) { notice(err.message, "error"); }
+      });
     };
   }
 
@@ -205,27 +210,32 @@
   $("#prev").onclick = () => shift(-7);
   $("#next").onclick = () => shift(7);
   $("#today").onclick = () => { start = null; load(); };
-  $("#propose").onclick = async () => {
+  $("#propose").onclick = (ev) => wl.locked(ev.currentTarget, async () => {
     try {
       const from = data.start < data.today ? data.today : data.start;
       if (from > data.end) { notice("This week is over; nothing to propose.", ""); return; }
-      const r = await api("/api/balance/propose", {method: "POST", body: JSON.stringify({start: from, end: data.end})});
+      const r = await api("/api/balance/propose", {method: "POST", body: {start: from, end: data.end}});
       notice(r.created.length ? `${r.created.length} block(s) proposed. Tick the ones you want.` : "Nothing to propose: every day already has its blocks, or no runs are planned.", "ok");
       await load();
     } catch (e) { notice(e.message, "error"); }
-  };
+  });
   $("#outlook").onclick = async () => {
     const pre = $("#paste");
     if (!pre.hidden) { pre.hidden = true; return; }
-    pre.textContent = await api("/api/balance/outlook?start=" + data.start); pre.hidden = false;
+    try {
+      pre.textContent = await api("/api/balance/outlook?start=" + data.start);
+      pre.hidden = false;
+    } catch (e) { notice("Could not get the Outlook list: " + e.message, "error"); return; }
     try { await navigator.clipboard.writeText(pre.textContent); notice("Copied to the clipboard.", "ok"); } catch (_) {}
   };
   $("#add").onclick = () => { const f = $("#addform"); f.hidden = !f.hidden; if (!f.hidden) f.date.value = data.today; };
   $("#addform").onsubmit = async (e) => {
     e.preventDefault();
     const body = Object.fromEntries(new FormData(e.target).entries());
-    try { await api("/api/balance/blocks", {method: "POST", body: JSON.stringify(body)}); e.target.hidden = true; e.target.reset(); await load(); notice("Block saved and approved.", "ok"); }
-    catch (err) { notice(err.message, "error"); }
+    await wl.locked(e.target.querySelector('[type="submit"]'), async () => {
+      try { await api("/api/balance/blocks", {method: "POST", body}); e.target.hidden = true; e.target.reset(); await load(); notice("Block saved and approved.", "ok"); }
+      catch (err) { notice(err.message, "error"); }
+    });
   };
-  load();
+  wl.ensureClock().then(load);
 })();

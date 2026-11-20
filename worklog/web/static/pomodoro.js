@@ -52,7 +52,7 @@
 
   // ---- live state ------------------------------------------------------------------------
 
-  const pomo = { state: null, lastFlashAt: 0, audio: null, tick: null, gen: 0,
+  const pomo = { state: null, lastFlashAt: 0, audio: null, tick: null, endTimer: null, armedAt: null, gen: 0,
     DEFAULTS, PRESETS, cleanSettings, nextAfterWork, startPhase, remainingMs, phaseLength };
   window.pomo = pomo;
 
@@ -86,6 +86,17 @@
     $("pomo-plus").disabled = s.phase === "ready";
     $("pomo-reset").disabled = s.phase === "ready";
     document.title = isCounting(s) ? `${fmtMS(ms)} · worklog` : isAwaiting(s) ? "00:00 · worklog" : "worklog";
+    armEnd(s);
+  }
+
+  // A hidden tab throttles setInterval (down to about once a minute), so besides the 1 s tick a timeout is set for the
+  // exact stored end time; both, and the catch-up on visibilitychange / focus / pageshow, read the absolute `endsAt`.
+  function armEnd(s) {
+    const at = isCounting(s) && s.pausedLeft == null ? s.endsAt : null;
+    if (at === pomo.armedAt) return;
+    clearTimeout(pomo.endTimer);
+    pomo.armedAt = at;
+    if (at != null) pomo.endTimer = setTimeout(tick, Math.max(0, at - Date.now()) + 50);
   }
 
   // presets are built once: a number input's blur fires `change` → re-render, and a chip rebuilt
@@ -125,6 +136,7 @@
     try {
       log.status = await api("GET", "/api/status");
       log.fetchedAt = Date.now();
+      wl.syncClock(log.status);
     } catch (err) {
       log.status = null;
       showMessages($("pomo-notices"), [`Error: ${err.message}`], "error");
@@ -142,13 +154,11 @@
       ` · ${b.type}${b.project ? ` · ${b.project}` : ""} · ${fmtHM(st.elapsed_min + Math.floor((Date.now() - log.fetchedAt) / MIN))}`);
   }
 
-  // what "resume work" should log: today's most recent work block, if any
+  // what "resume work" should log: the last work block (the server's `resume`), if any
   async function lastWorkBlock() {
     try {
-      const day = await api("GET", `/api/day/${isoDate(new Date())}`);
-      const work = (day.blocks || []).filter((b) => b.work_type === "work");
-      const last = work[work.length - 1];
-      return last ? { type: last.type, project: last.project || null } : null;
+      const st = await api("GET", "/api/status");
+      return st.resume && st.resume.type ? { type: st.resume.type, project: st.resume.project || null } : null;
     } catch (_) { return null; }
   }
 
@@ -314,6 +324,10 @@
     saveState(s); render(now);
   }
   function onReset() {
+    const s = pomo.state;
+    // rounds finished so far: the current work interval is not one yet
+    const done = s.round - (s.phase === "work" ? 1 : 0);
+    if (done > 0 && !confirm(`Reset the Pomodoro? ${done} finished round${done === 1 ? "" : "s"} will be forgotten.`)) return;
     pomo.gen++;
     pomo.state = fresh(pomo.state.settings);
     saveState(pomo.state);
@@ -339,6 +353,7 @@
     document.addEventListener("pointerdown", unlockAudio, { once: true });
     document.addEventListener("visibilitychange", () => { tick(); }); // endsAt is absolute, so a throttled tab catches up here
     window.addEventListener("focus", tick);
+    window.addEventListener("pageshow", tick);
     pomo.tick = setInterval(tick, 1000);
     logStatus();
     setInterval(logStatus, 60 * 1000);

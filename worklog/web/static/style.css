@@ -1,5 +1,5 @@
 :root {
-  --bg: #f3f4f6; --fg: #15181d; --muted: #6b7380; --faint: #6b7584; --card: #ffffff; --line: #e1e4e9; --line2: #eef0f3;
+  --bg: #f3f4f6; --fg: #15181d; --muted: #6b7380; --faint: #5f6978; --card: #ffffff; --line: #e1e4e9; --line2: #eef0f3;
   --accent: #2563eb; --accent-bg: #e8effd; --accent-fg: #ffffff;
   --work: #15803d; --work-bg: #e3f6e9; --work-fg: #ffffff;
   --green: #15803d; --green-bg: #e3f6e9; --amber: #b45309; --amber-bg: #fdf0d5; --red: #dc2626; --red-bg: #fde8e8;
@@ -644,3 +644,49 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
   max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: var(--r-sm); background: var(--fg); color: var(--bg); font-size: .9rem; box-shadow: var(--shadow); }
 .undo-bar[hidden] { display: none; }
 .undo-bar button { border-color: transparent; }
+
+/* ===== review fixes ===== */
+/* More menu: Add or find a date, Move, Workcal, Settings (a sibling of the scrolling nav, so it is never clipped) */
+.more-menu { position: relative; flex: 0 0 auto; height: 100%; display: flex; align-items: center; }
+.more-btn { display: flex; align-items: center; gap: 5px; height: 100%; min-height: 0; padding: 0 12px; border: 0; border-bottom: 2px solid transparent;
+  border-radius: 0; background: transparent; color: var(--muted); font-size: .95rem; }
+.more-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.more-btn.on, .more-btn[aria-expanded="true"] { color: var(--fg); }
+.more-btn.on { border-bottom-color: var(--accent); font-weight: 600; }
+.more-list { position: absolute; right: 0; top: calc(100% + 2px); min-width: 13rem; max-width: calc(100vw - 16px); padding: 4px; z-index: 10;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.more-list[hidden] { display: none; }
+.more-list a { display: block; padding: 10px 12px; min-height: 44px; color: var(--fg); text-decoration: none; border-radius: var(--r-sm); }
+.more-list a:hover, .more-list a:focus-visible { background: var(--line2); outline-offset: -2px; }
+.more-list a.on { color: var(--accent); font-weight: 600; }
+@media (max-width: 480px) { .more-btn { padding: 0 8px; font-size: .88rem; } .more-btn svg { display: none; } }
+
+/* block cells are keyboard targets on the Timer */
+.grid td[data-field]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.grid td.bill[data-field] { cursor: pointer; }
+.rowerr { display: block; color: var(--danger); font-size: .78rem; white-space: normal; }
+.rowerr:empty { display: none; }
+.grid td input[aria-invalid="true"] { border-color: var(--danger); }
+.basis-link { font-size: .78rem; font-weight: 500; color: var(--muted); margin-left: 6px; white-space: nowrap; }
+.prefs { padding: 4px 14px 10px; }
+.prefs .filters { margin: 10px 0 0; }
+.kbd-hint[hidden] { display: none; }
+dialog.sheet.narrow { width: min(440px, calc(100vw - 20px)); }
+.classify .q { font-weight: 700; margin: 0 0 4px; }
+
+/* Touch: at least a 32 px hit area for the small Week and Day buttons */
+@media (pointer: coarse) {
+  .ev .btns button { min-height: 32px; min-width: 32px; }
+  .day .tiny, .day .tiny.btn, .tl .ev .tiny, .tl .ev .btns button { min-height: 32px; }
+  .wgrid .ev.proposed, .wgrid .ev.approved { min-height: 36px; }
+}
+/* an approved block's remove button sits in the corner, so a short block does not clip it */
+.wgrid .ev.approved .btns { position: absolute; top: 1px; right: 2px; margin: 0; }
+@media (max-width: 700px) { .wgrid .ev.approved .btns { position: static; margin-top: 3px; } }
+
+/* Motion: no full-page flash or pulsing dot for people who ask for less */
+@media (prefers-reduced-motion: reduce) {
+  body.flash { animation: none; }
+  .live::before { animation: none; }
+  .bar-fill, .bar span, .bar-fg, .brand .dot { transition: none; }
+}

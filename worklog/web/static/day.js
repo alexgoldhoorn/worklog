@@ -13,7 +13,7 @@
   let data = null;
   let timer = null;
   let pendingType = null;   // type chip picked while the timer is stopped; used by the next start
-  const localIso = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`; };
+  const localIso = () => wl.today();   // the server's date (core.js), not the device's
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const hm = (s) => { const [h, m] = String(s).split(":").map(Number); return h + m / 60; };
@@ -22,24 +22,33 @@
   const shift = (iso, days) => { const d = new Date(iso + "T00:00"); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const notice = (text, cls = "") => { const p = el("p", cls, text); $("notices").replaceChildren(p); };
 
-  async function call(method, url, body) {
-    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    const ct = r.headers.get("content-type") || "";
-    const out = ct.includes("json") ? await r.json() : await r.text();
-    if (!r.ok) throw new Error((out && out.error) || r.statusText);
-    return out;
-  }
+  const call = wl.call;
+  const nextLoad = wl.sequence();
 
   async function load() {
+    const current = nextLoad();
     try {
-      data = await call("GET", "/api/day" + (date ? "?date=" + date : ""));
+      const fresh = await call("GET", "/api/day" + (date ? "?date=" + date : ""));
+      if (!current()) return;   // a newer load was started meanwhile: drop this answer
+      data = fresh;
       $("notices").replaceChildren();
       render();
-    } catch (e) { notice("Could not load the day: " + e.message, "error"); }
+    } catch (e) { if (current()) notice("Could not load the day: " + e.message, "error"); }
   }
 
   async function act(fn) {
     try { await fn(); await load(); } catch (e) { notice(e.message, "error"); }
+  }
+
+  // "Only this one / Always for this title / Cancel": resolves "once", "always" or null (Esc and Cancel save nothing)
+  function askClassify(title, who) {
+    const dlg = $("classify-dialog");
+    $("classify-title").textContent = `Mark "${title}" as ${who}?`;
+    dlg.returnValue = "";
+    return new Promise((resolve) => {
+      dlg.addEventListener("close", () => resolve(dlg.returnValue === "once" || dlg.returnValue === "always" ? dlg.returnValue : null), { once: true });
+      dlg.showModal();
+    });
   }
 
   // ---- render ---------------------------------------------------------------
@@ -138,9 +147,10 @@
           const who = el("span", "btns");
           for (const [cls, text] of [["mine", "me"], ["family", "us"], ["partner", hh.partner], ["child", hh.child]]) {
             const b = el("button", "tiny", text); b.type = "button"; b.title = "whose is this?";
-            b.onclick = () => {
-              const always = window.confirm(`Only this one? OK = only this occurrence, Cancel = always for events titled "${ev.title}"`) ? false : true;
-              act(() => call("POST", "/api/day/classify", { date: d.date, start: ev.start, title: ev.title, cls, always }));
+            b.setAttribute("aria-label", `${text}: whose is "${ev.title}"?`);
+            b.onclick = async () => {
+              const choice = await askClassify(ev.title, text);
+              if (choice) act(() => call("POST", "/api/day/classify", { date: d.date, start: ev.start, title: ev.title, cls, always: choice === "always" }));
             };
             who.appendChild(b);
           }
@@ -153,7 +163,7 @@
         if (ev.layer === "work" && !ev.cancelled && ((d.work && d.work.proposals) || []).some((p) => p.start === ev.start && (p.title || "") === (ev.title || ""))
             && (d.is_today ? ev.start <= d.now : d.date < localIso())) {
           const lg = el("button", "tiny", "Log"); lg.type = "button"; lg.title = "Add this meeting to the time log";
-          lg.onclick = () => act(() => call("POST", "/api/calendar/add", { date: d.date, start: ev.start, end: ev.end, title: ev.title }));
+          lg.onclick = (e) => wl.locked(e.currentTarget, () => act(() => call("POST", "/api/calendar/add", { date: d.date, start: ev.start, end: ev.end, title: ev.title })));
           box.appendChild(lg);
         }
         if (ev.layer === "protected" && ev.state === "approved" && ev.id) {
@@ -162,10 +172,10 @@
         }
         if (ev.layer === "protected" && ev.state === "proposed") {
           const b = el("span", "btns");
-          const ok = el("button", "tiny", "✓"); ok.type = "button"; ok.title = "approve";
-          ok.onclick = () => act(() => call("POST", `/api/balance/blocks/${ev.id}/approve`));
-          const no = el("button", "tiny", "✗"); no.type = "button"; no.title = "reject";
-          no.onclick = () => act(() => call("POST", `/api/balance/blocks/${ev.id}/reject`));
+          const ok = el("button", "tiny", "✓"); ok.type = "button"; ok.title = "approve"; ok.setAttribute("aria-label", `Approve ${ev.start}–${ev.end} ${ev.title}`);
+          ok.onclick = (e) => wl.locked([ok, no], () => act(() => call("POST", `/api/balance/blocks/${ev.id}/approve`)));
+          const no = el("button", "tiny", "✗"); no.type = "button"; no.title = "reject"; no.setAttribute("aria-label", `Reject ${ev.start}–${ev.end} ${ev.title}`);
+          no.onclick = () => wl.locked([ok, no], () => act(() => call("POST", `/api/balance/blocks/${ev.id}/reject`)));
           b.append(ok, no); box.appendChild(b);
         }
         if (ev.layer === "duty") {
@@ -352,27 +362,24 @@
   // ---- wiring ---------------------------------------------------------------
   function go(next) { date = next; const u = new URL(location.href); if (next) u.searchParams.set("date", next); else u.searchParams.delete("date"); history.replaceState(null, "", u); load(); }
   document.addEventListener("DOMContentLoaded", () => {
-    $("day-prev").onclick = () => go(shift(data ? data.date : new Date().toISOString().slice(0, 10), -1));
-    $("day-next").onclick = () => go(shift(data ? data.date : new Date().toISOString().slice(0, 10), 1));
+    $("day-prev").onclick = () => go(shift(data ? data.date : wl.today(), -1));
+    $("day-next").onclick = () => go(shift(data ? data.date : wl.today(), 1));
     $("day-today").onclick = () => go(null);
-    $("day-refresh").onclick = () => act(() => call("POST", "/api/day/refresh"));
+    $("day-refresh").onclick = (e) => wl.locked(e.currentTarget, () => act(() => call("POST", "/api/day/refresh")));
     $("pdf-file").onchange = async () => {
       const f = $("pdf-file").files[0]; if (!f) return;
       const fd = new FormData(); fd.append("file", f);
       try {
-        const r = await fetch("/api/day/calendar-pdf", { method: "POST", body: fd });
-        const out = await r.json();
-        if (!r.ok) throw new Error(out.error || r.statusText);
+        const out = await call("POST", "/api/day/calendar-pdf", fd);
         notice(`Saved ${out.saved}: ${out.note}.`, "ok");
       } catch (e) { notice("Upload failed: " + e.message, "error"); }
       $("pdf-file").value = "";
     };
     for (const [id] of LANES) { const cb = $("lane-" + id); cb.checked = laneOn(id); cb.onchange = () => { setLane(id, cb.checked); if (data) renderTimeline(data); }; }
     PHONE.onchange = () => { if (data) renderTimeline(data); };
-    $("day-start").onclick = () => act(() => { const body = pendingType ? { type: pendingType } : {}; pendingType = null; return call("POST", "/api/start", body); });
-    $("day-pause").onclick = () => act(() => call("POST", "/api/pause", {}));
-    $("day-stop").onclick = () => act(() => call("POST", "/api/stop", {}));
-    load();
-    timer = setInterval(load, 60000);
+    $("day-start").onclick = (e) => wl.locked(e.currentTarget, () => act(() => { const body = pendingType ? { type: pendingType } : {}; pendingType = null; return call("POST", "/api/start", body); }));
+    $("day-pause").onclick = (e) => wl.locked(e.currentTarget, () => act(() => call("POST", "/api/pause", {})));
+    $("day-stop").onclick = (e) => wl.locked(e.currentTarget, () => act(() => call("POST", "/api/stop", {})));
+    wl.ensureClock().then(() => { load(); timer = setInterval(load, 60000); });
   });
 })();

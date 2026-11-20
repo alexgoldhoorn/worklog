@@ -10,12 +10,7 @@
   const H0 = 6, H1 = 22, PX = 40;
   let item = null, day = null, chosen = null, slotsData = null;
 
-  async function call(method, url, body) {
-    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    const out = (r.headers.get("content-type") || "").includes("json") ? await r.json() : await r.text();
-    if (!r.ok) throw new Error((out && out.error) || r.statusText);
-    return out;
-  }
+  const call = wl.call;
 
   // ---- resolve the item from the query string against the day model ------------
   function resolveItem(d) {
@@ -160,7 +155,8 @@
       return;
     }
     try {
-      const date = q.get("date") || new Date().toISOString().slice(0, 10);
+      await wl.ensureClock();
+      const date = q.get("date") || wl.today();   // the server's date, not the UTC one
       day = await call("GET", "/api/day?date=" + date);
       item = resolveItem(day);
       $("move-title").textContent = `Move: ${item.title}, ${item.minutes} min`;
@@ -173,7 +169,7 @@
     } catch (e) { notice(e.message, "error"); }
   }
 
-  function addDays(iso, n) { const d = new Date(iso + "T00:00"); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+  const addDays = wl.addDays;
 
   document.addEventListener("DOMContentLoaded", () => {
     $("confirm").onclick = confirm;

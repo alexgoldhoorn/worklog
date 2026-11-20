@@ -5,32 +5,30 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const fmtDate = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   const notice = (text, cls = "") => { $("notices").replaceChildren(el("p", cls, text)); };
-  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const addDays = (s, n) => { const d = new Date(s + "T00:00"); d.setDate(d.getDate() + n); return iso(d); };
+  const iso = wl.isoDate;
+  const addDays = wl.addDays;
   const monday = (s) => { const d = new Date(s + "T00:00"); const off = (d.getDay() + 6) % 7; d.setDate(d.getDate() - off); return iso(d); };
-  let start = monday(iso(new Date()));
+  let start = null;   // Monday of the shown week; set from the server's date once the clock is known
   let parsed = [];
 
-  async function call(method, url, body) {
-    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    const out = (r.headers.get("content-type") || "").includes("json") ? await r.json() : await r.text();
-    if (!r.ok) throw new Error((out && out.error) || r.statusText);
-    return out;
-  }
+  const call = wl.call;
+  const nextLoad = wl.sequence();
 
   const sourceTag = (src) => /\.pdf$/i.test(src || "") || src === "pdf" ? "PDF" : src === "dashboard" ? "you" : src === "pa" ? "PA" : (src || "?");
 
   async function load() {
+    const current = nextLoad();
     try {
       const days = [];
       for (let i = 0; i < 7; i++) days.push(addDays(start, i));
       const payloads = await Promise.all(days.map((d) => call("GET", "/api/day?date=" + d)));
+      if (!current()) return;   // the week was changed meanwhile: this answer is for the old one
       $("notices").replaceChildren();
       renderBanner(payloads[0]);
       renderWeek(days, payloads);
       renderPrep(payloads);
       renderRules();
-    } catch (e) { notice("Could not load the week: " + e.message, "error"); }
+    } catch (e) { if (current()) notice("Could not load the week: " + e.message, "error"); }
   }
 
   function renderBanner(d) {
@@ -82,7 +80,7 @@
   function renderPrep(payloads) {
     const list = $("wc-prep");
     list.replaceChildren();
-    const tomorrow = addDays(iso(new Date()), 1);
+    const tomorrow = addDays(wl.today(), 1);
     const d = payloads.find((p) => p.date === tomorrow);
     const meetings = d ? d.timeline.filter((e) => e.layer === "work" && !e.cancelled) : [];
     if (!meetings.length) { list.appendChild(el("p", "hint", d ? `No meetings on file for ${fmtDate(tomorrow)}.` : "Tomorrow is not in this week's view.")); return; }
@@ -158,22 +156,20 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    $("wc-prev").onclick = () => { start = addDays(start, -7); load(); };
-    $("wc-next").onclick = () => { start = addDays(start, 7); load(); };
-    $("wc-today").onclick = () => { start = monday(iso(new Date())); load(); };
+    $("wc-prev").onclick = () => { if (start) { start = addDays(start, -7); load(); } };
+    $("wc-next").onclick = () => { if (start) { start = addDays(start, 7); load(); } };
+    $("wc-today").onclick = () => { start = monday(wl.today()); load(); };
     $("wc-read").onclick = read;
     $("wc-add").onclick = add;
     $("pdf-file").onchange = async () => {
       const f = $("pdf-file").files[0]; if (!f) return;
       const fd = new FormData(); fd.append("file", f);
       try {
-        const r = await fetch("/api/day/calendar-pdf", { method: "POST", body: fd });
-        const out = await r.json();
-        if (!r.ok) throw new Error(out.error || r.statusText);
+        const out = await call("POST", "/api/day/calendar-pdf", fd);
         notice(`Saved ${out.saved}: ${out.note}.`, "ok");
       } catch (e) { notice("Upload failed: " + e.message, "error"); }
       $("pdf-file").value = "";
     };
-    load();
+    wl.ensureClock().then(() => { start = monday(wl.today()); load(); });
   });
 })();

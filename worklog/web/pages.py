@@ -3,7 +3,7 @@ import hashlib
 import os
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter()
@@ -36,12 +36,21 @@ def _page(request: Request, name: str, page: str) -> HTMLResponse:
 
 @router.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    """The Day planner needs the balance store; a server without one has nothing to show there, so `/` (also the
+    address bar and old bookmarks) opens the Timer instead of an error page."""
+    if not request.app.state.settings.balance_db_path:
+        return RedirectResponse("/timer", status_code=302)
     return _page(request, "day.html", "day")
 
 
 @router.get("/timer", response_class=HTMLResponse)
 def timer(request: Request):
     return _page(request, "index.html", "timer")
+
+
+@router.get("/settings", response_class=HTMLResponse)
+def settings(request: Request):
+    return _page(request, "settings.html", "settings")
 
 
 @router.get("/week", response_class=HTMLResponse)

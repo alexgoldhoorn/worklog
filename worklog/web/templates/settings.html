@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="day-head">
+  <div>
+    <div class="day-title">Settings</div>
+    <div class="hint">Balance settings stay on <a href="/week">Week</a>; importing stays on <a href="/reports">Reports</a>.</div>
+  </div>
+</div>
+<div id="settings-notices" class="notices" role="status"></div>
+
+<h2>Defaults <small>what Start and Pause use when nothing is picked</small></h2>
+<section class="card prefs" id="defaults">
+  <div class="defaults">
+    <label>Work type <input id="def-type" maxlength="40" autocomplete="off"></label>
+    <label>Client <input id="def-client" maxlength="100" autocomplete="off" placeholder="none"></label>
+    <label>Break type <select id="def-break"></select></label>
+    <label>Close a forgotten block at <input id="def-close" type="time"></label>
+    <label class="check"><input id="def-autoadd" type="checkbox"> Add finished meetings on their own
+      <small>a work-calendar meeting that is over and falls inside logged time becomes a meeting block</small></label>
+    <div class="row"><button id="def-save" class="small" type="button">Save</button><span id="def-msg" class="muted" role="status"></span></div>
+  </div>
+</section>
+
+<h2>Billing and week <small>saved as soon as you change them</small></h2>
+<section class="card prefs" id="week-basis">
+  <div class="filters">
+    <label class="rate">Rate
+      <span class="rate-in">
+        <input type="number" id="rate" min="0" step="1" inputmode="decimal" placeholder="–" aria-label="Rate">
+        <select id="rate-unit" aria-label="Rate unit"><option value="h">€/h</option><option value="day">€/day</option></select>
+      </span>
+      <small id="rate-hint" class="muted"></small>
+    </label>
+    <label class="basis">Week
+      <span class="rate-in">
+        <span class="seg" id="basis-seg" role="group" aria-label="Week basis">
+          <button type="button" data-v="35">35 h</button>
+          <button type="button" data-v="40">40 h</button>
+        </span>
+        <input type="number" id="basis" min="1" max="80" step="0.5" inputmode="decimal" aria-label="Hours per week">
+      </span>
+      <small id="basis-hint" class="muted"></small>
+    </label>
+  </div>
+</section>
+
+<h2>This device</h2>
+<section class="card prefs">
+  <div class="defaults">
+    <label class="check"><input id="pref-shortcuts" type="checkbox"> Single-key shortcuts on the Timer page
+      <small>S start · P pause · X stop · 1–6 type · / project · arrow keys change day. They never act while you are typing or a button has focus. Kept in this browser only.</small></label>
+  </div>
+</section>
+{% endblock %}

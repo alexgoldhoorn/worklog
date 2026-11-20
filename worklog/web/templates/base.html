@@ -20,7 +20,9 @@
 <header class="top">
   <div class="bar">
     <a class="brand" href="/"><span class="dot" id="brand-dot"></span>worklog</a>
-    {# The same names, order and icon paths as the Qt app (qt/Main.qml, qt/NavIcon.qml); Day is web-only. #}
+    {# The first six tabs keep the names, order and icon paths of the Qt app's navigation (qt/Main.qml, qt/NavIcon.qml): do not rename or reorder them.
+       Qt shows Timer · Week · Pomodoro as bottom buttons and Reports · Expected hours · Add or find a date · Settings in its More menu, and has no Day page;
+       the web has Day as its own tab, and keeps Add or find a date, Move, Workcal and Settings in the More menu after the tabs. #}
     <nav>
       <a href="/timer" {% if page == "timer" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7v5l3 2"/></svg>Timer</a>
       <a href="/week" {% if page == "week" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4"/></svg>Week</a>
@@ -29,11 +31,22 @@
       <a href="/reports" {% if page == "reports" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16 M7 20v-6 M12 20V6 M17 20v-9"/></svg>Reports</a>
       <a href="/days" {% if page == "days" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4 M9 15l2 2l4-4"/></svg>Expected hours</a>
     </nav>
+    {% set more_on = page in ("find", "move", "workcal", "settings") %}
+    <div class="more-menu">
+      <button type="button" id="more-btn" class="more-btn{% if more_on %} on{% endif %}" aria-haspopup="true" aria-expanded="false" aria-controls="more-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01 M12 12h.01 M19 12h.01"/></svg>More</button>
+      <div id="more-list" class="more-list" role="menu" aria-label="More" hidden>
+        <a role="menuitem" href="/find" {% if page == "find" %}class="on" aria-current="page"{% endif %}>Add or find a date</a>
+        <a role="menuitem" href="/move" {% if page == "move" %}class="on" aria-current="page"{% endif %}>Move</a>
+        <a role="menuitem" href="/workcal" {% if page == "workcal" %}class="on" aria-current="page"{% endif %}>Workcal</a>
+        <a role="menuitem" href="/settings" {% if page == "settings" %}class="on" aria-current="page"{% endif %}>Settings</a>
+      </div>
+    </div>
   </div>
 </header>
 <main>
 {% block content %}{% endblock %}
 </main>
+<script src="/static/core.js?v={{ static_v }}"></script>
 <script src="/static/app.js?v={{ static_v }}"></script>
 {% if page == "pomodoro" %}<script src="/static/pomodoro.js?v={{ static_v }}"></script>{% endif %}
 {% if page in ("week", "day", "move", "find", "workcal") %}<script src="/static/mdlite.js?v={{ static_v }}"></script>{% endif %}

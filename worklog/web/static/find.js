@@ -8,12 +8,8 @@
   const notice = (text, cls = "") => { $("find-notices").replaceChildren(el("p", cls, text)); };
   let chosen = null, last = null, mode = "find", changed = false;
 
-  async function call(method, url, body) {
-    const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
-    const out = (r.headers.get("content-type") || "").includes("json") ? await r.json() : await r.text();
-    if (!r.ok) throw new Error((out && out.error) || r.statusText);
-    return out;
-  }
+  const call = wl.call;
+  let putting = false;   // a Put in / Add request is on its way
 
   const groupValue = (name) => { const on = document.querySelector(`.chips[data-group="${name}"] .chip.on`); return on ? on.dataset.v : null; };
   const multiValues = (name) => [...document.querySelectorAll(`.chips[data-group="${name}"] .chip.on`)].map((c) => c.dataset.v);
@@ -61,19 +57,22 @@
   }
 
   function addDays(iso, n) { const d = new Date(iso + "T00:00"); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
-  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const today = () => wl.today();   // the server's date (core.js)
 
   async function find(ev) {
     ev.preventDefault();
     if (mode === "add") { add(); return; }
     const item = itemFromForm();
     if (!item.title) { notice("Say what it is first.", "error"); return; }
+    await wl.ensureClock();
     const from = today(), to = addDays(from, Number(groupValue("when")) - 1);
-    try {
-      last = await call("POST", "/api/day/slots", { item, from, to });
-      $("find-notices").replaceChildren();
-      renderOptions(last, item);
-    } catch (e) { notice(e.message, "error"); }
+    await wl.locked($("find-submit"), async () => {
+      try {
+        last = await call("POST", "/api/day/slots", { item, from, to });
+        $("find-notices").replaceChildren();
+        renderOptions(last, item);
+      } catch (e) { notice(e.message, "error"); }
+    });
   }
 
   // "I know when": no search, the typed date and times go straight in
@@ -125,7 +124,11 @@
                                training: "an approved training block", todoist: "a Todoist task" }[groupValue("target")]);
 
   async function put() {
-    if (!chosen) return;
+    if (!chosen || putting) return;
+    putting = true;
+    $("find-submit").disabled = true;   // Add and Put in cannot be sent twice while the first is on its way
+    $("put-btn").disabled = true;
+    let ok = false;
     const item = itemFromForm();
     const target = groupValue("target");
     const body = { item, date: chosen.date, start: chosen.start, end: chosen.end, target };
@@ -137,19 +140,26 @@
       if (out.blocks.length) bits.push("block approved");
       notice(`Put in: ${item.title}, ${fmtDate(chosen.date)} ${chosen.start}. ${bits.join(", ")}.`, "ok");
       if (out.paste) { $("put-paste").hidden = false; $("put-paste").textContent = out.paste; }
-      $("put-btn").disabled = true;
+      ok = true;
       changed = true;
     } catch (e) { notice("Could not put it in: " + e.message, "error"); }
+    finally {
+      putting = false;
+      $("put-btn").disabled = ok;    // done: Pick another slot (or change the form) to put in something else
+      $("find-submit").disabled = ok && mode === "add";   // the same entry is not added twice: edit a field first
+    }
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     if (!$("find-root")) return;
     wireChips();
     $("find-form").onsubmit = find;
+    $("find-form").addEventListener("input", () => { if (!putting) $("find-submit").disabled = false; });
     $("put-btn").onclick = put;
     const q = new URLSearchParams(location.search);
     if (q.get("what")) $("f-what").value = q.get("what");
-    $("f-date").value = q.get("date") || today();
+    $("f-date").value = q.get("date") || "";
+    wl.ensureClock().then(() => { if (!$("f-date").value) $("f-date").value = today(); });
     setMode(q.get("mode") === "add" ? "add" : "find");
 
     // on the Day page the form is a dialog: Add and Find a date open it instead of leaving the page

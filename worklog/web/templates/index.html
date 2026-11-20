@@ -58,16 +58,5 @@
     <ul id="proposals" class="proposals"></ul>
   </div>
 </section>
-<details class="card" id="defaults">
-  <summary>Defaults <small>· what Start and Pause use when nothing is picked</small></summary>
-  <div class="defaults">
-    <label>Work type <input id="def-type" maxlength="40" autocomplete="off"></label>
-    <label>Client <input id="def-client" maxlength="100" autocomplete="off" placeholder="none"></label>
-    <label>Break type <select id="def-break"></select></label>
-    <label>Close a forgotten block at <input id="def-close" type="time"></label>
-    <label class="check"><input id="def-autoadd" type="checkbox"> Add finished meetings on their own
-      <small>a work-calendar meeting that is over and falls inside logged time becomes a meeting block</small></label>
-    <div class="row"><button id="def-save" class="small" type="button">Save</button><span id="def-msg" class="muted"></span></div>
-  </div>
-</details>
+<p class="hint">Defaults for Start and Pause, billing and the hours of a week: <a href="/settings">Settings</a></p>
 {% endblock %}

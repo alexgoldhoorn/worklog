@@ -1,7 +1,7 @@
 {
   "name": "worklog",
   "short_name": "worklog",
-  "start_url": "/",
+  "start_url": "/timer",
   "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",

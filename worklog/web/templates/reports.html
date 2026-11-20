@@ -3,9 +3,10 @@
 <div class="day-head">
   <div>
     <div class="day-title">Reports</div>
-    <div class="hint">Hours against expected per period, balance, invoice and export</div>
+    <div class="hint">Hours against expected per period, balance, invoice and export · rate and week hours are in <a href="/settings">Settings</a></div>
   </div>
 </div>
+<div id="reports-notices" class="notices" role="status"></div>
 <div class="row-head">
   <h2>Summary</h2>
   <div class="toolbar">
@@ -16,10 +17,10 @@
 <div class="filters">
   <label>Group
     <div class="seg" id="group-seg" role="group" aria-label="Group by">
-      <button type="button" data-v="week" class="on">Week</button>
-      <button type="button" data-v="month">Month</button>
-      <button type="button" data-v="quarter">Quarter</button>
-      <button type="button" data-v="year">Year</button>
+      <button type="button" aria-pressed="true" data-v="week" class="on">Week</button>
+      <button type="button" aria-pressed="false" data-v="month">Month</button>
+      <button type="button" aria-pressed="false" data-v="quarter">Quarter</button>
+      <button type="button" aria-pressed="false" data-v="year">Year</button>
     </div>
     <select id="group" hidden aria-hidden="true">
       <option value="week">week</option>
@@ -30,23 +31,6 @@
   </label>
   <label>From <input type="date" id="start"></label>
   <label>To <input type="date" id="end"></label>
-  <label class="rate">Rate
-    <span class="rate-in">
-      <input type="number" id="rate" min="0" step="1" inputmode="decimal" placeholder="–" aria-label="Rate">
-      <select id="rate-unit" aria-label="Rate unit"><option value="h">€/h</option><option value="day">€/day</option></select>
-    </span>
-    <small id="rate-hint" class="muted"></small>
-  </label>
-  <label class="basis">Week
-    <span class="rate-in">
-      <span class="seg" id="basis-seg" role="group" aria-label="Week basis">
-        <button type="button" data-v="35">35 h</button>
-        <button type="button" data-v="40">40 h</button>
-      </span>
-      <input type="number" id="basis" min="1" max="80" step="0.5" inputmode="decimal" aria-label="Hours per week">
-    </span>
-    <small id="basis-hint" class="muted"></small>
-  </label>
 </div>
 <div id="charts" class="charts" aria-label="Charts"></div>
 <div class="scroll"><table id="summary" class="grid"></table></div>

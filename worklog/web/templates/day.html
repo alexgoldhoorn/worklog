@@ -77,6 +77,17 @@
     <a href="/week">Week view</a>
   </div>
 </div>
+<dialog id="classify-dialog" class="sheet narrow" aria-labelledby="classify-title">
+  <form method="dialog" class="classify">
+    <p class="q" id="classify-title">Whose is this event?</p>
+    <p class="hint">Save it for this occurrence only, or for every event with this title. Esc or Cancel saves nothing.</p>
+    <div class="row-wrap">
+      <button class="small primary" value="once" autofocus>Only this one</button>
+      <button class="small" value="always">Always for this title</button>
+      <button class="small ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="find-dialog" class="sheet">
 {% set dialog = true %}{% include "_find.html" %}
 </dialog>

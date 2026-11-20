@@ -19,36 +19,11 @@ function el(tag, attrs, ...kids) {
   return e;
 }
 
-async function api(method, url, body) {
-  const opts = { method, headers: {} };
-  if (body instanceof FormData) {
-    opts.body = body;
-  } else if (body !== undefined) {
-    opts.headers["content-type"] = "application/json";
-    opts.body = JSON.stringify(body);
-  }
-  const res = await fetch(url, opts);
-  let data = null;
-  try { data = await res.json(); } catch (_) { /* non-JSON body */ }
-  if (!res.ok) throw new Error((data && data.error) || `HTTP ${res.status}`);
-  return data;
-}
-
-const pad = (n) => String(n).padStart(2, "0");
-const isoDate = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// Server clock: `clockOffset` (ms) = server wall clock - device clock, from status.now. serverNow() is a Date whose
-// local fields read the server's wall time, so isoDate()/HH:MM of it agree with the server whatever the device TZ or skew.
-let clockOffset = 0;
-const serverNow = () => new Date(Date.now() + clockOffset);
-const todayIso = () => isoDate(serverNow());
-function syncClock(status) {
-  const m = status && typeof status.now === "string" && /^(\d{4})-(\d\d)-(\d\d)[T ](\d\d):(\d\d)(?::(\d\d))?/.exec(status.now);
-  if (!m) return;
-  const wall = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
-  clockOffset = wall - Date.now();
-  if (Math.abs(clockOffset) < 2000) clockOffset = 0; // ignore network latency / sub-second noise
-}
-const nowHHMM = () => { const d = serverNow(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+// the shared fetch wrapper, server clock and stale-answer guard live in core.js (window.wl)
+const { pad, isoDate, serverNow, syncClock, minutesSince } = wl;
+const api = wl.call;
+const todayIso = wl.today;
+const nowHHMM = wl.nowHHMM;
 const fmtNum = (h, dp = 2) => (Math.round(h * 10 ** dp) / 10 ** dp).toFixed(dp).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 const fmtH = (h) => (h == null ? "–" : `${fmtNum(h)} h`);
 const fmtSigned = (h) => (h == null ? "–" : `${h > 0 ? "+" : ""}${fmtH(h)}`);
@@ -69,7 +44,7 @@ const weekdayShort = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString("en
 function fmtDayTitle(iso) {
   const d = new Date(`${iso}T12:00:00`);
   const t = `${d.toLocaleDateString("en", { weekday: "short" })} ${d.getDate()} ${d.toLocaleDateString("en", { month: "short" })}`;
-  return d.getFullYear() === new Date().getFullYear() ? t : `${t} ${d.getFullYear()}`;
+  return d.getFullYear() === serverNow().getFullYear() ? t : `${t} ${d.getFullYear()}`;
 }
 function isoWeek(iso) {
   const d = new Date(Date.UTC(...iso.split("-").map(Number).map((v, i) => (i === 1 ? v - 1 : v))));
@@ -97,12 +72,17 @@ const CHIP_LIMIT = { type: 6, project: 4, breakType: 6 };
 
 const timer = {
   date: null,
+  today: null, // the server's date when the page last looked
+  followsToday: true, // the page shows "today" (no ?date=), so it moves on when the server's date does
   status: null,
   day: null,
-  pending: { type: null, project: null, breakType: "eat" },
+  pending: { type: null, project: null, breakType: null },
   expanded: { type: false, project: false, breakType: false },
   busy: false,
   serverNotices: [],
+  editing: null, // {id, field} while a block cell has its editor open
+  dirty: false, // the day arrived while a cell was being edited; shown when the edit ends
+  refocus: null, // {id, field}: the cell to focus after the next table rebuild
   followup: null, // one-tap offer after a time edit (move the neighbouring block's edge too)
   fetchedAt: 0, // Date.now() when `status` arrived; the clock ticks on from status.elapsed_min
   tick: null,
@@ -111,6 +91,26 @@ const timer = {
 function timerDate() {
   const q = new URLSearchParams(location.search).get("date");
   return q || todayIso();
+}
+
+// title, "Today" button and date picker follow timer.date / the server's today
+function renderDayHead() {
+  const today = timer.today;
+  $("day").value = timer.date;
+  $("day-title").textContent = timer.date === today ? `Today · ${fmtDayTitle(timer.date)}` : fmtDayTitle(timer.date);
+  $("day-today").hidden = timer.date === today;
+}
+
+// The server's date can move on while the page is open (overnight, or a skewed device clock). A page that shows
+// "today" follows it; one that shows another day only updates its Today button. True when timer.date changed.
+function followToday() {
+  const today = todayIso();
+  if (timer.today === today) return false;
+  const moved = timer.followsToday && timer.date !== today;
+  timer.today = today;
+  if (moved) timer.date = today;
+  renderDayHead();
+  return moved;
 }
 
 function setBusy(on) {
@@ -134,11 +134,6 @@ function liveElapsedSec() {
   return Math.max(0, (s.elapsed_s || 0) + Math.floor((Date.now() - timer.fetchedAt) / 1000));
 }
 const liveElapsedMin = () => Math.floor(liveElapsedSec() / 60);
-// minutes since a local date + HH:MM, built field by field (never via an ISO string, which Safari parses as UTC)
-function minutesSince(iso, hhmm) {
-  const [y, mo, d] = iso.split("-").map(Number), [h, m] = hhmm.split(":").map(Number);
-  return Math.max(0, Math.floor((Date.now() - new Date(y, mo - 1, d, h, m)) / 60000));
-}
 const isRunningBlock = (b) => !!(timer.status && timer.status.block && timer.status.block.id === b.id);
 
 // hours of the running work block, added on top of the closed totals the server sent
@@ -213,15 +208,33 @@ function renderState() {
   document.title = s.state === "stopped" ? "worklog" : `${fmtHM(liveElapsedMin())} ${s.state === "working" ? "▶" : "⏸"} worklog`;
 }
 
+// What the next Start / Pause will use. Start: the picked chip, else the last work block's type (`resume`), else the
+// server's default (the button then reads "default"). Pause: the picked break type, else the first of the server's
+// break types (its default), else no type at all.
+function resumeInfo() {
+  const r = timer.status && timer.status.resume;
+  return r && r.type ? r : null;
+}
+function nextStartType() {
+  if (timer.pending.type) return timer.pending.type;
+  const r = resumeInfo();
+  return !$("project").value.trim() && r ? r.type : "default";
+}
+function pauseType() {
+  if (timer.pending.breakType) return timer.pending.breakType;
+  const list = timer.status && timer.status.chips && timer.status.chips.break_types;
+  return list && list.length ? list[0] : null;
+}
+
 function renderButtons() {
   const s = timer.status;
   if (!s) return;
-  const type = timer.pending.type || "dev";
+  const type = nextStartType();
   const start = $("btn-start");
   const pause = $("btn-pause");
   const stop = $("btn-stop");
   start.replaceChildren(s.state === "working" ? "Switch" : s.state === "break" ? "Resume" : "Start", el("small", { text: type }));
-  pause.replaceChildren(s.state === "break" ? "Change" : "Pause", el("small", { text: timer.pending.breakType || "eat" }));
+  pause.replaceChildren(s.state === "break" ? "Change" : "Pause", el("small", { text: pauseType() || "—" }));
   stop.replaceChildren("Stop", el("small", { text: s.state === "stopped" ? "—" : "close block" }));
   stop.disabled = timer.busy || s.state === "stopped";
 }
@@ -240,7 +253,10 @@ function renderTotals() {
   let target;
   if (exp <= 0) target = "no hours expected today";
   else if (leftMin <= 0) target = `target met · ${fmtSigned(todayW - exp)}`;
-  else if (s.state === "working") target = `done at ${new Date(Date.now() + leftMin * 60000).toTimeString().slice(0, 5)}`;
+  else if (s.state === "working") {
+    const done = new Date(serverNow().getTime() + leftMin * 60000); // the server's wall clock, not the device's
+    target = `done at ${pad(done.getHours())}:${pad(done.getMinutes())}`;
+  }
   else target = `${fmtHM(leftMin)} left`;
   const byType = Object.entries(s.today.by_type || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${fmtNum(v, 1)}`).join(" · ");
   const pct = exp > 0 ? Math.min(100, (todayW / exp) * 100) : (todayW > 0 ? 100 : 0);
@@ -252,7 +268,7 @@ function renderTotals() {
     byType ? el("div", { class: "s ell", text: byType, title: byType }) : null);
   const week = el("div", { class: "card wide" },
     el("div", { class: "k" }, `Week ${s.week.key.slice(5)}`, el("span", { class: signClass(weekX), text: fmtSigned(weekX) })),
-    el("div", { class: "v" }, fmtNum(weekW), el("small", { text: ` / ${fmtH(s.week.expected_h)}` }), basisSelect(s.week_basis_h)),
+    el("div", { class: "v" }, fmtNum(weekW), el("small", { text: ` / ${fmtH(s.week.expected_h)}` }), basisLink(s.week_basis_h)),
     weekStrip(s),
     el("div", { class: "s" }, `${s.week.days_worked} day${s.week.days_worked === 1 ? "" : "s"} worked · ${fmtH(s.week.billable_h)} billable`,
       weekLE.text ? el("span", { class: weekLE.cls, text: ` · ${weekLE.text}` }) : null));
@@ -263,21 +279,10 @@ function renderTotals() {
   $("totals").replaceChildren(today, week, net);
 }
 
-// week basis picker on the Week card (same setting as Reports › Week); "custom…" prompts for a number
-const BASIS_CHOICES = [30, 32.5, 35, 37.5, 40];
-function basisSelect(cur) {
+// the hours a full week counts as is set on the Settings page (one editable copy of it)
+function basisLink(cur) {
   if (cur == null) return null;
-  const choices = BASIS_CHOICES.includes(cur) ? BASIS_CHOICES : [...BASIS_CHOICES, cur].sort((a, b) => a - b);
-  const sel = el("select", { class: "basis-sel", "aria-label": "Hours per week", title: "Hours a full week counts as" },
-    ...choices.map((v) => el("option", { value: String(v), text: `${fmtNum(v, 1)} h/wk` })),
-    el("option", { value: "custom", text: "custom…" }));
-  sel.value = String(cur);
-  sel.addEventListener("change", async () => {
-    let v = sel.value === "custom" ? Number(prompt("Hours per full week (1–80):", String(cur))) : Number(sel.value);
-    if (!(v >= 1 && v <= 80)) { sel.value = String(cur); return; }
-    try { await api("PUT", "/api/settings", { week_basis_h: v }); await refreshAll(); } catch (err) { showError(err); }
-  });
-  return sel;
+  return el("a", { class: "basis-link", href: "/settings#week-basis", title: "Hours a full week counts as", text: `${fmtNum(cur, 1)} h/wk · Settings` });
 }
 
 function weekStrip(s) {
@@ -364,42 +369,59 @@ function renderStatus() {
 function overlapDate(text) {
   const m = /^Overlap \w+ (\d+) (\w+):/.exec(text);
   if (!m) return timer.date;
-  const now = new Date();
+  const now = serverNow();
   const d = new Date(`${m[1]} ${m[2]} ${now.getFullYear()}`);
   if (d > now) d.setFullYear(now.getFullYear() - 1);
   return isoDate(d);
 }
 
+// "09:00–10:30 dev": names a row for assistive technology and the Undo message
+const blockLabel = (b) => `${b.start}–${b.end || "…"} ${b.type}`;
+
 function blockRow(b) {
   const kind = b.work_type === "work" ? "wrk" : "brk";
   const tr = el("tr", { class: [kind, b.flags.start_gt_end || b.flags.overlap ? "flag" : "", b.auto_closed ? "auto" : "", b.end ? "" : "open"].join(" ").trim(),
+    "data-id": String(b.id),
     title: b.flags.start_gt_end ? "Ends before it starts" : b.flags.overlap ? "Overlaps an earlier block · both count in full" : "" });
-  const cell = (field, text, cls) => el("td", { "data-field": field, class: cls || "", text: text || "", onclick: (e) => editBlockCell(e.currentTarget, b) });
-  const typeCell = el("td", { "data-field": "type", class: "type", onclick: (e) => editBlockCell(e.currentTarget, b) }, el("span", { text: b.type }));
+  // a cell is a click target and a keyboard one: focusable, Enter or F2 edits, Esc cancels the editor
+  const editKey = (e) => {
+    if (e.target !== e.currentTarget || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "Enter" || e.key === "F2") { e.preventDefault(); editBlockCell(e.currentTarget, b); }
+  };
+  const edit = (e) => editBlockCell(e.currentTarget, b);
+  const cell = (field, text, cls) => el("td", { "data-field": field, class: cls || "", text: text || "", tabindex: "0",
+    "aria-label": `Edit ${field}: ${text || "empty"}`, onclick: edit, onkeydown: editKey });
+  const typeCell = el("td", { "data-field": "type", class: "type", tabindex: "0", "aria-label": `Edit type: ${b.type}`, onclick: edit, onkeydown: editKey }, el("span", { text: b.type }));
   const bill = b.billable === true ? ["yes", "€"] : b.billable === false ? ["no", "✗"] : ["na", "–"];
+  const billName = b.billable === true ? "billable" : b.billable === false ? "not billable" : "billing not set";
   const dur = b.end ? b.duration : fmtHM(isRunningBlock(b) ? liveElapsedMin() : minutesSince(b.date, b.start));
   tr.append(
     cell("start", b.start), cell("end", b.end), typeCell,
     cell("project", b.project, "ell"), cell("client", b.client, b.client ? "" : "muted"),
-    el("td", { class: `bill ${bill[0]}`, "data-field": "billable", text: bill[1], title: "Billable: tap to cycle", onclick: () => cycleBillable(b) }),
+    el("td", { class: `bill ${bill[0]}`, "data-field": "billable", text: bill[1], title: "Billable: tap to cycle", tabindex: "0", role: "button",
+      "aria-label": `${blockLabel(b)}: ${billName}. Press Enter to change`, onclick: () => cycleBillable(b),
+      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); cycleBillable(b); } } }),
     el("td", b.end ? { class: "num dur", text: dur } : { class: "num dur", text: dur, "data-open": `${b.date} ${b.start} ${b.id}` }),
     el("td", { class: "num" },
       // closed by the server because it was left running: ✓ saves the end as it is, which clears the review notice
       b.auto_closed && b.end ? el("button", { type: "button", class: "ghost x", text: "✓", title: `Closed automatically at ${b.end}: confirm this end time (or edit it)`,
-        "aria-label": "Confirm the automatic end time", onclick: () => mutate(() => api("PUT", `/api/blocks/${b.id}`, { end: b.end })) }) : null,
-      el("button", { type: "button", class: "ghost x", text: "×", "aria-label": "Delete row", onclick: () => deleteBlock(b) })));
+        "aria-label": `Confirm the automatic end time of ${blockLabel(b)}`, onclick: () => mutate(() => api("PUT", `/api/blocks/${b.id}`, { end: b.end })) }) : null,
+      el("button", { type: "button", class: "ghost x", text: "×", "aria-label": `Delete ${blockLabel(b)}`, onclick: (e) => wl.locked(e.currentTarget, () => deleteBlock(b)) })));
   return tr;
 }
 
 function gapRow(start, end) {
   const [h1, m1] = start.split(":").map(Number);
   const [h2, m2] = end.split(":").map(Number);
-  const fill = (type) => mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end, type }));
+  // no type unless one is picked: the server's default applies (work), or the first break type (break)
+  const fill = (btns, type) => wl.locked(btns, () => mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end, type })));
+  const work = el("button", { type: "button", class: "small ghost fill", text: "+ work", "aria-label": `Fill ${start}–${end} as work` });
+  const brk = el("button", { type: "button", class: "small ghost fill", text: "+ break", "aria-label": `Fill ${start}–${end} as a break` });
+  work.addEventListener("click", () => fill([work, brk], timer.pending.type || undefined));
+  brk.addEventListener("click", () => fill([work, brk], pauseType() || undefined));
   return el("tr", { class: "gap" },
     el("td", { text: start, class: "muted" }), el("td", { text: end, class: "muted" }),
-    el("td", { colspan: 4, class: "muted" }, `gap ${fmtHM((h2 * 60 + m2) - (h1 * 60 + m1))} · fill as `,
-      el("button", { type: "button", class: "small ghost fill", text: "+ work", onclick: () => fill(timer.pending.type || "dev") }),
-      el("button", { type: "button", class: "small ghost fill", text: "+ break", onclick: () => fill(timer.pending.breakType || "eat") })),
+    el("td", { colspan: 4, class: "muted" }, `gap ${fmtHM((h2 * 60 + m2) - (h1 * 60 + m1))} · fill as `, work, brk),
     el("td", { colspan: 2 }));
 }
 
@@ -426,6 +448,12 @@ function renderBlocks() {
   }
   if (!rows.length) rows.push(el("tr", {}, el("td", { colspan: 8, class: "muted", text: "No blocks on this day." })));
   $("blocks").replaceChildren(el("thead", {}, head), el("tbody", {}, rows));
+  if (timer.refocus) { // a cell editor just closed with Enter or Esc: give the keyboard back to its cell
+    const { id, field } = timer.refocus;
+    timer.refocus = null;
+    const td = $("blocks").querySelector(`tr[data-id="${id}"] td[data-field="${field}"]`);
+    if (td) td.focus();
+  }
   const work = blocks.filter((b) => b.work_type === "work" && b.minutes != null).reduce((a, b) => a + b.minutes, 0);
   const brk = blocks.filter((b) => b.work_type !== "work" && b.minutes != null).reduce((a, b) => a + b.minutes, 0);
   const open = blocks.some((b) => !b.end);
@@ -443,15 +471,15 @@ function renderProposals() {
   ul.replaceChildren(...props.map((p) => el("li", { class: p.logged ? "done" : p.dismissed ? "off" : "" },
     el("span", {}, el("span", { class: "t", text: `${p.start}–${p.end}` }), p.title || ""),
     p.logged ? el("span", { class: "mark", text: "✓ logged" }) : el("span", { class: "btns" },
-      el("button", { type: "button", class: p.dismissed ? "small ghost" : "small", text: "Add",
-        title: "Add as a meeting block; work logged at that time makes room for it", onclick: () => addProposal(p) }),
+      el("button", { type: "button", class: p.dismissed ? "small ghost" : "small", text: "Add as meeting",
+        title: "Add as a meeting block; work logged at that time makes room for it", onclick: (e) => wl.locked(e.currentTarget, () => addProposal(p)) }),
       p.dismissed ? el("span", { class: "mark", text: "dismissed" })
-        : el("button", { type: "button", class: "small ghost", text: "✕", "aria-label": "Dismiss for today",
-          onclick: () => dismissProposal(p) })))));
+        : el("button", { type: "button", class: "small ghost", text: "Dismiss", title: "Dismiss for today",
+          onclick: (e) => wl.locked(e.currentTarget, () => dismissProposal(p)) })))));
 }
 
 function dismissProposal(p) {
-  mutate(() => api("POST", "/api/calendar/dismiss", { date: timer.date, start: p.start, title: p.title }));
+  return mutate(() => api("POST", "/api/calendar/dismiss", { date: timer.date, start: p.start, title: p.title }));
 }
 
 // the highlighted chips always show what the running block is, not what was picked before it started;
@@ -470,8 +498,13 @@ function syncPendingFromStatus() {
   }
 }
 
+const statusSeq = wl.sequence(), daySeq = wl.sequence();
+
 async function loadStatus() {
-  timer.status = await api("GET", "/api/status");
+  const current = statusSeq();
+  const status = await api("GET", "/api/status");
+  if (!current()) return; // a newer request is on its way (or has already been shown)
+  timer.status = status;
   timer.fetchedAt = Date.now();
   syncClock(timer.status);
   syncPendingFromStatus();
@@ -479,7 +512,11 @@ async function loadStatus() {
 }
 
 async function loadDay() {
-  timer.day = await api("GET", `/api/day/${timer.date}`);
+  const current = daySeq();
+  const day = await api("GET", `/api/day/${timer.date}`);
+  if (!current()) return;
+  timer.day = day;
+  if (timer.editing) { timer.dirty = true; renderProposals(); return; } // never rebuild the table under an open editor
   renderBlocks();
   renderProposals();
 }
@@ -487,8 +524,15 @@ async function loadDay() {
 async function refreshAll() {
   try {
     await Promise.all([loadStatus(), loadDay()]);
-    renderStatus();
+    if (followToday()) await loadDay(); // the server's date moved on: show the new day
+    if (timer.status) renderStatus();
   } catch (err) { showError(err); }
+}
+
+// After a failed action the page may be stale (409: the block already closed): show the truth, then the error.
+async function failed(err) {
+  await refreshAll();
+  showError(err);
 }
 
 async function timerAction(path, body) {
@@ -497,19 +541,24 @@ async function timerAction(path, body) {
   try {
     await api("POST", path, body);
     await refreshAll();
-  } catch (err) { showError(err); } finally { setBusy(false); }
+  } catch (err) { await failed(err); } finally { setBusy(false); }
 }
 
 function startTimer() {
   const body = {};
-  if (timer.pending.type) body.type = timer.pending.type;
   const project = $("project").value.trim();
+  if (timer.pending.type) body.type = timer.pending.type;
   if (project) body.project = project;
+  else if (!timer.pending.type) { // nothing picked: continue the last work block, like the watch and the widget
+    const r = resumeInfo();
+    if (r) { body.type = r.type; if (r.project) body.project = r.project; }
+  }
   return timerAction("/api/start", body);
 }
 
 function pauseTimer() {
-  return timerAction("/api/pause", { type: timer.pending.breakType || "eat" });
+  const type = pauseType();
+  return timerAction("/api/pause", type ? { type } : {});
 }
 
 function stopTimer() {
@@ -528,7 +577,7 @@ async function mutate(fn) {
   try {
     await fn();
     await refreshAll();
-  } catch (err) { showError(err); }
+  } catch (err) { await failed(err); }
 }
 
 function editBlockCell(td, block) {
@@ -536,28 +585,42 @@ function editBlockCell(td, block) {
   const field = td.dataset.field;
   const original = block[field] || "";
   const isTime = field === "start" || field === "end";
-  const input = el("input", { type: "text", value: original, autocomplete: "off", class: isTime ? "time" : "", "aria-label": field });
+  const input = el("input", { type: "text", value: original, autocomplete: "off", class: isTime ? "time" : "", "aria-label": `${field} of ${blockLabel(block)}` });
   if (isTime) {
     input.placeholder = "HH:MM";
     input.inputMode = "numeric";
     input.addEventListener("input", () => previewDur(td.closest("tr"), block, field, input.value));
   }
-  let cancelled = false;
+  timer.editing = { id: block.id, field };
+  let done = false;
+  // the editor is closed: show the table (and any day that arrived meanwhile)
+  const finish = (refocus) => {
+    done = true;
+    timer.editing = null;
+    timer.dirty = false;
+    if (refocus) timer.refocus = { id: block.id, field };
+    renderBlocks();
+  };
   const commit = () => {
-    if (cancelled) return;
+    if (done) return;
     let v = input.value.trim();
     if (isTime && v) v = normTime(v);
     // an auto-closed block stays "to review" until its end is saved again: Enter on the unchanged end confirms it
     const confirms = field === "end" && block.auto_closed && v !== "";
-    if (v === original && !confirms) { renderBlocks(); return; }
+    if (v === original && !confirms) { finish(enterPressed); return; }
+    done = true;
+    timer.editing = null;
+    timer.dirty = false;
+    if (enterPressed) timer.refocus = { id: block.id, field };
     mutate(async () => {
       await api("PUT", `/api/blocks/${block.id}`, { [field]: v === "" && field === "end" ? null : v });
       if (isTime) timer.followup = neighbourFollowup(block, field, original, v);
     });
   };
+  let enterPressed = false;
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); input.blur(); }
-    else if (e.key === "Escape") { cancelled = true; renderBlocks(); }
+    if (e.key === "Enter") { e.preventDefault(); enterPressed = true; input.blur(); }
+    else if (e.key === "Escape") { e.preventDefault(); finish(true); }
   });
   input.addEventListener("blur", commit);
   td.replaceChildren(input);
@@ -599,15 +662,20 @@ function neighbourFollowup(block, field, oldV, newV) {
   return null;
 }
 
-function deleteBlock(b) {
+// Undo is offered only once the server has really deleted the row; a failed delete shows the error and no Undo.
+async function deleteBlock(b) {
   const copy = { date: b.date || timer.date, start: b.start, end: b.end || null, type: b.type,
     project: b.project || null, client: b.client || null, billable: b.billable === undefined ? null : b.billable };
-  mutate(() => api("DELETE", `/api/blocks/${b.id}`));
-  showUndo(`Deleted ${b.start}–${b.end || "…"} ${b.type}`, async () => {
+  timer.followup = null;
+  try {
+    await api("DELETE", `/api/blocks/${b.id}`);
+  } catch (err) { await failed(err); return; }
+  await refreshAll();
+  showUndo(`Deleted ${blockLabel(b)}`, async () => {
     try {
       await api("POST", "/api/blocks", copy);
       await refreshAll();
-    } catch (err) { showError(err); } // 409 / overlap: the server's message
+    } catch (err) { await failed(err); } // 409 / overlap: the server's message
   });
 }
 
@@ -633,16 +701,21 @@ function addRow() {
   const lastEnd = timer.day.blocks.map((b) => b.end).filter(Boolean).sort().pop();
   const start = lastEnd || nowHHMM();
   // type and client defaults are applied by the API
-  mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end: null }));
+  return wl.locked($("add-row"), () => mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end: null })));
 }
 
 function addProposal(p) {
-  mutate(() => api("POST", "/api/calendar/add", { date: timer.date, start: p.start, end: p.end, title: p.title }));
+  return mutate(() => api("POST", "/api/calendar/add", { date: timer.date, start: p.start, end: p.end, title: p.title }));
 }
 
 const gotoDate = (iso) => { location.href = iso === todayIso() ? "/timer" : `/timer?date=${iso}`; };
 
-// keyboard shortcuts on the Timer page (the caller has already excluded inputs and modifiers)
+// Single-key shortcuts on the Timer page. They can be switched off on the Settings page (kept on this device only);
+// they never fire while focus is in a field, a button, a link, a table cell editor or a dialog.
+const SHORTCUTS_KEY = "worklog.shortcuts";
+const shortcutsOn = () => wl.store.get(SHORTCUTS_KEY, "1") !== "0";
+const typingTarget = (t) => !!(t && t.closest && t.closest("input, select, textarea, button, a[href], summary, dialog, td[data-field], [contenteditable]"));
+
 function shortcut(e) {
   if (timer.busy) return;
   const k = e.key;
@@ -655,18 +728,27 @@ function shortcut(e) {
   }
 }
 
-// the Defaults card of the Timer page: the settings behind Start, Pause, auto-close and auto-add
-async function loadDefaults() {
-  if (!$("defaults")) return;
+// ---- settings page: what used to sit under the Timer and on Reports ---------------------------------
+
+const settingsSeq = wl.sequence();
+
+async function loadSettings() {
+  const current = settingsSeq();
   try {
     const st = await api("GET", "/api/settings");
+    if (!current()) return;
     $("def-type").value = st.default_type;
     $("def-client").value = st.default_client || "";
     $("def-break").replaceChildren(...st.break_types.map((t) => el("option", { value: t, text: t })));
     $("def-break").value = st.default_break_type;
     $("def-close").value = st.auto_close_time;
     $("def-autoadd").checked = st.calendar_auto_add;
-  } catch (err) { $("def-msg").textContent = `Error: ${err.message}`; }
+    $("rate").value = st.rate == null ? "" : fmtNum(st.rate, 2);
+    $("rate-unit").value = st.rate_unit;
+    renderRateHint(st);
+    renderBasis(st);
+    $("settings-notices").replaceChildren();
+  } catch (err) { showMessages($("settings-notices"), [`Error: ${err.message}`], "error"); }
 }
 
 async function saveDefaults() {
@@ -678,33 +760,84 @@ async function saveDefaults() {
       calendar_auto_add: $("def-autoadd").checked });
     msg.textContent = "Saved";
     setTimeout(() => { if (msg.textContent === "Saved") msg.textContent = ""; }, 4000);
-    await refreshAll();
   } catch (err) { msg.textContent = `Error: ${err.message}`; }
 }
 
+// what a full week is (35 h default = 7 h days); expected, extra, balance and charts follow it
+function renderBasis(st) {
+  const v = st.week_basis_h;
+  for (const b of $("basis-seg").querySelectorAll("button")) b.classList.toggle("on", Number(b.dataset.v) === v);
+  $("basis").value = fmtNum(v, 1);
+  $("basis-hint").textContent = `= ${fmtH(st.default_expected_h)} per day · overrides kept`;
+}
+
+async function saveBasis(v) {
+  if (!(v >= 1 && v <= 80)) { showMessages($("settings-notices"), ["Error: hours per week must be between 1 and 80"], "error"); return; }
+  try {
+    const st = await api("PUT", "/api/settings", { week_basis_h: v });
+    renderBasis(st);
+    renderRateHint(st);
+    $("settings-notices").replaceChildren();
+  } catch (err) { showMessages($("settings-notices"), [`Error: ${err.message}`], "error"); await loadSettings(); }
+}
+
+async function saveRate() {
+  const raw = $("rate").value.trim();
+  const rate = raw === "" ? null : Number(raw);
+  if (rate != null && !(rate >= 0)) { showMessages($("settings-notices"), ["Error: the rate must be zero or more"], "error"); return; }
+  try {
+    const st = await api("PUT", "/api/settings", { rate, rate_unit: $("rate-unit").value });
+    renderRateHint(st);
+    $("settings-notices").replaceChildren();
+  } catch (err) { showMessages($("settings-notices"), [`Error: ${err.message}`], "error"); await loadSettings(); }
+}
+
+function renderRateHint(st) {
+  const h = $("rate-hint");
+  if (st.rate_h == null) { h.textContent = "billable hours × rate"; return; }
+  const perDay = st.rate_h * st.default_expected_h;
+  h.textContent = st.rate_unit === "day"
+    ? `= ${fmtNum(st.rate_h, 2)} €/h at ${fmtH(st.default_expected_h)} per day`
+    : `= ${fmtEur(perDay)} per ${fmtH(st.default_expected_h)} day`;
+}
+
+function initSettings() {
+  $("def-save").addEventListener("click", saveDefaults);
+  $("rate").addEventListener("change", saveRate);
+  $("rate-unit").addEventListener("change", saveRate);
+  for (const b of $("basis-seg").querySelectorAll("button")) b.addEventListener("click", () => saveBasis(Number(b.dataset.v)));
+  $("basis").addEventListener("change", () => saveBasis(Number($("basis").value)));
+  const sc = $("pref-shortcuts");
+  sc.checked = shortcutsOn();
+  sc.addEventListener("change", () => wl.store.set(SHORTCUTS_KEY, sc.checked ? "1" : "0"));
+  loadSettings();
+}
+
 async function initTimer() {
-  if ($("def-save")) { $("def-save").addEventListener("click", saveDefaults); loadDefaults(); }
-  try { syncClock(await api("GET", "/api/status")); } catch (_) { /* the first refreshAll reports it */ }
+  await wl.ensureClock();
   timer.date = timerDate();
-  const today = todayIso();
-  $("day").value = timer.date;
-  $("day-title").textContent = timer.date === today ? `Today · ${fmtDayTitle(timer.date)}` : fmtDayTitle(timer.date);
-  $("day-today").hidden = timer.date === today;
+  timer.followsToday = !new URLSearchParams(location.search).get("date") || timer.date === todayIso();
+  timer.today = todayIso();
+  renderDayHead();
+  $("kbd-hint").hidden = !shortcutsOn();
   $("day").addEventListener("change", (e) => { if (e.target.value) gotoDate(e.target.value); });
   $("day-prev").addEventListener("click", () => gotoDate(shiftDate(timer.date, -1)));
   $("day-next").addEventListener("click", () => gotoDate(shiftDate(timer.date, 1)));
-  $("day-today").addEventListener("click", () => gotoDate(today));
+  $("day-today").addEventListener("click", () => gotoDate(todayIso()));
   $("btn-start").addEventListener("click", startTimer);
   $("btn-pause").addEventListener("click", pauseTimer);
   $("btn-stop").addEventListener("click", stopTimer);
   $("add-row").addEventListener("click", addRow);
-  $("project").addEventListener("input", () => { timer.pending.project = null; renderChips("chips-projects", timer.status ? timer.status.chips.projects : [], "project"); });
+  $("project").addEventListener("input", () => {
+    timer.pending.project = null;
+    if (timer.status) { renderChips("chips-projects", timer.status.chips.projects, "project"); renderButtons(); }
+  });
   // a note typed while working applies to the running block, like a chip; otherwise it waits for Start
   $("project").addEventListener("change", () => {
     if (timer.status && timer.status.state === "working") retypeRunning({ project: $("project").value.trim() || null });
   });
   document.addEventListener("keydown", (e) => {
-    if (e.target.matches("input, select, textarea") || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!shortcutsOn() || typingTarget(e.target) || e.altKey || e.ctrlKey || e.metaKey) return;
     if (e.key === "ArrowLeft") gotoDate(shiftDate(timer.date, -1));
     else if (e.key === "ArrowRight") gotoDate(shiftDate(timer.date, 1));
     else shortcut(e);
@@ -714,6 +847,7 @@ async function initTimer() {
   setInterval(() => { if (timer.status && timer.status.state !== "stopped") renderHeroClocks(); }, 1000);
   timer.tick = setInterval(() => {
     if (!timer.status) return;
+    if (todayIso() !== timer.today) { refreshAll(); return; } // midnight on the server
     renderClock();
     if (timer.status.state === "working" && !$("totals").contains(document.activeElement)) renderTotals();
     document.title = document.title.replace(/^\d+:\d\d/, fmtHM(liveElapsedMin()));
@@ -949,18 +1083,31 @@ function chartHeat(hm) {
 }
 
 const chartState = { rows: null, group: null, hm: null, w: 0 };
-async function renderCharts(rows, group) {
+// `current` is the guard of the summary load that asked: an answer from an older load is dropped
+async function renderCharts(rows, group, current) {
   const q = selectionQuery();
   let hm = null;
-  try { hm = await api("GET", `/api/heatmap?${q}`); } catch (_) { hm = null; }
+  try {
+    hm = await api("GET", `/api/heatmap?${q}`);
+    reportNotice("heatmap", null);
+  } catch (err) { reportNotice("heatmap", `Heatmap: ${err.message}`); }
+  if (!current()) return;
   Object.assign(chartState, { rows, group, hm });
   drawCharts();
+}
+// the period that is still running, for the "in progress" mark: this week / month / quarter / year of the server's date
+function currentKey(group) {
+  const t = todayIso();
+  if (group === "week") return isoWeek(t);
+  if (group === "month") return t.slice(0, 7);
+  if (group === "quarter") return `${t.slice(0, 4)}-Q${Math.floor((Number(t.slice(5, 7)) - 1) / 3) + 1}`;
+  return t.slice(0, 4);
 }
 function drawCharts() {
   const { rows, group, hm } = chartState;
   if (!rows) return;
   chartState.w = wideW();
-  const cur = group === "week" ? isoWeek(todayIso()) : null;
+  const cur = currentKey(group);
   $("charts").replaceChildren(chartExtra(rows, group, cur), chartBalance(rows, group, cur), chartTypes(rows, group, cur),
     chartProjects(rows), hm ? chartHeat(hm) : null);
 }
@@ -968,7 +1115,15 @@ window.addEventListener("resize", () => { if (chartState.rows && wideW() !== cha
 
 // ---- reports page ------------------------------------------------------------
 
-const fmtEur = (v) => (v == null ? "" : `${Math.round(v).toLocaleString("en-GB").replace(/,/g, "\u202f")} €`);
+const fmtEur = (v) => (v == null ? "" : `${Math.round(v).toLocaleString("en-GB").replace(/,/g, " ")} €`);
+
+// Load and save errors of the Reports page show in a notice area at the top (the Import section is collapsed).
+// One message per source, cleared when that source succeeds again.
+const reportMsgs = new Map();
+function reportNotice(source, message) {
+  if (message) reportMsgs.set(source, message); else reportMsgs.delete(source);
+  showMessages($("reports-notices"), [...reportMsgs.values()].map((m) => (m.startsWith("Heatmap") ? m : `Error: ${m}`)), "error");
+}
 
 let reportAlt = 40; // the alternative week basis shown next to the base columns
 const reportCols = () => [
@@ -1014,19 +1169,24 @@ function updateExportLinks() {
   $("export-xlsx").href = `/api/export.xlsx${q ? "?" + q : ""}`;
 }
 
+const summarySeq = wl.sequence(), invoiceSeq = wl.sequence();
+
 async function loadSummary() {
   updateExportLinks();
+  const current = summarySeq();
   const q = selectionQuery();
-  q.set("group", $("group").value);
+  const group = $("group").value;
+  q.set("group", group);
   try {
     const data = await api("GET", `/api/summary?${q}`);
+    if (!current()) return;
+    reportNotice("summary", null);
     const rows = data.rows; // oldest first, like the Excel pivot
-    const current = isoWeek(todayIso());
-    renderCharts(rows, $("group").value);
+    const cur = currentKey(group);
     if (data.alt_week_h) reportAlt = data.alt_week_h;
     const cols = data.rate_h == null ? reportCols().filter(([k]) => k !== "amount") : reportCols();
     $("summary").className = "grid sticky";
-    $("summary").replaceChildren(...table(cols, rows, (r) => (r.key === current ? "cur" : "")));
+    $("summary").replaceChildren(...table(cols, rows, (r) => (r.key === cur ? "cur" : "")));
     if (data.rate_h != null && rows.length) {
       const total = rows.reduce((a, r) => a + (r.amount || 0), 0);
       const bill = rows.reduce((a, r) => a + r.billable_h, 0);
@@ -1037,7 +1197,8 @@ async function loadSummary() {
     if (data.stats) {
       $("stats").append(el("div", { class: "scroll" }, statsTable(data.stats.with_current, data.stats.without_current)));
     }
-  } catch (err) { showMessages($("import-result"), [`Error: ${err.message}`], "error"); }
+    await renderCharts(rows, group, current);
+  } catch (err) { if (current()) reportNotice("summary", err.message); }
 }
 
 const invoiceCols = [
@@ -1050,9 +1211,12 @@ const invoiceCols = [
 
 async function loadInvoice() {
   const month = $("invoice").value;
+  const current = invoiceSeq();
   if (!month) { $("invoice-table").replaceChildren(); return; }
   try {
     const rows = await api("GET", `/api/invoice?month=${month}`);
+    if (!current()) return;
+    reportNotice("invoice", null);
     const priced = rows.some((r) => r.amount != null);
     const cols = priced ? [...invoiceCols, ["amount", "€", null]] : invoiceCols;
     const head = el("tr", {}, ...cols.map(([k, label]) => el("th", { class: k === "date" || k === "reason" ? "" : "num", text: label })));
@@ -1071,7 +1235,7 @@ async function loadInvoice() {
       signedCell(sum("worked_h") - sum("expected_h")), el("td", { class: "num muted", text: priced ? `${fmtH(sum("billable_h"))} bill.` : "" }),
       priced ? el("td", { class: "num" }, el("b", { text: fmtEur(sum("amount")) })) : null);
     $("invoice-table").replaceChildren(el("thead", {}, head), el("tbody", {}, body), el("tfoot", {}, foot));
-  } catch (err) { showMessages($("import-result"), [`Error: ${err.message}`], "error"); }
+  } catch (err) { if (current()) reportNotice("invoice", err.message); }
 }
 
 function importForm(dry) {
@@ -1081,102 +1245,66 @@ function importForm(dry) {
   return fd;
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const runningText = (r) => `${r.date} ${r.start} ${r.type}`;
+
 async function importDryRun(e) {
   e.preventDefault();
   const out = $("import-result");
-  try {
-    const r = await api("POST", "/api/import", importForm(true));
-    const mode = new FormData($("import-form")).get("mode");
-    const lines = [`Dry run: ${r.would_insert} to insert, ${r.would_update} to update, ${r.skipped} skipped.`];
-    if (mode === "replace") {
-      lines.push(`Replace will delete ${r.would_delete} existing block(s) within the date range of the file.`);
-    }
-    (r.errors || []).forEach((m) => lines.push(`Problem: ${m}`));
-    showMessages(out, lines);
-    out.append(el("button", { type: "button", class: `small${mode === "replace" ? " danger" : " primary"}`, text: mode === "replace" ? "Confirm replace" : "Confirm import", onclick: importConfirm }));
-  } catch (err) { showMessages(out, [`Error: ${err.message}`], "error"); }
+  const submit = $("import-form").querySelector('button[type="submit"]');
+  await wl.locked(submit, async () => {
+    try {
+      const r = await api("POST", "/api/import", importForm(true));
+      const mode = new FormData($("import-form")).get("mode");
+      const lines = [`Check done: ${plural(r.would_insert, "block")} to add, ${r.would_update} to update, ${r.skipped} skipped.`];
+      if (mode === "replace") {
+        lines.push(`Replace will delete ${plural(r.would_delete, "existing block")} within the date range of the file.`);
+        if (r.would_delete_running) {
+          lines.push({ text: `Warning: this would delete the block that is running right now (${runningText(r.would_delete_running)}). The timer stops with it.`, cls: "warn" });
+        }
+      }
+      (r.errors || []).forEach((m) => lines.push(`Problem: ${m}`));
+      showMessages(out, lines);
+      const label = mode === "replace" ? (r.would_delete_running ? "Confirm replace and delete the running block" : "Confirm replace") : "Confirm import";
+      out.append(el("button", { type: "button", class: `small${mode === "replace" ? " danger" : " primary"}`, text: label, onclick: importConfirm }));
+    } catch (err) { showMessages(out, [`Error: ${err.message}`], "error"); }
+  });
 }
 
 async function importConfirm(e) {
   const btn = e.currentTarget;
   btn.disabled = true;
+  const lines = [];
+  let cls = "ok";
   try {
     const r = await api("POST", "/api/import", importForm(false));
-    showMessages($("import-result"), [`Imported: ${JSON.stringify(r)}`], "ok");
+    lines.push(`Imported: ${plural(r.inserted, "block")} added, ${r.updated} updated, ${r.deleted} deleted, ${r.skipped} skipped.`);
+    if (r.workdays_rows != null) lines.push(`Workday rows stored: ${r.workdays_rows}.`);
+    if (r.deleted_running) { lines.push({ text: `The block that was running (${runningText(r.deleted_running)}) was deleted.`, cls: "warn" }); }
+    (r.errors || []).forEach((m) => lines.push({ text: `Problem: ${m}`, cls: "warn" }));
+    showMessages($("import-result"), lines, cls);
     loadSummary();
+    loadInvoice();
   } catch (err) {
     showMessages($("import-result"), [`Error: ${err.message}`], "error");
   }
 }
 
-async function loadRate() {
-  try {
-    const st = await api("GET", "/api/settings");
-    $("rate").value = st.rate == null ? "" : fmtNum(st.rate, 2);
-    $("rate-unit").value = st.rate_unit;
-    renderRateHint(st);
-    renderBasis(st);
-  } catch (err) { showMessages($("import-result"), [`Error: ${err.message}`], "error"); }
-}
-
-// week basis: what a full week is (35 h default = 7 h days); expected, extra, balance and charts follow it
-function renderBasis(st) {
-  reportAlt = st.alt_week_h;
-  const v = st.week_basis_h;
-  for (const b of $("basis-seg").querySelectorAll("button")) b.classList.toggle("on", Number(b.dataset.v) === v);
-  $("basis").value = fmtNum(v, 1);
-  $("basis-hint").textContent = `= ${fmtH(st.default_expected_h)} per day · overrides kept`;
-}
-
-async function saveBasis(v) {
-  if (!(v >= 1 && v <= 80)) return;
-  try {
-    const st = await api("PUT", "/api/settings", { week_basis_h: v });
-    renderBasis(st);
-    renderRateHint(st);
-    loadSummary();
-    loadInvoice();
-  } catch (err) { showMessages($("import-result"), [`Error: ${err.message}`], "error"); }
-}
-
-async function saveRate() {
-  const raw = $("rate").value.trim();
-  const rate = raw === "" ? null : Number(raw);
-  if (rate != null && !(rate >= 0)) return;
-  try {
-    const st = await api("PUT", "/api/settings", { rate, rate_unit: $("rate-unit").value });
-    renderRateHint(st);
-    loadSummary();
-    loadInvoice();
-  } catch (err) { showMessages($("import-result"), [`Error: ${err.message}`], "error"); }
-}
-
-function renderRateHint(st) {
-  const h = $("rate-hint");
-  if (st.rate_h == null) { h.textContent = "billable hours × rate"; return; }
-  const perDay = st.rate_h * st.default_expected_h;
-  h.textContent = st.rate_unit === "day"
-    ? `= ${fmtNum(st.rate_h, 2)} €/h at ${fmtH(st.default_expected_h)} per day`
-    : `= ${fmtEur(perDay)} per ${fmtH(st.default_expected_h)} day`;
-}
-
 function initReports() {
-  const now = new Date();
+  const now = serverNow();
   $("invoice").value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
   for (const id of ["group", "start", "end"]) $(id).addEventListener("change", loadSummary);
   for (const b of $("group-seg").querySelectorAll("button")) {
     b.addEventListener("click", () => {
       $("group").value = b.dataset.v;
-      for (const o of $("group-seg").querySelectorAll("button")) o.classList.toggle("on", o === b);
+      for (const o of $("group-seg").querySelectorAll("button")) {
+        o.classList.toggle("on", o === b);
+        o.setAttribute("aria-pressed", o === b ? "true" : "false");
+      }
       loadSummary();
     });
   }
   $("invoice").addEventListener("change", loadInvoice);
-  loadRate();
-  $("rate").addEventListener("change", saveRate);
-  $("rate-unit").addEventListener("change", saveRate);
-  for (const b of $("basis-seg").querySelectorAll("button")) b.addEventListener("click", () => saveBasis(Number(b.dataset.v)));
-  $("basis").addEventListener("change", () => saveBasis(Number($("basis").value)));
   $("import-form").addEventListener("submit", importDryRun);
   $("import-form").addEventListener("change", () => $("import-result").replaceChildren());
   loadSummary();
@@ -1187,59 +1315,147 @@ function initReports() {
 
 const KEEP_SOURCES = ["default", "holiday", "before-first"];
 const SOURCE_BADGE = { holiday: ["holiday", "holiday"], manual: ["set", "set"], import: ["set", "imported"], "before-first": ["pre", "before first log"] };
+const daysSeq = wl.sequence();
+const dayRefs = new Map(); // date -> the row's elements and its last saved values, for in-place updates
+const weekCells = new Map(); // week key -> the separator cell with the week's expected total
+
+// "Tue 20": the weekday and the day of the month (the week separator and the date filter give the rest)
+const dayName = (iso) => `${weekdayShort(iso)} ${Number(iso.slice(8))}`;
+
+function updateWeekTotals() {
+  for (const [wk, cell] of weekCells) {
+    let total = 0;
+    for (const [date, r] of dayRefs) if (isoWeek(date) === wk) total += Number(r.data.expected_h);
+    cell.textContent = `Week ${wk.slice(5)} · ${fmtH(total)} expected`;
+  }
+}
+
+// show the saved state of one row: marker, badge, reset button, values; nothing else on the page is touched
+function paintDayRow(refs) {
+  const d = refs.data;
+  const stored = !KEEP_SOURCES.includes(d.source);
+  const badge = SOURCE_BADGE[d.source];
+  refs.tr.className = [isWeekend(d.date) ? "wknd" : "", stored ? "set" : ""].join(" ").trim();
+  refs.label.replaceChildren(el("span", { class: "wd", text: weekdayShort(d.date) }), String(Number(d.date.slice(8))),
+    ...(badge ? [el("span", { class: `badge ${badge[0]}`, text: badge[1] })] : []));
+  refs.reset.replaceChildren(stored ? el("button", {
+    type: "button", class: "ghost x", text: "↺", title: "Back to default", "aria-label": `Reset ${dayName(d.date)} to default`,
+    onclick: () => resetDay(refs),
+  }) : "");
+}
+
+function setDayError(refs, input, message) {
+  refs.err.textContent = message || "";
+  for (const i of [refs.exp, refs.sick, refs.reason]) i.removeAttribute("aria-invalid");
+  if (message && input) input.setAttribute("aria-invalid", "true");
+}
+
+// the number a field holds, or null when it is not a valid 0-24 hours
+function hoursValue(raw, emptyIsZero) {
+  const t = String(raw).trim();
+  if (t === "") return emptyIsZero ? 0 : null;
+  const n = Number(t.replace(",", "."));
+  return Number.isFinite(n) && n >= 0 && n <= 24 ? n : null;
+}
+
+function saveDay(refs, field, input) {
+  // one save at a time per row, in order; each one starts from the last saved values of the other fields
+  refs.chain = refs.chain.then(async () => {
+    const was = refs.data;
+    let value;
+    if (field === "reason") {
+      value = input.value;
+    } else {
+      value = hoursValue(input.value, field === "sick_h");
+      if (value == null) {
+        input.value = was[field];
+        setDayError(refs, input, `${field === "sick_h" ? "Sick hours" : "Expected hours"} must be a number from 0 to 24.`);
+        return;
+      }
+    }
+    if (String(value) === String(was[field]) && field !== "reason") { input.value = was[field]; setDayError(refs, null, ""); return; }
+    if (field === "reason" && value === (was.reason || "")) return;
+    const body = { expected_h: was.expected_h, sick_h: was.sick_h || 0, reason: was.reason || "", [field]: value };
+    try {
+      refs.data = await api("PUT", `/api/days/${was.date}`, body);
+      setDayError(refs, null, "");
+      input.value = refs.data[field] ?? "";
+      paintDayRow(refs);
+      updateWeekTotals();
+    } catch (err) {
+      input.value = was[field] ?? ""; // the rejected value goes back
+      setDayError(refs, input, err.message);
+    }
+  });
+  return refs.chain;
+}
+
+async function resetDay(refs) {
+  const date = refs.data.date;
+  refs.chain = refs.chain.then(async () => {
+    try {
+      await api("DELETE", `/api/days/${date}`);
+      const rows = await api("GET", `/api/days?${new URLSearchParams({ start: date, end: date })}`);
+      if (rows[0]) {
+        refs.data = rows[0];
+        refs.exp.value = refs.data.expected_h; refs.sick.value = refs.data.sick_h; refs.reason.value = refs.data.reason || "";
+        paintDayRow(refs);
+        updateWeekTotals();
+      }
+      setDayError(refs, null, "");
+    } catch (err) { setDayError(refs, null, err.message); }
+  });
+  return refs.chain;
+}
 
 function dayRow(d) {
-  const stored = !KEEP_SOURCES.includes(d.source);
-  const num = (field) => el("input", { type: "number", step: "0.25", min: "0", value: d[field], class: "quiet", "aria-label": field, inputmode: "decimal" });
-  const exp = num("expected_h");
-  const sick = num("sick_h");
-  const reason = el("input", { type: "text", value: d.reason || "", class: "quiet", "aria-label": "reason" });
-  const save = async () => {
-    try {
-      await api("PUT", `/api/days/${d.date}`, { expected_h: exp.value, sick_h: sick.value || 0, reason: reason.value });
-      await loadDays();
-    } catch (err) { showMessages($("days-msg"), [`Error: ${err.message}`], "error"); }
+  const num = (field) => el("input", { type: "number", step: "0.25", min: "0", max: "24", value: d[field], class: "quiet", "aria-label": `${field === "sick_h" ? "Sick hours" : "Expected hours"} ${dayName(d.date)}`, inputmode: "decimal" });
+  const refs = {
+    data: d, chain: Promise.resolve(),
+    exp: num("expected_h"), sick: num("sick_h"),
+    reason: el("input", { type: "text", value: d.reason || "", class: "quiet", "aria-label": `Reason ${dayName(d.date)}` }),
+    err: el("small", { class: "rowerr", role: "alert" }),
+    label: el("td", {}), reset: el("td", { class: "num" }), tr: el("tr", {}),
   };
-  [exp, sick, reason].forEach((i) => i.addEventListener("change", save));
-  const reset = stored ? el("button", {
-    type: "button", class: "ghost x", text: "↺", title: "Back to default", "aria-label": "Reset to default",
-    onclick: async () => {
-      try { await api("DELETE", `/api/days/${d.date}`); await loadDays(); }
-      catch (err) { showMessages($("days-msg"), [`Error: ${err.message}`], "error"); }
-    },
-  }) : null;
-  const badge = SOURCE_BADGE[d.source];
-  const cls = [isWeekend(d.date) ? "wknd" : "", stored ? "set" : ""].join(" ").trim();
-  return el("tr", { class: cls },
-    el("td", {}, el("span", { class: "wd", text: weekdayShort(d.date) }), d.date.slice(5), badge ? el("span", { class: `badge ${badge[0]}`, text: badge[1] }) : null),
-    el("td", { class: "num" }, exp), el("td", { class: "num" }, sick),
-    el("td", {}, reason), el("td", { class: "num" }, reset));
+  refs.exp.addEventListener("change", () => saveDay(refs, "expected_h", refs.exp));
+  refs.sick.addEventListener("change", () => saveDay(refs, "sick_h", refs.sick));
+  refs.reason.addEventListener("change", () => saveDay(refs, "reason", refs.reason));
+  refs.tr.append(refs.label, el("td", { class: "num" }, refs.exp), el("td", { class: "num" }, refs.sick),
+    el("td", {}, refs.reason, refs.err), refs.reset);
+  paintDayRow(refs);
+  dayRefs.set(d.date, refs);
+  return refs.tr;
 }
 
 async function loadDays() {
+  const current = daysSeq();
   const q = new URLSearchParams({ start: $("days-start").value, end: $("days-end").value });
   try {
     const rows = await api("GET", `/api/days?${q}`);
+    if (!current()) return;
     const head = el("tr", {}, ...[["Day"], ["Expected", "num"], ["Sick", "num"], ["Reason"], ["", "num"]].map(([t, c]) => el("th", { class: c || "", text: t })));
     const body = [];
     let week = null;
+    dayRefs.clear();
+    weekCells.clear();
     for (const d of rows) {
       const wk = isoWeek(d.date);
       if (wk !== week) {
         week = wk;
-        const inWeek = rows.filter((r) => isoWeek(r.date) === wk);
-        const total = inWeek.reduce((a, r) => a + Number(r.expected_h), 0);
-        body.push(el("tr", { class: "sep" }, el("td", { colspan: 5 }, `Week ${wk.slice(5)} · ${fmtH(total)} expected`)));
+        const cell = el("td", { colspan: 5 });
+        weekCells.set(wk, cell);
+        body.push(el("tr", { class: "sep" }, cell));
       }
       body.push(dayRow(d));
     }
+    updateWeekTotals();
     $("days").replaceChildren(el("thead", {}, head), el("tbody", {}, body));
     $("days-msg").replaceChildren();
-  } catch (err) { showMessages($("days-msg"), [`Error: ${err.message}`], "error"); }
+  } catch (err) { if (current()) showMessages($("days-msg"), [`Error: ${err.message}`], "error"); }
 }
 
 function initDays() {
-  const now = new Date();
+  const now = serverNow();
   $("days-start").value = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
   $("days-end").value = isoDate(new Date(now.getFullYear(), now.getMonth() + 2, 0));
   $("days-start").addEventListener("change", loadDays);
@@ -1249,7 +1465,7 @@ function initDays() {
 
 // ---- boot --------------------------------------------------------------------
 
-// Top nav: six tabs overflow a phone, so the nav scrolls; keep the active tab in view and show a fade while there is more.
+// Top nav: the tabs can overflow a phone, so the nav scrolls; keep the active tab in view and show a fade while there is more.
 function initNav() {
   const nav = document.querySelector(".top nav");
   if (!nav) return;
@@ -1264,10 +1480,45 @@ function initNav() {
   more();
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+// The More menu (Add or find a date, Move, Workcal, Settings): a button that opens a list of links.
+// Enter / Space / click / ArrowDown open it, arrows move, Home / End jump, Esc closes and returns to the button.
+function initMore() {
+  const btn = $("more-btn"), list = $("more-list");
+  if (!btn || !list) return;
+  const items = () => [...list.querySelectorAll("a")];
+  const close = (refocus) => {
+    list.hidden = true;
+    btn.setAttribute("aria-expanded", "false");
+    if (refocus) btn.focus();
+  };
+  const open = (focusFirst) => {
+    list.hidden = false;
+    btn.setAttribute("aria-expanded", "true");
+    if (focusFirst) items()[0].focus();
+  };
+  btn.addEventListener("click", () => (list.hidden ? open(false) : close(false)));
+  btn.addEventListener("keydown", (e) => { if (e.key === "ArrowDown") { e.preventDefault(); open(true); } });
+  list.addEventListener("keydown", (e) => {
+    const all = items(), i = all.indexOf(document.activeElement);
+    const go = (n) => { e.preventDefault(); all[(n + all.length) % all.length].focus(); };
+    if (e.key === "Escape") { e.preventDefault(); close(true); }
+    else if (e.key === "ArrowDown") go(i + 1);
+    else if (e.key === "ArrowUp") go(i - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(all.length - 1);
+  });
+  list.addEventListener("focusout", (e) => {
+    if (!list.hidden && e.relatedTarget && !list.contains(e.relatedTarget) && e.relatedTarget !== btn) close(false);
+  });
+  document.addEventListener("click", (e) => { if (!list.hidden && !e.target.closest(".more-menu")) close(false); });
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
   const page = document.body.dataset.page;
   initNav();
+  initMore();
   if (page === "timer") initTimer();
-  else if (page === "reports") initReports();
-  else if (page === "days") initDays();
+  else if (page === "settings") initSettings();
+  else if (page === "reports") { await wl.ensureClock(); initReports(); }
+  else if (page === "days") { await wl.ensureClock(); initDays(); }
 });
