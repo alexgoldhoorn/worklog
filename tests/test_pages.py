@@ -80,7 +80,7 @@ def test_nav_has_the_app_order_and_names(client):
 def test_more_menu_holds_the_pages_the_tabs_do_not(client):
     html = client.get("/timer").text
     menu = html.split('id="more-list"')[1].split("</div>")[0]
-    assert re.findall(r'href="([^"]+)"[^>]*>([^<]+)</a>', menu) == [
+    assert re.findall(r'href="([^"]+)"[^>]*>(?:<svg.*?</svg>)?([^<]+)</a>', menu) == [
         ("/find", "Add or find a date"), ("/move", "Move"), ("/workcal", "Workcal"), ("/settings", "Settings")]
     assert 'id="more-btn"' in html and 'aria-haspopup="true"' in html and 'aria-expanded="false"' in html
     # the tabs themselves are unchanged and come first
@@ -284,3 +284,54 @@ def test_service_worker_does_not_get_a_page_for_a_logged_out_browser(client):
     # the worker only falls back to a kept page when the network call throws; an answer, a 401 included, is returned as it is
     js = client.get("/sw.js").text
     assert "return res; // any answer" in js and js.index("const cache = await caches.open(CACHE);") > js.index("return res;")
+
+
+# ---- one rule per kind, on every page (time entry, nav icons) ---------------------------------------------------
+
+def _web(name):
+    from pathlib import Path
+    return (Path(__file__).resolve().parent.parent / "worklog" / "web" / name).read_text(encoding="utf-8")
+
+
+def test_time_fields_are_text_inputs_bound_by_the_shared_helper(client):
+    # no browser time widget anywhere: every time field is `input.time`, normalised by wl.bindTimes (core.js)
+    for path in ("/find", "/week", "/settings", "/"):
+        assert 'type="time"' not in client.get(path).text, path
+    for f in ("find", "week", "settings"):
+        assert 'class="time"' in client.get(f"/{f}").text
+    core = _web("static/core.js")
+    assert "const normTime" in core and "bindTimes" in core and "Times must be HH:MM" in core
+    # the time-parsing regexp lives in core.js only
+    for name in ("app.js", "day.js", "find.js", "move.js", "week.js", "workcal.js", "pomodoro.js"):
+        assert "[:.hH]" not in _web(f"static/{name}"), name
+
+
+def test_decimal_hour_fields_accept_a_comma(client):
+    for path, ident in (("/settings", "rate"), ("/settings", "basis")):
+        assert f'id="{ident}" ' in client.get(path).text
+        assert re.search(rf'<input type="text" id="{ident}"[^>]*inputmode="decimal"', client.get(path).text)
+    assert "wl.parseNum" in _web("static/app.js")
+
+
+def test_nav_icons_match_the_qt_app():
+    qml = _web("../../qt/NavIcon.qml")
+    qt = dict(re.findall(r'"(\w+)": "([^"]+)"', qml))
+    html = _web("templates/base.html")
+    paths = re.findall(r'<path d="([^"]+)"/></svg>([A-Za-z ]+)</a>', html)
+    names = {"Timer": "timer", "Week": "week", "Pomodoro": "pomodoro", "Day": "day", "Reports": "reports",
+             "Expected hours": "expected", "Add or find a date": "find", "Settings": "settings"}
+    seen = set()
+    for d, label in paths:
+        if label in names:
+            assert qt[names[label]] == d, label
+            seen.add(label)
+    assert seen == set(names)
+
+
+def test_qt_buttons_all_go_through_the_shared_components():
+    from pathlib import Path
+    shared = {"AppButton.qml", "AppIconButton.qml", "AppRoundButton.qml", "ActionButton.qml"}
+    for f in (Path(__file__).resolve().parent.parent / "qt").glob("*.qml"):
+        if f.name in shared:
+            continue
+        assert not re.search(r"^\s*(Button|ToolButton|RoundButton)\s*\{", f.read_text(encoding="utf-8"), re.M), f.name

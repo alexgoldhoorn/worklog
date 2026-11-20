@@ -5,7 +5,7 @@
 "use strict";
 const VERSION = "__VERSION__";
 const CACHE = `worklog-${VERSION}`;
-const SHELLS = ["/timer", "/week", "/pomodoro", "/reports", "/days", "/settings", "/find", "/move", "/workcal"];
+const SHELLS = ["/", "/timer", "/week", "/pomodoro", "/reports", "/days", "/settings", "/find", "/move", "/workcal"];
 const ASSETS = ["core.js", "app.js", "style.css", "pomodoro.js", "week.js", "day.js", "find.js", "move.js", "workcal.js", "mdlite.js",
   "icon.svg", "icon-192.png", "manifest.webmanifest"].map((n) => `/static/${n}?v=${VERSION}`);
 

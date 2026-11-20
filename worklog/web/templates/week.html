@@ -31,11 +31,11 @@
 <form class="card addform" id="addform" hidden>
   <h3>Add a block</h3>
   <label>Date <input type="date" name="date" required></label>
-  <label>From <input type="time" name="start" required></label>
-  <label>To <input type="time" name="end" required></label>
+  <label>From <input type="text" class="time" name="start" required></label>
+  <label>To <input type="text" class="time" name="end" required></label>
   <label>Kind <select name="kind"><option>family</option><option>run</option><option>stop</option><option>other</option></select></label>
   <label class="wide">Title <input type="text" name="title" required maxlength="120"></label>
-  <button type="submit">Save as approved</button>
+  <button type="submit" class="small primary">Save as approved</button>
 </form>
 <h2>Load gate <small>daily at 07:22, from work hours, body signals and runs kept</small></h2>
 <section class="card gate" id="gate"></section>

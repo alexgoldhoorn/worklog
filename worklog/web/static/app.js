@@ -35,9 +35,8 @@ function fmtHM(min) {
 }
 const fmtHMS = (sec) => { const s = Math.max(0, Math.floor(sec)); return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`; };
 const toMin = (t) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
-// 9:50 / 9.50 / 950 → 09:50 (same leniency as the API); anything else is returned trimmed
-const normTime = (v) => { const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(v.trim()); return m && +m[1] < 24 && +m[2] < 60 ? `${pad(+m[1])}:${m[2]}` : v.trim(); };
-const isHHMM = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v || "");
+// time entry: one rule for every page (core.js); "9:50", "9.50", "950" -> "09:50"
+const { normTime, isTime: isHHMM } = wl;
 const fmtH1 = (h) => `${fmtNum(h, 1)} h`;
 const shiftDate = (iso, days) => { const d = new Date(`${iso}T12:00:00`); d.setDate(d.getDate() + days); return isoDate(d); };
 const weekdayShort = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString("en", { weekday: "short" });
@@ -683,6 +682,8 @@ function editBlockCell(td, block) {
     if (done) return;
     let v = input.value.trim();
     if (isTime && v) v = normTime(v);
+    // not a time: put the old value back and say so (the same message as every other time field)
+    if (isTime && v && !isHHMM(v)) { done = true; timer.editing = null; timer.dirty = false; renderBlocks(); showMessages($("notices"), [...timer.serverNotices, `Error: ${wl.TIME_MSG}`], "error"); return; }
     // an auto-closed block stays "to review" until its end is saved again: Enter on the unchanged end confirms it
     const confirms = field === "end" && block.auto_closed && v !== "";
     if (v === original && !confirms) { finish(enterPressed); return; }
@@ -905,13 +906,27 @@ async function loadBreakTypes(current) {
   $("def-break").replaceChildren(...names.map((t) => el("option", { value: t, text: t })));
   $("def-break").value = names.includes(picked) ? picked : st.default_break_type;
   $("breaks-list").replaceChildren(...names.map((n) => el("li", { class: "bt-row" },
-    el("span", { class: "bt-name", text: n }),
+    breakNameInput(n),
     n === st.default_break_type ? el("span", { class: "badge set", text: "default" })
       : el("button", { type: "button", class: "ghost x", text: "×", title: "Delete this break type", "aria-label": `Delete break type ${n}`,
         onclick: (e) => wl.locked(e.currentTarget, async () => {
           try { await api("DELETE", `/api/break-types/${encodeURIComponent(n)}`); listMsg("breaks-msg", ""); await loadBreakTypes(); }
           catch (err) { listMsg("breaks-msg", err.message); }
         }) }))));
+}
+
+// the name is an input: change it and leave the field to rename (the server keeps names in lower case)
+function breakNameInput(n) {
+  const input = el("input", { type: "text", value: n, maxlength: "40", autocomplete: "off", class: "quiet bt-name", "aria-label": `Name of break type ${n}` });
+  input.addEventListener("change", () => {
+    const v = input.value.trim();
+    if (v === n) return;
+    wl.locked(input, async () => {
+      try { await api("PUT", `/api/break-types/${encodeURIComponent(n)}`, { name: v }); listMsg("breaks-msg", ""); await loadBreakTypes(); }
+      catch (err) { input.value = n; listMsg("breaks-msg", err.message); }
+    });
+  });
+  return input;
 }
 
 async function addBreakType(e) {
@@ -956,7 +971,7 @@ async function saveBasis(v) {
 
 async function saveRate() {
   const raw = $("rate").value.trim();
-  const rate = raw === "" ? null : Number(raw);
+  const rate = raw === "" ? null : wl.parseNum(raw);   // "7.5" and "7,5" alike
   if (rate != null && !(rate >= 0)) { showMessages($("settings-notices"), ["Error: the rate must be zero or more"], "error"); return; }
   try {
     const st = await api("PUT", "/api/settings", { rate, rate_unit: $("rate-unit").value });
@@ -991,7 +1006,7 @@ function initSettings() {
   $("rate").addEventListener("change", saveRate);
   $("rate-unit").addEventListener("change", saveRate);
   for (const b of $("basis-seg").querySelectorAll("button")) b.addEventListener("click", () => saveBasis(Number(b.dataset.v)));
-  $("basis").addEventListener("change", () => saveBasis(Number($("basis").value)));
+  $("basis").addEventListener("change", () => saveBasis(wl.parseNum($("basis").value)));
   const sc = $("pref-shortcuts");
   sc.checked = shortcutsOn();
   sc.addEventListener("change", () => wl.store.set(SHORTCUTS_KEY, sc.checked ? "1" : "0"));
@@ -1170,8 +1185,10 @@ const niceStep = (range, ticks = 4) => {
   const raw = range / ticks, p = 10 ** Math.floor(Math.log10(raw || 1));
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((st) => st >= raw) || p * 10;
 };
-const periodLabel = (key, group) => (group === "week" ? `W${key.slice(5)}` : group === "month" ? key.slice(5) : key.replace("-Q", " Q"));
-const periodLong = (key, group) => (group === "week" ? `Week ${key.slice(5)} · ${key.slice(0, 4)}` : group === "month" ? key : key);
+// axis labels, the same as the Qt app: week "2026-43", month "Oct", quarter "2026 Q4", year "2026"
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const periodLabel = (key, group) => (group === "week" ? key : group === "month" ? MONTHS[Number(key.slice(5)) - 1] : key.replace("-Q", " Q"));
+const periodLong = (key, group) => (group === "week" ? `Week ${key.slice(5)} · ${key.slice(0, 4)}` : group === "month" ? new Date(`${key}-01T12:00:00`).toLocaleDateString("en", { month: "long", year: "numeric" }) : key.replace("-Q", " Q"));
 
 function chartCard(title, sub, cls) {
   const card = el("div", { class: `chart ${cls || ""}`.trim() }, el("h3", { text: title }, sub ? el("small", { text: sub }) : null));
@@ -1198,7 +1215,7 @@ function frame(W, H, n, lo, hi, opts = {}) {
 
 function xLabels(f, keys, group, H) {
   const g = svg("g", { class: "axis" });
-  const every = Math.ceil(keys.length / Math.max(2, Math.floor(f.iw / 44)));
+  const every = Math.ceil(keys.length / Math.max(2, Math.floor(f.iw / (group === "week" ? 56 : 44))));
   keys.forEach((k, i) => {
     const last = i === keys.length - 1;
     if (!last && (i % every || keys.length - 1 - i < every)) return;
@@ -1523,7 +1540,7 @@ function importForm(dry) {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const runningText = (r) => `${r.date} ${r.start} ${r.type}`;
+const runningText = (r) => `${r.type}, started ${r.date} ${r.start}`;
 
 async function importDryRun(e) {
   e.preventDefault();
@@ -1631,7 +1648,7 @@ function setDayError(refs, input, message) {
 function hoursValue(raw, emptyIsZero) {
   const t = String(raw).trim();
   if (t === "") return emptyIsZero ? 0 : null;
-  const n = Number(t.replace(",", "."));
+  const n = wl.parseNum(t);   // "7.5" and "7,5" alike
   return Number.isFinite(n) && n >= 0 && n <= 24 ? n : null;
 }
 
@@ -1686,7 +1703,7 @@ async function resetDay(refs) {
 }
 
 function dayRow(d) {
-  const num = (field) => el("input", { type: "number", step: "0.25", min: "0", max: "24", value: d[field], class: "quiet", "aria-label": `${field === "sick_h" ? "Sick hours" : "Expected hours"} ${dayName(d.date)}`, inputmode: "decimal" });
+  const num = (field) => el("input", { type: "text", value: d[field], class: "quiet num", "aria-label": `${field === "sick_h" ? "Sick hours" : "Expected hours"} ${dayName(d.date)}`, inputmode: "decimal" });
   const refs = {
     data: d, chain: Promise.resolve(),
     exp: num("expected_h"), sick: num("sick_h"),

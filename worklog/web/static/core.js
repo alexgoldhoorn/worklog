@@ -119,6 +119,35 @@
     return `${d.toLocaleDateString("en", { weekday: "short" })} ${d.getDate()} ${d.toLocaleDateString("en", { month: "short" })}`;
   }
 
+
+  // ---- time and number entry ---------------------------------------------------------
+  // The one rule for every time field (Qt: Api.normTime): "700", "7.30", "7:30", "19h00" -> "07:30"; anything else comes
+  // back trimmed. Fields are plain text inputs (class "time") so the browser's own 12/24 h widget never shows.
+  const TIME_MSG = "Times must be HH:MM";
+  const normTime = (v) => { const m = /^(\d{1,2})[:.hH]?(\d{2})$/.exec(String(v ?? "").trim()); return m && +m[1] < 24 && +m[2] < 60 ? `${pad(+m[1])}:${m[2]}` : String(v ?? "").trim(); };
+  const isTime = (v) => /^([01]\d|2[0-3]):[0-5]\d$/.test(v || "");
+  // "7.5" and "7,5" -> 7.5; NaN for anything that is not a plain number (Qt: Api.parseNum)
+  const parseNum = (t) => { const v = String(t ?? "").trim(); return /^\d+([.,]\d+)?$/.test(v) ? Number(v.replace(",", ".")) : NaN; };
+  // Turn the text inputs of root marked class "time" into time fields: placeholder HH:MM, normalised when left; a value that
+  // is not a time is put back (to the last good one) with TIME_MSG, never silently kept.
+  function bindTimes(root = document) {
+    root.querySelectorAll("input.time").forEach((input) => {
+      if (input.dataset.timeBound) return;
+      input.dataset.timeBound = "1";
+      input.type = "text"; input.inputMode = "numeric"; input.autocomplete = "off"; input.maxLength = 5;
+      if (!input.placeholder) input.placeholder = "HH:MM";
+      let good = isTime(input.value) ? input.value : "";
+      input.addEventListener("change", () => {
+        const v = normTime(input.value);
+        if (v === "" || isTime(v)) { input.value = v; good = v; return; }
+        input.value = good;
+        input.setCustomValidity(TIME_MSG); input.reportValidity(); input.setCustomValidity("");
+      });
+      input.addEventListener("focus", () => { if (isTime(input.value)) good = input.value; });
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => bindTimes()); else bindTimes();
+
   // ---- stale answers ---------------------------------------------------------------
   // const next = wl.sequence();  ...  const current = next(); const data = await call(...); if (!current()) return;
   // current() is false once a newer next() has been made, so a slow older answer never overwrites a newer one.
@@ -220,6 +249,6 @@
   }
   document.addEventListener("DOMContentLoaded", () => { if (queue.waiting()) queue.flush(); });
 
-  window.wl = { call, pad, isoDate, serverNow, serverAt, atString, syncClock, ensureClock, today, nowHHMM, minutesSince, addDays, dayLabel, sequence, esc, locked, store,
+  window.wl = { call, pad, isoDate, serverNow, serverAt, atString, syncClock, ensureClock, today, nowHHMM, minutesSince, addDays, dayLabel, TIME_MSG, normTime, isTime, parseNum, bindTimes, sequence, esc, locked, store,
     currency, setCurrency, loadCurrency, cachedStatus, cacheStatus, net, renderOffline, queue, newId };
 })();

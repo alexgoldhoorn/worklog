@@ -5,7 +5,7 @@
   const q = new URLSearchParams(location.search);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const hm = (s) => { const [h, m] = String(s).split(":").map(Number); return h + m / 60; };
-  const fmtDate = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const fmtDate = (iso) => wl.dayLabel(iso);   // "Tue 20 Oct"
   const notice = (text, cls = "") => { $("notices").replaceChildren(el("p", cls, text)); };
   const H0 = 6, H1 = 22, PX = 40;
   let item = null, day = null, chosen = null, slotsData = null;

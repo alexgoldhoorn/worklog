@@ -199,20 +199,26 @@
 
   function renderSettings(s) {
     const f = $("#settings");
-    const HHMM = 'pattern="([01][0-9]|2[0-3]):[0-5][0-9]" inputmode="numeric" placeholder="HH:MM"';
+    const HHMM = 'class="time" pattern="([01][0-9]|2[0-3]):[0-5][0-9]"';
     const fields = [["hard_stop", "Hard stop", "text", "24h. Work past this time counts as an evening for the gate; the proposed Hard stop blocks start here.", HHMM],
       ["run_slot", "Run slot", "text", "24h. Where the Sunday proposal puts a planned run.", HHMM],
       ["run_alt_slots", "Run fallback slots", "text", "24h, comma-separated. Tried in order when the run slot clashes with a work meeting.", ""],
-      ["week_hours_min", "Week hours min", "number", "The band the gate judges work hours against (hours signal fires above max).", 'min="0" max="80" step="0.5"'],
-      ["week_hours_max", "Week hours max", "number", "", 'min="0" max="80" step="0.5"'],
+      ["week_hours_min", "Week hours min", "text", "The band the gate judges work hours against (hours signal fires above max).", 'inputmode="decimal"'],
+      ["week_hours_max", "Week hours max", "text", "", 'inputmode="decimal"'],
       ["gcal_calendar", "Google calendar", "text", "Approved blocks are mirrored to this calendar (primary with a 🛡 prefix until it exists).", ""],
       ["todoist_project", "Todoist project", "text", "Where the top 3 and milestones come from.", ""],
       ["milestone_label", "Milestone label", "text", "Milestones are dated Todoist tasks in that project carrying this label; they are not stored here.", ""]];
     f.innerHTML = fields.map(([k, l, t, help, extra]) => `<label class="srow"><span class="sl">${l}${help ? ` <span class="help" title="${esc(help)}" tabindex="0">?</span>` : ""}</span><input name="${k}" type="${t}" ${extra} value="${esc(s[k] ?? "")}"></label>`).join("")
-      + '<div class="hint wide">Stored in the settings table of balance.db; the gate and the Sunday proposal read them on their next run. Hover the ? for what each one does.</div><button class="save" type="submit">Save</button>';
+      + '<div class="hint wide">Stored in the settings table of balance.db; the gate and the Sunday proposal read them on their next run. Hover the ? for what each one does.</div><button class="save small primary" type="submit">Save</button>';
+    wl.bindTimes(f);
     f.onsubmit = async (e) => {
       e.preventDefault();
       const body = Object.fromEntries(new FormData(f).entries());
+      for (const k of ["week_hours_min", "week_hours_max"]) {   // "7,5" and "7.5" alike
+        const n = wl.parseNum(body[k]);
+        if (!Number.isFinite(n)) { notice(`${k === "week_hours_min" ? "Week hours min" : "Week hours max"} must be a number`, "error"); return; }
+        body[k] = String(n);
+      }
       await wl.locked(f.querySelector(".save"), async () => {
         try { await api("/api/balance/settings", {method: "PUT", body}); notice("Settings saved. The gate reads them on its next run.", "ok"); await load(); }
         catch (err) { notice(err.message, "error"); }

@@ -17,7 +17,7 @@
 
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
   const hm = (s) => { const [h, m] = String(s).split(":").map(Number); return h + m / 60; };
-  const fmtDate = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const fmtDate = (iso) => wl.dayLabel(iso);   // "Tue 20 Oct"
   const h2 = (x) => { const m = Math.round(x * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
   const shift = (iso, days) => { const d = new Date(iso + "T00:00"); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const notice = (text, cls = "") => { const p = el("p", cls, text); $("notices").replaceChildren(p); };
@@ -37,7 +37,7 @@
   }
 
   async function act(fn) {
-    try { await fn(); await load(); } catch (e) { notice(e.message, "error"); }
+    try { await fn(); await load(); } catch (e) { await load(); notice(e.message, "error"); }
   }
 
   // "Only this one / Always for this title / Cancel": resolves "once", "always" or null (Esc and Cancel save nothing)
@@ -46,7 +46,13 @@
     $("classify-title").textContent = `Mark "${title}" as ${who}?`;
     dlg.returnValue = "";
     return new Promise((resolve) => {
-      dlg.addEventListener("close", () => resolve(dlg.returnValue === "once" || dlg.returnValue === "always" ? dlg.returnValue : null), { once: true });
+      // answer on the button press (submit), not on "close": the close event waits for a rendering frame and can lag a
+      // second behind, which left the event looking unclassified after it was saved. Esc has no submit, so close covers it.
+      const done = (v) => { dlg.removeEventListener("submit", onSubmit); dlg.removeEventListener("close", onClose); resolve(v === "once" || v === "always" ? v : null); };
+      const onSubmit = (e) => done(e.submitter ? e.submitter.value : "");
+      const onClose = () => done(dlg.returnValue);
+      dlg.addEventListener("submit", onSubmit);
+      dlg.addEventListener("close", onClose);
       dlg.showModal();
     });
   }
@@ -138,7 +144,7 @@
         if (ev.pending) label += " · pending";
         box.appendChild(el("span", "", label));
         if (ev.layer === "personal" && ev.lane === "family" && ev.classification !== "unclassified" && !ev.pending) {
-          const chg = el("button", "tiny", "whose? change"); chg.type = "button";
+          const chg = el("button", "tiny", "Whose? Change"); chg.type = "button";
           chg.onclick = () => { ev.classification = "unclassified"; renderTimeline(d); };
           box.appendChild(chg);
         }
@@ -150,7 +156,12 @@
             b.setAttribute("aria-label", `${text}: whose is "${ev.title}"?`);
             b.onclick = async () => {
               const choice = await askClassify(ev.title, text);
-              if (choice) act(() => call("POST", "/api/day/classify", { date: d.date, start: ev.start, title: ev.title, cls, always: choice === "always" }));
+              if (!choice) return;
+              // show the answer at once: the server stores it before it replies, so the reload that follows only confirms it.
+              // nextLoad() drops a slower reload that was already on its way with the old state; a failed save reloads the truth.
+              nextLoad();
+              ev.classification = cls; renderTimeline(d);
+              act(() => call("POST", "/api/day/classify", { date: d.date, start: ev.start, title: ev.title, cls, always: choice === "always" }));
             };
             who.appendChild(b);
           }
@@ -172,9 +183,9 @@
         }
         if (ev.layer === "protected" && ev.state === "proposed") {
           const b = el("span", "btns");
-          const ok = el("button", "tiny", "✓"); ok.type = "button"; ok.title = "approve"; ok.setAttribute("aria-label", `Approve ${ev.start}–${ev.end} ${ev.title}`);
+          const ok = el("button", "tiny", "✓"); ok.type = "button"; ok.title = "Approve"; ok.setAttribute("aria-label", `Approve ${ev.start}–${ev.end} ${ev.title}`);
           ok.onclick = (e) => wl.locked([ok, no], () => act(() => call("POST", `/api/balance/blocks/${ev.id}/approve`)));
-          const no = el("button", "tiny", "✗"); no.type = "button"; no.title = "reject"; no.setAttribute("aria-label", `Reject ${ev.start}–${ev.end} ${ev.title}`);
+          const no = el("button", "tiny", "✗"); no.type = "button"; no.title = "Reject"; no.setAttribute("aria-label", `Reject ${ev.start}–${ev.end} ${ev.title}`);
           no.onclick = () => wl.locked([ok, no], () => act(() => call("POST", `/api/balance/blocks/${ev.id}/reject`)));
           b.append(ok, no); box.appendChild(b);
         }

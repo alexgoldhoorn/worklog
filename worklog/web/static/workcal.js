@@ -3,7 +3,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const fmtDate = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const fmtDate = (iso) => wl.dayLabel(iso);   // "Tue 20 Oct"
   const notice = (text, cls = "") => { $("notices").replaceChildren(el("p", cls, text)); };
   const iso = wl.isoDate;
   const addDays = wl.addDays;
@@ -64,9 +64,9 @@
         if (tag !== "PDF") hand++;
         const acts = el("span", "wc-actions");
         acts.appendChild(el("span", "pill " + (tag === "PDF" ? "" : "amber"), tag));
-        const cancel = el("button", "tiny", e.cancelled ? "restore" : "cancel"); cancel.type = "button";
+        const cancel = el("button", "tiny", e.cancelled ? "Restore" : "Cancel"); cancel.type = "button";
         cancel.onclick = () => act(() => call("POST", "/api/day/workcal/annotate", { date, start: e.start, title: e.title, status: e.cancelled ? "confirmed" : "cancelled" }));
-        const note = el("button", "tiny", "note"); note.type = "button";
+        const note = el("button", "tiny", "Note"); note.type = "button";
         note.onclick = () => { const n = window.prompt(`Note for "${e.title}" (no email addresses):`, e.note || ""); if (n !== null) act(() => call("POST", "/api/day/workcal/annotate", { date, start: e.start, title: e.title, note: n })); };
         acts.append(cancel, note);
         row.appendChild(acts);
@@ -92,7 +92,7 @@
       body.appendChild(el("div", "title", e.title));
       const p = first && first.title === e.title && first.start === e.start ? first.prep : null;
       body.appendChild(el("div", "hint", p ? `prep ${p.minutes} min · start by ${p.start_by}${p.text ? " · " + p.text : ""}` : "no prep note"));
-      const btn = el("button", "tiny", p ? "edit prep" : "add prep"); btn.type = "button";
+      const btn = el("button", "tiny", p ? "Edit prep" : "Add prep"); btn.type = "button";
       btn.onclick = () => {
         const minutes = window.prompt(`Prep minutes for "${e.title}" at ${e.start}:`, p ? p.minutes : 20); if (minutes === null) return;
         const text = window.prompt("What to prepare:", p ? p.text : ""); if (text === null) return;
@@ -113,7 +113,7 @@
       for (const r of out.rules) {
         const row = el("div", "item");
         row.appendChild(el("span", "grow", `"${r.pattern}" → ${r.cls}`));
-        const del = el("button", "tiny", "delete"); del.type = "button";
+        const del = el("button", "tiny", "Delete"); del.type = "button";
         del.onclick = () => act(() => call("DELETE", `/api/day/classify/rules/${r.id}`));
         row.appendChild(del);
         list.appendChild(row);

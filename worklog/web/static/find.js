@@ -4,7 +4,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const fmtDate = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  const fmtDate = (iso) => wl.dayLabel(iso);   // "Tue 20 Oct"
   const notice = (text, cls = "") => { $("find-notices").replaceChildren(el("p", cls, text)); };
   let chosen = null, last = null, mode = "find", changed = false;
 
