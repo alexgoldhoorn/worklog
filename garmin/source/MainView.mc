@@ -15,6 +15,10 @@ class MainView extends WatchUi.View {
     private var _navAt as Number;
     private var _client as WorklogClient;
     private var _timer as Timer.Timer or Null;
+    private var _watchdog as Timer.Timer or Null;
+    private var _ticks as Number;
+    private var _drawnMin as Number;
+    private var _keep as Boolean;
 
     function initialize() {
         View.initialize();
@@ -25,6 +29,10 @@ class MainView extends WatchUi.View {
         _navAt = -10000;
         _client = new WorklogClient();
         _timer = null;
+        _watchdog = null;
+        _ticks = 0;
+        _drawnMin = -1;
+        _keep = false;
     }
 
     //! Called when the action menu opens or closes. A key press and its release can land on two
@@ -41,11 +49,12 @@ class MainView extends WatchUi.View {
     function onShow() as Void {
         if (_timer == null) {
             _timer = new Timer.Timer();
-            _timer.start(method(:onTick), 1000, true);
+            _ticks = 0;
+            _timer.start(method(:onTick), 10000, true);
         }
         // Coming back from the action menu while its request is in flight: don't send a second one.
         if (!busy) {
-            refresh();
+            refresh(false);
         }
     }
 
@@ -56,8 +65,15 @@ class MainView extends WatchUi.View {
         }
     }
 
+    //! Every 10 s: redraw only when the minute shown has changed; every 60 s fetch the status
+    //! again (not while a request is in flight).
     function onTick() as Void {
-        if (status != null && !"stopped".equals(state())) {
+        _ticks++;
+        if (_ticks % 6 == 0 && !busy) {
+            refresh(true);
+            return;
+        }
+        if (status != null && !"stopped".equals(state()) && shownMinutes() != _drawnMin) {
             WatchUi.requestUpdate();
         }
     }
@@ -66,38 +82,55 @@ class MainView extends WatchUi.View {
         return status == null ? null : (status as Dictionary)["state"] as String or Null;
     }
 
-    function refresh() as Void {
-        busy = true;
-        message = status == null ? "" : "…";
+    //! Whole minutes of elapsed time as drawn now (-1 when there is no clock).
+    private function shownMinutes() as Number {
+        var e = status == null ? null : (status as Dictionary)["elapsed_s"];
+        if (!(e instanceof Number)) {
+            return -1;
+        }
+        return (e + (System.getTimer() - receivedAt) / 1000) / 60;
+    }
+
+    //! quiet: a background refresh, which neither shows "…" nor keeps a failure on screen.
+    function refresh(quiet as Boolean) as Void {
+        setBusy(true);
+        if (!quiet) {
+            message = status == null ? "" : "…";
+        }
         _client.call(:status, null, method(:onStatus));
         WatchUi.requestUpdate();
     }
 
-    function onStatus(ok as Boolean, result as Dictionary or String) as Void {
-        busy = false;
+    function onStatus(ok as Boolean, result as Dictionary or String, code as Number) as Void {
+        setBusy(false);
         if (ok) {
             status = result as Dictionary;
             receivedAt = System.getTimer();
-            message = "";
-        } else {
+            if (!_keep) {
+                message = "";
+            }
+        } else if (!_keep) {
             message = result as String;
         }
+        _keep = false;
         WatchUi.requestUpdate();
     }
 
     //! Start, pause or stop. `body` overrides the default one (Pause sends the picked break type).
+    //! The request carries the state shown, so the server refuses it if another client changed it.
     function act(action as Symbol, body as Dictionary or Null) as Void {
         if (busy) {
             return;
         }
-        busy = true;
+        setBusy(true);
         message = "…";
-        _client.call(action, body != null ? body : (action == :start ? Logic.startBody(status) : {}), method(:onAction));
+        var base = body != null ? body : (action == :start ? Logic.startBody(status) : {});
+        _client.call(action, Logic.withExpect(base, state()), method(:onAction));
         WatchUi.requestUpdate();
     }
 
-    function onAction(ok as Boolean, result as Dictionary or String) as Void {
-        busy = false;
+    function onAction(ok as Boolean, result as Dictionary or String, code as Number) as Void {
+        setBusy(false);
         if (ok) {
             status = result as Dictionary;
             receivedAt = System.getTimer();
@@ -110,8 +143,35 @@ class MainView extends WatchUi.View {
                 new Attention.VibeProfile(75, 150), new Attention.VibeProfile(0, 100),
                 new Attention.VibeProfile(75, 150)
             ]);
+            // The action may have been applied anyway (a timeout after the server acted), or
+            // the state changed elsewhere (409): fetch the truth, keep the message, never retry.
+            _keep = true;
+            refresh(true);
         }
         WatchUi.requestUpdate();
+    }
+
+    //! busy with a 30 s watchdog, so a lost callback cannot leave the widget stuck on "…".
+    private function setBusy(b as Boolean) as Void {
+        busy = b;
+        if (_watchdog != null) {
+            _watchdog.stop();
+            _watchdog = null;
+        }
+        if (b) {
+            _watchdog = new Timer.Timer();
+            _watchdog.start(method(:onWatchdog), 30000, false);
+        }
+    }
+
+    function onWatchdog() as Void {
+        _watchdog = null;
+        if (busy) {
+            busy = false;
+            _keep = false;
+            message = "Timed out";
+            WatchUi.requestUpdate();
+        }
     }
 
     private function buzz(pattern as Array<Attention.VibeProfile>) as Void {
@@ -149,6 +209,7 @@ class MainView extends WatchUi.View {
                 if (elapsed != null) {
                     elapsed = elapsed + (System.getTimer() - receivedAt) / 1000;
                 }
+                _drawnMin = shownMinutes();
                 dc.drawText(cx, h * 0.46, Graphics.FONT_NUMBER_MEDIUM, Logic.formatElapsed(elapsed),
                     Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
                 var project = s["project"];

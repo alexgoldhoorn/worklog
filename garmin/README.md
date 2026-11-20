@@ -1,7 +1,9 @@
 # worklog for Garmin (Connect IQ widget)
 
 A widget with a glance for the Forerunner 965. The glance shows the timer state and elapsed
-time (`Working 2:14 · acme`, `Break 0:12`, `Stopped · 6.5 h`). Opening it shows the state with a
+time (`Working 2:14 · acme`, `On break 0:12`, `Stopped · 6.5 h`). It shows the last answer at once
+(cached in `Application.Storage`, elapsed time advanced from the stored time, trailing ` ?` when
+older than 10 minutes or when the refresh failed) and replaces it when the fetch answers. Opening it shows the state with a
 ticking clock, and Select (button or tap) opens Start / Pause / Stop. After every action the watch
 shows what the server returned, with one short vibration on success and three on failure.
 
@@ -25,8 +27,21 @@ The server side is `?brief=1` on `GET /api/status` and `POST /api/start|pause|st
 `{state, date, since, elapsed_s, now, type, project, today_work_h, resume, breaks}`. `now` is the server's
 wall clock; the watch does not use it (the Android widget does, for actions it queues offline). `resume` is the latest
 work block today, else the latest of the previous 14 days: Start sends its type and project, so starting
-after a break (or the next morning) continues the same project. `breaks` lists the break types (eat first,
-then by recent use); Pause opens a second menu with them and sends the picked one.
+after a break (or the next morning) continues the same project. `breaks` lists the break types (the server's default first,
+then by recent use); Pause opens a second menu with them and sends the picked one. From a break the
+action is called Resume (it sends the same `resume` body as Start).
+
+Every start/pause/stop also sends `expect_state` (the state the watch shows). If another client changed
+it, the server answers 409 `{"error": "state changed"}` and does nothing; the watch then shows
+`Changed elsewhere`, vibrates the failure pattern, fetches the real state, and does not retry. After any
+other failed action it also fetches the status again (a timeout may have happened after the server
+acted), keeping the error text on screen. The open widget refreshes the status every 60 s (not while a
+request is in flight), redraws only when the minute shown changes (10 s tick), and a 30 s watchdog clears
+the busy state if no reply ever arrives (`Timed out`).
+
+Error texts: `Needs https://` (-1001, or a non-https URL configured), `Login required` (401),
+`No phone link` (-104, -2), `Timed out` (-300), `Server error` (5xx), `Error <code>` otherwise;
+`No login` when the URL, user or password is empty.
 
 ## Toolchain (Windows)
 
@@ -59,7 +74,7 @@ PowerShell:
 
 ```powershell
 $sdk = "$env:APPDATA\Garmin\ConnectIQ\Sdks\connectiq-sdk-win-9.3.0-2026-10-20-95888f262\bin"
-& "$sdk\monkeydo.bat" garmin\bin\test.prg fr965 /t   # unit tests: expect PASSED (passed=9)
+& "$sdk\monkeydo.bat" garmin\bin\test.prg fr965 /t   # unit tests: expect PASSED (passed=14)
 & "$sdk\monkeydo.bat" garmin\bin\worklog.prg fr965   # the widget; it opens as the glance
 ```
 
@@ -71,14 +86,14 @@ In the simulator:
   password). Saved settings override the defaults in `properties.xml`, also across rebuilds; to
   reset them, delete `%TEMP%\com.garmin.connectiq\GARMIN\APPS\SETTINGS\*.SET`.
   The real server works with the HTTPS check left on.
-- Phone link off: *Settings → Connection Type → BLE → Not Connected*. Expect `Phone not connected`.
+- Phone link off: *Settings → Connection Type → BLE → Not Connected*. Expect `No phone link`.
 - Memory is in the status bar. Measured on fr965 (2026-11-05): glance 8.6 kB of 59.9 kB, widget
   12.9 kB of 763.6 kB.
 - Against the mock: untick *Settings → Use Device HTTPS Requirements* (otherwise every request
-  fails with -1001 and shows `Server error`), run `python garmin/tools/mock_server.py` and set
+  fails with -1001 and shows `Needs https://`), run `python garmin/tools/mock_server.py` and set
   serverUrl to `http://127.0.0.1:8503`. Plain `http://` is accepted only for `127.0.0.1` /
-  `localhost`; any other non-https URL shows `No login`. `--fail 401` and `--fail 500` show
-  `Login failed` and `Server error`. The simulator never times out a request (it waited 130 s
+  `localhost`; any other non-https URL shows `Needs https://`. `--fail 401` and `--fail 500` show
+  `Login required` and `Server error`. The simulator never times out a request (it waited 130 s
   for `--fail slow` and showed the late reply), so `Timed out` (code -300, from the phone) can
   only be seen on the watch, e.g. with the phone paired but offline. Which message that gives is
   not verified yet. Tick the HTTPS check again afterwards.
@@ -86,13 +101,15 @@ In the simulator:
 ### Manual checks (simulator, then the watch)
 
 1. Stopped → Select → Start: `Working`, and the web UI shows the block.
-2. Select → Pause: `Break`, the clock restarts at `0:00`.
-3. Select → Start: `Working` with the same project as before the break (check the web Day view).
+2. Select → Pause: `On break`, the clock restarts at `0:00`.
+3. Select → Resume: `Working` with the same project as before the break (check the web Day view).
 4. Select → Stop: `Stopped`, with today's hours below.
 5. Press Select twice quickly while `…` shows: no menu opens, no double action. One press opens
    the menu without also picking its first item, and picking an item does not reopen the menu
    (selects within 500 ms of the menu opening or closing are ignored).
-6. Connection off: an action vibrates three times, shows `Phone not connected`, and the previous
+6. Stale state: with the widget showing Working, stop the timer from the web or `curl`; then Pause on the
+   watch shows `Changed elsewhere` and the real state (`Stopped`), and nothing else happens.
+7. Connection off: an action vibrates three times, shows `No phone link`, and the previous
    state stays on screen.
 
 ## Sideload to the watch

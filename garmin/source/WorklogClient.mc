@@ -1,8 +1,10 @@
 import Toybox.Application;
 import Toybox.Communications;
 import Toybox.Lang;
+import Toybox.Time;
 
-typedef ClientDone as Method(ok as Boolean, result as Dictionary or String) as Void;
+//! code: HTTP status or Communications error (0 = no request was made).
+typedef ClientDone as Method(ok as Boolean, result as Dictionary or String, code as Number) as Void;
 
 //! Calls the worklog JSON API through the phone. One request at a time per instance.
 (:glance)
@@ -20,7 +22,7 @@ class WorklogClient {
         var user = prop("user");
         var password = prop("password");
         if (!Logic.hasLogin(url, user, password)) {
-            done.invoke(false, "No login");
+            done.invoke(false, Logic.loginProblem(url, user, password) as String, 0);
             return;
         }
         _done = done;
@@ -52,9 +54,10 @@ class WorklogClient {
             return;
         }
         if (code == 200 && data instanceof Dictionary) {
-            done.invoke(true, data);
+            Application.Storage.setValue("glance", Logic.cacheOf(data, Time.now().value()));
+            done.invoke(true, data, code);
         } else {
-            done.invoke(false, Logic.errorText(code, data));
+            done.invoke(false, Logic.errorText(code, data), code);
         }
     }
 

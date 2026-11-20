@@ -1,8 +1,11 @@
+import Toybox.Application;
 import Toybox.Graphics;
 import Toybox.Lang;
+import Toybox.Time;
 import Toybox.WatchUi;
 
-//! One line in the glance list: state, elapsed time and project, or an error.
+//! One line in the glance list: state, elapsed time and project. The last answer is cached in
+//! Application.Storage and shown at once (marked " ?" when old); the fetch then replaces it.
 (:glance)
 class WorklogGlanceView extends WatchUi.GlanceView {
     private var _client as WorklogClient;
@@ -14,15 +17,25 @@ class WorklogGlanceView extends WatchUi.GlanceView {
         _client = new WorklogClient();
         _text = "…";
         _ok = true;
+        var c = Application.Storage.getValue("glance");
+        if (c instanceof Dictionary) {
+            _text = Logic.cachedLine(c, Time.now().value(), false);
+        }
     }
 
     function onShow() as Void {
         _client.call(:status, null, method(:onStatus));
     }
 
-    function onStatus(ok as Boolean, result as Dictionary or String) as Void {
+    function onStatus(ok as Boolean, result as Dictionary or String, code as Number) as Void {
         _ok = ok;
-        _text = ok ? Logic.glanceLine(result as Dictionary) : result as String;
+        if (ok) {
+            _text = Logic.glanceLine(result as Dictionary);
+        } else {
+            // Keep the last known state when the phone is away; give the reason only if there is none.
+            var c = Application.Storage.getValue("glance");
+            _text = c instanceof Dictionary ? Logic.cachedLine(c, Time.now().value(), true) : result as String;
+        }
         WatchUi.requestUpdate();
     }
 

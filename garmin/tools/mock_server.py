@@ -6,6 +6,9 @@ Serves GET /api/status and POST /api/start, /api/pause, /api/stop (with ?brief=1
 127.0.0.1, keeping the timer state in memory. Any Basic login is accepted. --fail makes every
 reply fail: 401, 500, or "slow" (each reply waits --delay seconds, default 130, so the
 request times out on the phone or in the simulator).
+A POST with expect_state that differs from the mock's state gets 409 {"error": "state changed",
+"state": <current>} and does nothing, like the server. To test it, change the state with curl
+(`curl -u a:b -X POST "http://127.0.0.1:8503/api/stop?brief=1"`) while the widget shows Working.
 In the simulator, switch off the HTTPS check and set serverUrl to http://127.0.0.1:8503.
 """
 import argparse
@@ -16,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 STATE = {"state": "stopped", "since": None, "started": None, "type": None, "project": None,
          "work_s": 0.0, "resume": None}
+BREAKS = ["eat", "walk", "sport"]  # the server puts its default break type first
 FAIL = None
 DELAY = 130
 
@@ -28,7 +32,7 @@ def brief() -> dict:
             "elapsed_s": int(running) if running is not None else None,
             "type": STATE["type"], "project": STATE["project"],
             "today_work_h": round(work / 3600, 2), "resume": STATE["resume"],
-            "breaks": ["eat", "walk", "sport"]}
+            "breaks": BREAKS}
 
 
 def close_block():
@@ -80,6 +84,10 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             body = {}
         route = self.path.split("?")[0]
+        expect = body.get("expect_state")
+        if route in ("/api/start", "/api/pause", "/api/stop") and expect and expect != STATE["state"]:
+            self.reply(409, {"error": "state changed", "state": STATE["state"]})
+            return
         if route == "/api/start":
             close_block()
             open_block("working", body.get("type") or "dev", body.get("project"))

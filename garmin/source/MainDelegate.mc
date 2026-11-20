@@ -15,13 +15,13 @@ class MainDelegate extends WatchUi.BehaviorDelegate {
             return true; // a request is in flight, or the menu just closed: ignore
         }
         if (_view.status == null) {
-            _view.refresh(); // the first load failed: Select retries
+            _view.refresh(false); // the first load failed: Select retries
             return true;
         }
         var menu = new WatchUi.Menu2({:title => "worklog"});
         var actions = Logic.actionsFor(_view.state());
         for (var i = 0; i < actions.size(); i++) {
-            menu.addItem(new WatchUi.MenuItem(Logic.actionLabel(actions[i]), null, actions[i], null));
+            menu.addItem(new WatchUi.MenuItem(Logic.actionLabel(actions[i], _view.state()), null, actions[i], null));
         }
         _view.markNav();
         WatchUi.pushView(menu, new ActionMenuDelegate(_view), WatchUi.SLIDE_UP);

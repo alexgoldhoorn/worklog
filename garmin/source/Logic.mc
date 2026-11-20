@@ -24,7 +24,7 @@ module Logic {
             return "Working";
         }
         if ("break".equals(state)) {
-            return "Break";
+            return "On break";
         }
         return "Stopped";
     }
@@ -57,14 +57,20 @@ module Logic {
     //! Text for a failed request. code is the HTTP status or a Communications error (negative).
     (:glance)
     function errorText(code as Number, body) as String {
+        if (code == -1001) {
+            return "Needs https://";
+        }
         if (code == -104 || code == -2) {
-            return "Phone not connected";
+            return "No phone link";
         }
         if (code == -300) {
             return "Timed out";
         }
         if (code == 401) {
-            return "Login failed";
+            return "Login required";
+        }
+        if (isConflict(code, body)) {
+            return "Changed elsewhere";
         }
         if (code >= 400 && code < 500 && body instanceof Dictionary) {
             var e = body["error"];
@@ -72,7 +78,82 @@ module Logic {
                 return e.length() > 40 ? e.substring(0, 40) as String : e;
             }
         }
-        return "Server error";
+        if (code >= 500) {
+            return "Server error";
+        }
+        return "Error " + code;
+    }
+
+    //! The server refused because the state is no longer the one the watch showed (expect_state).
+    (:glance)
+    function isConflict(code as Number, body) as Boolean {
+        return code == 409 && body instanceof Dictionary && "state changed".equals(body["error"]);
+    }
+
+    //! Why there is no usable login: "No login" (something missing) or "Needs https://".
+    //! null when hasLogin() is true.
+    (:glance)
+    function loginProblem(url as String or Null, user as String or Null, password as String or Null) as String or Null {
+        if (hasLogin(url, user, password)) {
+            return null;
+        }
+        if (user != null && password != null && user.length() > 0 && password.length() > 0
+            && baseUrl(url).length() > 0) {
+            return "Needs https://";
+        }
+        return "No login";
+    }
+
+    //! A copy of body that tells the server which state the watch is showing; the server answers
+    //! 409 if it differs. Unknown state (null) sends no expectation.
+    (:glance)
+    function withExpect(body as Dictionary or Null, state as String or Null) as Dictionary {
+        var out = {} as Dictionary;
+        if (body != null) {
+            var keys = body.keys();
+            for (var i = 0; i < keys.size(); i++) {
+                out[keys[i]] = body[keys[i]];
+            }
+        }
+        if (state != null) {
+            out["expect_state"] = state;
+        }
+        return out;
+    }
+
+    //! The few fields the glance shows, for Application.Storage. t = receive time (epoch s).
+    (:glance)
+    function cacheOf(st as Dictionary, nowSec as Number) as Dictionary {
+        var out = {"s" => st["state"], "t" => nowSec} as Dictionary;
+        var e = st["elapsed_s"];
+        if (e instanceof Number) {
+            out["e"] = e;
+        }
+        var p = st["project"];
+        if (p instanceof String && p.length() > 0) {
+            out["p"] = p.length() > 30 ? p.substring(0, 30) : p;
+        }
+        var h = st["today_work_h"];
+        if (h != null && !(h instanceof String)) {
+            out["h"] = h;
+        }
+        return out;
+    }
+
+    //! Glance line from a cache entry: elapsed advanced by the time since it was stored; a
+    //! trailing " ?" when older than 10 minutes or when `old` (the refresh failed).
+    (:glance)
+    function cachedLine(c as Dictionary, nowSec as Number, old as Boolean) as String {
+        var t = c["t"];
+        var age = t instanceof Number ? nowSec - t : 0;
+        if (age < 0) {
+            age = 0;
+        }
+        var e = c["e"];
+        var st = {"state" => c["s"], "project" => c["p"], "today_work_h" => c["h"],
+            "elapsed_s" => e instanceof Number ? e + age : null} as Dictionary;
+        var line = glanceLine(st);
+        return (old || age > 600) ? line + " ?" : line;
     }
 
     (:glance)
@@ -183,9 +264,10 @@ module Logic {
         return [:start];
     }
 
-    function actionLabel(action as Symbol) as String {
+    //! "Resume" from a break, else "Start".
+    function actionLabel(action as Symbol, state as String or Null) as String {
         if (action == :start) {
-            return "Start";
+            return "break".equals(state) ? "Resume" : "Start";
         }
         if (action == :pause) {
             return "Pause";
