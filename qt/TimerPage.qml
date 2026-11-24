@@ -93,9 +93,31 @@ ScrollView {
         })
     }
 
+    // The body of a timer action with the time typed in "at" (today, when the button was forgotten);
+    // null when that text is not a time
+    function atBody(body, typed) {
+        if (typed.trim() === "")
+            return body
+        const t = Api.normTime(typed)
+        return /^\d\d:\d\d$/.test(t) ? Object.assign({}, body, { at: Api.today() + "T" + t }) : null
+    }
+    // where today's last block ended, while nothing runs and that is in the past: "Start from" offers it
+    readonly property string lastEnd: {
+        if (timerState !== "stopped" || !day)
+            return ""
+        const e = day.blocks.map(b => b.end).filter(x => !!x).sort().pop() || ""
+        return e !== "" && e < Api.nowHHMM() ? e : ""
+    }
+
     function action(path, body) {
         if (busy)
             return
+        body = atBody(body, atField.text)
+        if (body === null) {
+            page.error = qsTr("Enter the time as HH:MM")
+            return
+        }
+        atField.text = ""
         busy = true
         Api.timerAction(path, body, () => page.busy = false, function (e) {
             page.busy = false
@@ -367,6 +389,34 @@ ScrollView {
                         Layout.preferredWidth: 1
                         onClicked: page.action("/api/stop", {})
                     }
+                }
+
+                RowLayout {   // forgot to press the button: the next Start, Pause or Stop happened at this time
+                    spacing: 8
+                    Layout.fillWidth: true
+                    Label {
+                        text: qsTr("at")
+                        color: Api.muted
+                        font.pixelSize: 12
+                    }
+                    TimeField {
+                        id: atField
+                        placeholderText: qsTr("now")
+                        Accessible.name: qsTr("Time for the next Start, Pause or Stop (empty is now)")
+                        Layout.preferredWidth: 84
+                    }
+                    AppButton {
+                        visible: page.lastEnd !== ""
+                        text: qsTr("Start from %1").arg(page.lastEnd)
+                        flat: true
+                        enabled: !page.busy
+                        Accessible.description: qsTr("Start where the last block ended")
+                        onClicked: {
+                            atField.text = page.lastEnd
+                            page.action("/api/start", Api.startBody(page.pendingType, projectField.text.trim()))
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
                 }
 
                 Label {
@@ -650,6 +700,7 @@ ScrollView {
                 liveSec: page.liveSec
                 onEditRequested: b => blockDialog.editBlock(b)
                 onBillableToggled: (b, next) => Api.request("PUT", "/api/blocks/" + b.id, { billable: next }, null, e => page.error = e)
+                onMergeRequested: b => Api.request("POST", "/api/blocks/" + b.id + "/merge-next", {}, null, e => page.error = e)
                 onStretchRequested: (b, fields) => Api.request("PUT", "/api/blocks/" + b.id, fields, null, e => page.error = e)
                 onFillGap: (start, end, asBreak) => {
                     const body = { date: page.status.date, start: start, end: end }
@@ -671,6 +722,7 @@ ScrollView {
         onOffer: (text, action) => snackbar.show(text, action, qsTr("Move it too"))
         onDeleted: (text, undo) => snackbar.show(text, undo)
         onTrimmed: (text, undo) => snackbar.show(text, undo)
+        onStartAgain: body => page.action("/api/start", body)
     }
 
     Snackbar { id: snackbar }

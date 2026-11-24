@@ -245,6 +245,16 @@ function renderButtons() {
   stop.replaceChildren("Stop", el("small", { text: s.state === "stopped" ? "nothing running" : "close block" }));
   stop.title = "End the running block";
   stop.disabled = timer.busy || s.state === "stopped";
+  // forgot to start after the last block: one tap starts where it ended
+  const last = $("at-last");
+  const lastEnd = s.state === "stopped" && timer.day && timer.date === todayIso()
+    ? timer.day.blocks.map((b) => b.end).filter(Boolean).sort().pop() : null;
+  last.hidden = !(lastEnd && lastEnd < nowHHMM());
+  if (!last.hidden) {
+    last.dataset.at = lastEnd;
+    last.textContent = `Start from ${lastEnd}`;
+    last.title = `Start at ${lastEnd}, where the last block ended`;
+  }
 }
 
 function renderTotals() {
@@ -399,7 +409,12 @@ function overlapDate(text) {
 // "09:00–10:30 dev": names a row for assistive technology and the Undo message
 const blockLabel = (b) => `${b.start}–${b.end || "…"} ${b.type}`;
 
-function blockRow(b) {
+// two blocks that touch and say the same thing: one block cut in two by a stop and a start
+const mergeable = (a, b) => !!a && a.end === b.start && a.type === b.type && (a.project || "") === (b.project || "")
+  && (a.client || "") === (b.client || "") && a.billable === b.billable;
+
+// prev: the block in the row above when it touches this one, else null
+function blockRow(b, prev) {
   const kind = b.work_type === "work" ? "wrk" : "brk";
   const tr = el("tr", { class: [kind, b.flags.start_gt_end || b.flags.overlap ? "flag" : "", b.auto_closed ? "auto" : "", b.end ? "" : "open"].join(" ").trim(),
     "data-id": String(b.id),
@@ -427,6 +442,12 @@ function blockRow(b) {
       // closed by the server because it was left running: ✓ saves the end as it is, which clears the review notice
       b.auto_closed && b.end ? el("button", { type: "button", class: "ghost x", text: "✓", title: `Closed automatically at ${b.end}: confirm this end time (or edit it)`,
         "aria-label": `Confirm the automatic end time of ${blockLabel(b)}`, onclick: () => mutate(() => api("PUT", `/api/blocks/${b.id}`, { end: b.end })) }) : null,
+      mergeable(prev, b) ? el("button", { type: "button", class: "ghost x", text: "⤒", title: "Same as the block above: merge the two into one",
+        "aria-label": `Merge ${blockLabel(b)} with the block above`, onclick: (e) => wl.locked(e.currentTarget, () => mutate(() => api("POST", `/api/blocks/${prev.id}/merge-next`))) }) : null,
+      b.work_type === "work" && b.end ? el("button", { type: "button", class: "ghost x", text: "▶", title: "Start the timer with this type and project",
+        "aria-label": `Start the timer again as ${blockLabel(b)}`, onclick: () => startAgain(b) }) : null,
+      el("button", { type: "button", class: "ghost x", text: "✂", title: "Split: cut a part out as another block (a break you forgot)",
+        "aria-label": `Split ${blockLabel(b)}`, onclick: () => splitBlock(b) }),
       el("button", { type: "button", class: "ghost x", text: "×", "aria-label": `Delete ${blockLabel(b)}`, onclick: (e) => wl.locked(e.currentTarget, () => deleteBlock(b)) })));
   return tr;
 }
@@ -476,12 +497,14 @@ function renderBlocks() {
   const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
   let covered = null; // latest end seen so far, so an overlapping block never fakes a gap
   let last = null; // the block that ends at `covered`
+  let above = null; // the block in the row above
   for (const b of sorted) {
     if (covered && covered < b.start) rows.push(gapRow(covered, b.start, last, b));
     if (!b.end || !covered || b.end > covered) last = b;
     if (!b.end) covered = "24:00";
     else if (!covered || b.end > covered) covered = b.end;
-    rows.push(blockRow(b));
+    rows.push(blockRow(b, above));
+    above = b;
   }
   if (!rows.length) rows.push(el("tr", {}, el("td", { colspan: 8, class: "muted", text: "No blocks on this day." })));
   $("blocks").replaceChildren(el("thead", {}, head), el("tbody", {}, rows));
@@ -649,9 +672,17 @@ async function failed(err) {
 
 async function timerAction(path, body) {
   if (timer.busy) return;
+  // a time typed in "at": the action happened then (today), not now; the server refuses a time that cannot be
+  const typed = $("at-time").value.trim();
+  if (typed) {
+    const v = normTime(typed);
+    if (!isHHMM(v)) { showError(new Error(wl.TIME_MSG)); return; }
+    body = { ...body, at: `${todayIso()}T${v}` };
+  }
   setBusy(true);
   try {
     const r = await wl.queue.act(path, body); // goes now, or waits in the offline queue
+    $("at-time").value = "";
     if (r.queued) { applyQueue(); if (timer.status) renderStatus(); } else await refreshAll();
   } catch (err) { await failed(err); } finally { setBusy(false); }
 }
@@ -741,11 +772,23 @@ function editBlockCell(td, block) {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); enterPressed = true; input.blur(); }
     else if (e.key === "Escape") { e.preventDefault(); finish(true); }
+    else if (isTime && (e.key === "ArrowUp" || e.key === "ArrowDown")) { // 5 minutes later / earlier, 1 with Shift
+      const t = nudgeTime(input.value, (e.shiftKey ? 1 : 5) * (e.key === "ArrowUp" ? 1 : -1));
+      if (t) { e.preventDefault(); input.value = t; previewDur(td.closest("tr"), block, field, t); }
+    }
   });
   input.addEventListener("blur", commit);
   td.replaceChildren(input);
   input.focus();
   input.select();
+}
+
+// "09:58" + 5 -> "10:03", kept inside the day; null when the text is not a time
+function nudgeTime(text, minutes) {
+  const v = normTime(String(text).trim());
+  if (!isHHMM(v)) return null;
+  const m = Math.min(1439, Math.max(0, toMin(v) + minutes));
+  return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 }
 
 // while a start/end is being typed, the Dur cell shows what the row would become
@@ -838,6 +881,54 @@ function addRow() {
   const start = lastEnd || nowHHMM();
   // type and client defaults are applied by the API
   return wl.locked($("add-row"), () => mutate(() => api("POST", "/api/blocks", { date: timer.date, start, end: null })));
+}
+
+// ▶ on a row: start the timer now with that block's type, project and client
+function startAgain(b) {
+  const body = { type: b.type };
+  if (b.project) body.project = b.project;
+  if (b.client) body.client = b.client;
+  return timerAction("/api/start", body);
+}
+
+// ✂ on a row: cut a part out of the block as another block (the break you forgot). The server splits or trims
+// whatever the new block reaches into (`cut`); the parts keep their type, project and client.
+function splitBlock(b) {
+  const chips = (timer.status && timer.status.chips) || {};
+  const types = [...new Set([...(chips.break_types || []), ...(chips.types || []), b.type])];
+  const time = (label, value) => el("input", { type: "text", class: "time", placeholder: "HH:MM", inputmode: "numeric", autocomplete: "off", "aria-label": label, value });
+  const start = time("Start of the part to cut out", ""), end = time("End of the part to cut out", "");
+  const type = el("select", { "aria-label": "Type of the new block" }, types.map((t) => el("option", { value: t, text: t })));
+  const msg = el("p", { class: "error", role: "alert", hidden: true });
+  const fail = (text) => { msg.textContent = text; msg.hidden = false; };
+  const ok = el("button", { type: "submit", text: "Split" });
+  const dlg = el("dialog", { class: "sheet narrow split" });
+  const form = el("form", {
+    onsubmit: (e) => {
+      e.preventDefault();
+      const s = normTime(start.value.trim()), en = normTime(end.value.trim());
+      if (!isHHMM(s) || !isHHMM(en)) { fail(wl.TIME_MSG); return; }
+      if (en <= s) { fail("End must be after start"); return; }
+      if (s < b.start || en > (b.end || nowHHMM())) { fail(`Stay inside ${b.start}–${b.end || "now"}`); return; }
+      wl.locked(ok, async () => {
+        try {
+          await api("POST", "/api/blocks", { date: b.date || timer.date, start: s, end: en, type: type.value, cut: true });
+          dlg.close();
+          timer.followup = null;
+          await refreshAll();
+        } catch (err) { fail(err.message); }
+      });
+    },
+  },
+  el("h3", { text: `Split ${blockLabel(b)}` }),
+  el("p", { class: "muted", text: "Cut a part out as another block, for example a break you forgot. The rest keeps its type and project." }),
+  el("p", {}, start, "–", end, "as", type), msg,
+  el("p", {}, el("button", { type: "button", class: "ghost", text: "Cancel", onclick: () => dlg.close() }), ok));
+  dlg.append(form);
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.append(dlg);
+  dlg.showModal();
+  start.focus();
 }
 
 function addProposal(p) {
@@ -1172,6 +1263,7 @@ async function initTimer() {
   $("btn-pause").addEventListener("click", pauseTimer);
   $("btn-stop").addEventListener("click", stopTimer);
   $("add-row").addEventListener("click", addRow);
+  $("at-last").addEventListener("click", (e) => { $("at-time").value = e.currentTarget.dataset.at; startTimer(); });
   $("project").addEventListener("input", () => {
     timer.pending.project = null;
     if (timer.status) { renderChips("chips-projects", timer.status.chips.projects, "project"); renderButtons(); }

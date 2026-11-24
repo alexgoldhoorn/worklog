@@ -782,3 +782,60 @@ def test_timer_at_rejects_nonsense(client, app):
                     ("2026-10-20T08:00", "before the running block"), ("soon", "look like"), (5, "string")):
         r = client.post("/api/pause", json={"at": at})
         assert r.status_code == 400 and why in r.json()["error"], (at, r.json())
+
+
+def _spans(client, date="2026-10-20"):
+    return [(b["start"], b["end"], b["type"]) for b in client.get(f"/api/day/{date}").json()["blocks"]]
+
+
+def test_create_block_with_cut_splits_and_trims(client):
+    day = "2026-10-19"
+    for s, e in (("09:00", "12:00"), ("12:00", "17:00")):
+        client.post("/api/blocks", json={"date": day, "start": s, "end": e, "type": "dev", "project": "p"})
+    # a forgotten break inside one block splits it; both parts keep type and project
+    r = client.post("/api/blocks", json={"date": day, "start": "10:00", "end": "10:15", "type": "eat", "cut": True})
+    assert r.status_code == 200
+    assert _spans(client, day) == [("09:00", "10:00", "dev"), ("10:00", "10:15", "eat"), ("10:15", "12:00", "dev"),
+                                   ("12:00", "17:00", "dev")]
+    assert all(b["project"] == "p" for b in client.get(f"/api/day/{day}").json()["blocks"] if b["type"] == "dev")
+    # across a seam both neighbours are trimmed
+    client.post("/api/blocks", json={"date": day, "start": "11:45", "end": "12:30", "type": "eat", "cut": True})
+    assert ("10:15", "11:45", "dev") in _spans(client, day) and ("12:30", "17:00", "dev") in _spans(client, day)
+    # a block covered whole is never deleted; without cut nothing moves
+    client.post("/api/blocks", json={"date": day, "start": "09:30", "end": "16:00", "type": "meet", "cut": True})
+    assert ("10:00", "10:15", "eat") in _spans(client, day)
+    assert ("09:00", "09:30", "dev") in _spans(client, day) and ("16:00", "17:00", "dev") in _spans(client, day)
+    n = len(_spans(client, day))
+    client.post("/api/blocks", json={"date": day, "start": "16:10", "end": "16:20", "type": "eat"})
+    assert len(_spans(client, day)) == n + 1 and ("16:00", "17:00", "dev") in _spans(client, day)
+
+
+def test_create_block_with_cut_splits_the_running_block(client, app):
+    app.state.clock = lambda: datetime(2026, 10, 20, 7, 0)
+    client.post("/api/start", json={"type": "dev", "project": "p"})
+    app.state.clock = lambda: datetime(2026, 10, 20, 9, 0)
+    # not over yet: the running block is left alone
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "08:50", "end": "09:10", "type": "eat", "cut": True})
+    assert ("07:00", None, "dev") in _spans(client)
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "08:00", "end": "08:20", "type": "eat", "cut": True})
+    assert ("07:00", "08:00", "dev") in _spans(client) and ("08:20", None, "dev") in _spans(client)
+    st = client.get("/api/status").json()
+    assert st["state"] == "working" and st["block"]["project"] == "p" and st["block"]["start"] == "08:20"
+
+
+def test_merge_next(client, app):
+    day = "2026-10-19"
+    a = client.post("/api/blocks", json={"date": day, "start": "09:00", "end": "10:00", "type": "dev"}).json()["id"]
+    b = client.post("/api/blocks", json={"date": day, "start": "10:00", "end": "11:00", "type": "dev"}).json()["id"]
+    assert client.post(f"/api/blocks/{b}/merge-next").status_code == 409
+    r = client.post(f"/api/blocks/{a}/merge-next")
+    assert r.status_code == 200 and r.json()["end"] == "11:00"
+    assert _spans(client, day) == [("09:00", "11:00", "dev")]
+    assert client.post("/api/blocks/9999/merge-next").status_code == 404
+    # into the running block: the merged block runs on
+    c = client.post("/api/blocks", json={"date": "2026-10-20", "start": "08:00", "end": "09:00", "type": "dev"}).json()["id"]
+    client.post("/api/start", json={"type": "dev"})
+    r = client.post(f"/api/blocks/{c}/merge-next")
+    assert r.status_code == 200 and r.json()["end"] is None
+    assert _spans(client) == [("08:00", None, "dev")]
+    assert client.get("/api/status").json()["state"] == "working"

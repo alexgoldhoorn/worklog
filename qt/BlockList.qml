@@ -16,15 +16,27 @@ ColumnLayout {
     signal fillGap(string start, string end, bool asBreak)
     // close a gap by moving one edge of a neighbour: `fields` is the PUT body for /api/blocks/{block.id}
     signal stretchRequested(var block, var fields)
+    // join `block` with the one that starts where it ends (POST /api/blocks/{id}/merge-next)
+    signal mergeRequested(var block)
+
+    // two blocks that touch and say the same thing: one block cut in two by a stop and a start
+    function mergeable(a, b) {
+        return !!a && !!a.end && a.end === b.start && a.type === b.type && (a.project || "") === (b.project || "")
+               && (a.client || "") === (b.client || "") && a.billable === b.billable
+    }
 
     // blocks in start order, with a {gap} item wherever nothing covers the time between two blocks
     readonly property var items: {
         const out = []
         let covered = null   // latest end so far, so an overlapping block never fakes a gap
         let last = null      // the block that ends at `covered`: the one a gap comes after
+        let above = null     // the block in the row above
         for (const b of blocks.slice().sort((x, y) => x.start.localeCompare(y.start))) {
             if (covered && covered < b.start)
                 out.push({ gap: true, start: covered, end: b.start, prev: last, next: b })
+            else if (mergeable(above, b))
+                out.push({ seam: true, prev: above, next: b })
+            above = b
             if (!b.end || !covered || b.end > covered)
                 last = b
             covered = !b.end ? "24:00" : (!covered || b.end > covered ? b.end : covered)
@@ -85,6 +97,7 @@ ColumnLayout {
             required property var modelData
             required property int index
             readonly property bool gap: !!row.modelData.gap
+            readonly property bool seam: !!row.modelData.seam
             readonly property bool isBreak: row.modelData.work_type !== "work"
             readonly property bool running: row.modelData.id === root.runningId
             readonly property bool flagged: !!row.modelData.flags
@@ -93,7 +106,7 @@ ColumnLayout {
             Layout.fillWidth: true
 
             Rectangle {
-                visible: row.index > 0 && !row.gap
+                visible: row.index > 0 && !row.gap && !row.seam
                 implicitHeight: 1
                 color: Api.line
                 Layout.fillWidth: true
@@ -139,8 +152,29 @@ ColumnLayout {
                 }
             }
 
+            RowLayout {   // two blocks that are really one: offer to merge them
+                visible: row.seam
+                spacing: 4
+                Layout.fillWidth: true
+                Layout.leftMargin: 26
+                implicitHeight: 36
+                Label {
+                    text: qsTr("same as above")
+                    color: Api.muted
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+                AppButton {
+                    text: qsTr("Merge")
+                    flat: true
+                    Accessible.name: qsTr("Merge the two blocks into one")
+                    onClicked: root.mergeRequested(row.modelData.prev)
+                }
+            }
+
             ItemDelegate {
-                visible: !row.gap
+                visible: !row.gap && !row.seam
                 implicitHeight: 56
                 leftPadding: 8
                 rightPadding: 8

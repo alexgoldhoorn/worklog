@@ -340,9 +340,12 @@ def create_block(body: dict = Body(...), c: Ctx = Depends(ctx)):
         client, billable = None, None  # a break is never billed to anyone
     if end is not None and end <= start:
         raise ApiError("end must be after start")
+    cut = _opt_bool(body, "cut") if "cut" in body else False
     with _LOCK:
         if end is None:
             _refuse_second_open(c.conn)
+        elif cut:
+            _make_room(c, date, start, end)
         b = Block(None, date, start, end, project, type_, client, billable, "manual")
         b.id = db.insert_block(c.conn, b)
     return _derived(c, db.get_block(c.conn, b.id))
@@ -410,6 +413,54 @@ def delete_block(block_id: int, c: Ctx = Depends(ctx)):
             raise ApiError("not found", 404)
         db.delete_block(c.conn, block_id)
     return {"ok": True}
+
+
+def _make_room(c: Ctx, date: str, start: str, end: str) -> None:
+    """Make room for a block the user adds with `cut`: a block of that day it reaches into is
+    trimmed, one it lies inside is split in two (the forgotten break). A block it covers whole is
+    left as it is and shows as an overlap: a mistyped time never deletes anything. The running
+    block gives way only when the new block is already over; what runs on is a new running block
+    with the same type, project and client. Call it with _LOCK held."""
+    over = date < c.today.isoformat() or (date == c.today.isoformat() and end <= c.now.strftime("%H:%M"))
+    for b in db.blocks_on(c.conn, date):
+        if b.end is None:
+            if not over or b.start >= end:
+                continue
+            if b.start < start:
+                db.update_block(c.conn, b.id, end=start)
+                db.insert_block(c.conn, Block(None, date, end, None, b.project, b.type, b.client,
+                                              b.billable, b.source))
+            else:
+                db.update_block(c.conn, b.id, start=end)
+            continue
+        if not b.start < b.end or not (b.start < end and b.end > start):
+            continue
+        head, tail = b.start < start, b.end > end
+        if head and tail:
+            db.insert_block(c.conn, Block(None, date, end, b.end, b.project, b.type, b.client,
+                                          b.billable, b.source, b.auto_closed))
+        if head:
+            db.update_block(c.conn, b.id, end=start)
+        elif tail:
+            db.update_block(c.conn, b.id, start=end)
+
+
+@router.post("/api/blocks/{block_id}/merge-next")
+def merge_next(block_id: int, c: Ctx = Depends(ctx)):
+    """Join a block with the one that starts where it ends: it takes that block's end (running
+    included) and the other is deleted. Type, project, client and billable stay this block's."""
+    c.auto_close()
+    with _LOCK:
+        cur = db.get_block(c.conn, block_id)
+        if cur is None:
+            raise ApiError("not found", 404)
+        nxt = None if cur.end is None else next(
+            (b for b in db.blocks_on(c.conn, cur.date) if b.id != cur.id and b.start == cur.end), None)
+        if nxt is None:
+            raise ApiError("no block starts where this one ends", 409)
+        db.delete_block(c.conn, nxt.id)
+        db.update_block(c.conn, cur.id, end=nxt.end, end_fold=nxt.end_fold, auto_closed=nxt.auto_closed)
+        return _derived(c, db.get_block(c.conn, cur.id))
 
 
 def _cut_out_of_closed_blocks(conn, date, start, end):

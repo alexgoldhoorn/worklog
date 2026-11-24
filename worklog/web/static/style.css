@@ -642,6 +642,10 @@ button.help:hover, button.help:focus-visible { color: var(--fg); border-color: v
 #day-chips { margin: 8px 0; }
 #day-chips[hidden], #day-chips:empty { display: none; }
 
+.at-row { margin: 8px 0 0; font-size: .82rem; display: flex; align-items: center; gap: 6px; }
+.at-row input { width: 5.2em; }
+dialog.split p { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+dialog.split input.time { width: 5.2em; }
 .kbd-hint { margin: 10px 0 0; font-size: .75rem; color: var(--muted); }
 .kbd-hint kbd { font: inherit; padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; }
 @media (hover: none), (max-width: 639px) { .kbd-hint { display: none; } }

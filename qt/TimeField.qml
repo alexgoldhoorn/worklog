@@ -14,6 +14,24 @@ TextField {
     inputMethodHints: Qt.ImhPreferNumbers
     selectByMouse: true
     onActiveFocusChanged: if (activeFocus) selectAll()
+    // "09:58" + 5 -> "10:03", kept inside the day; "" when the text is not a time
+    function nudged(value, minutes) {
+        const m = /^(\d\d):(\d\d)$/.exec(Api.normTime(value))
+        if (!m)
+            return ""
+        const t = Math.min(1439, Math.max(0, Number(m[1]) * 60 + Number(m[2]) + minutes))
+        return Api.pad(Math.floor(t / 60)) + ":" + Api.pad(t % 60)
+    }
+    // Up / Down: 5 minutes later / earlier, 1 with Shift (as the web's time cells)
+    Keys.onPressed: event => {
+        if (event.key !== Qt.Key_Up && event.key !== Qt.Key_Down)
+            return
+        const t = field.nudged(field.text, ((event.modifiers & Qt.ShiftModifier) ? 1 : 5) * (event.key === Qt.Key_Up ? 1 : -1))
+        if (t !== "") {
+            field.text = t
+            event.accepted = true
+        }
+    }
     onEditingFinished: {
         const n = Api.normTime(text)
         if (n !== text)

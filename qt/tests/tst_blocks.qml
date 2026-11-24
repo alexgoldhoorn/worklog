@@ -195,6 +195,37 @@ TestCase {
         compare(list.stretchFields(gap, false), { start: "12:00", require_open: true })
     }
 
+    // touching blocks that say the same get a seam row (Merge); any difference, or a gap, gets none
+    function test_list_seam() {
+        const mk = (id, s, e, extra) => Object.assign({ id: id, start: s, end: e, type: "dev", project: "p", work_type: "work" }, extra || {})
+        const list = createTemporaryObject(listComp, tc, { blocks: [mk(1, "09:00", "10:00"), mk(2, "10:00", "11:00"),
+            mk(3, "11:00", "12:00", { project: "q" }), mk(4, "12:30", null, { project: "q" })] })
+        compare(list.items.length, 6)
+        verify(list.items[1].seam)
+        compare(list.items[1].prev.id, 1)
+        verify(!list.items[3].seam && !list.items[3].gap, "another project: no seam")
+        verify(list.items[4].gap)
+        verify(list.mergeable(mk(1, "09:00", "10:00"), mk(2, "10:00", null)), "the running block can be merged into")
+        verify(!list.mergeable(mk(1, "09:00", "10:00", { billable: true }), mk(2, "10:00", "11:00")))
+    }
+
+    function test_dialog_split_and_again() {
+        const dlg = makeDialog()
+        const b = { id: 1, date: "2020-01-06", start: "09:00", end: "12:00", type: "dev", project: "p", client: "", work_type: "work" }
+        compare(dlg.againBody(b), { type: "dev", project: "p" })
+        dlg.editBlock(b)
+        dlg.splitBlock()
+        compare(dlg.block, null)
+        compare(dlg.splitOf.id, 1)
+        compare(dlg.date, "2020-01-06")
+        compare(dlg.startField.text, "")
+        verify(dlg.title.indexOf("Split") === 0)
+        dlg.close()
+        dlg.newBlock("2020-01-06")
+        compare(dlg.splitOf, null)
+        dlg.close()
+    }
+
     function test_list_overlap_makes_no_false_gap() {
         const list = createTemporaryObject(listComp, tc, { blocks: [
             { id: 1, start: "09:00", end: "12:00", work_type: "work" },

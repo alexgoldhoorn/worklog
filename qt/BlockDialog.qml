@@ -14,6 +14,29 @@ AppDialog {
     signal offer(string text, var action)
     // a neighbour was trimmed so the edited block does not overlap it; `undo` puts its time back
     signal trimmed(string text, var undo)
+    // "Start again": the page starts the timer with this body (type, project, client)
+    signal startAgain(var body)
+    property var splitOf: null    // the block being split, while the dialog adds the part cut out of it
+
+    function againBody(b) {
+        const body = { type: b.type }
+        if (b.project)
+            body.project = b.project
+        if (b.client)
+            body.client = b.client
+        return body
+    }
+
+    // Split: the dialog becomes "new block" for the part to cut out (a break you forgot); the server
+    // splits or trims what that block reaches into (`cut`, sent with every new closed block)
+    function splitBlock() {
+        const b = block
+        newBlock(b.date)
+        splitOf = b
+        startField.text = ""
+        typeField.editText = Api.defaultBreak()
+        startField.forceActiveFocus()
+    }
     // a block was deleted; `undo` re-creates it (the page shows it in its Snackbar)
     signal deleted(string text, var undo)
 
@@ -158,9 +181,11 @@ AppDialog {
     modal: true
     width: Math.min(420, parent ? parent.width - 32 : 420)
     // AppDialog keeps it between the status bar and the keyboard; the Flickable below scrolls
-    title: block ? qsTr("Edit block") : qsTr("New block")
+    title: block ? qsTr("Edit block") : splitOf ? qsTr("Split %1–%2 %3").arg(splitOf.start).arg(splitOf.end || "…").arg(splitOf.type)
+                                               : qsTr("New block")
 
     function editBlock(b) {
+        splitOf = null
         block = b
         date = b.date
         startField.text = b.start
@@ -177,6 +202,7 @@ AppDialog {
     // Today: a new row starts where the day's last block ended (or now) and is left open, empty end =
     // running. Another day: the end is required and "now" means nothing there, so only the last end is offered.
     function newBlock(d) {
+        splitOf = null
         block = null
         date = d
         const lastEnd = blocks.map(b => b.end).filter(e => !!e).sort().pop()
@@ -212,6 +238,8 @@ AppDialog {
             const body = { date: f.date, start: f.start, end: f.end, type: f.type, project: f.project }
             if (f.client !== "")
                 body.client = f.client  // left out, the server applies the default client
+            if (f.end)
+                body.cut = true         // a block it lies inside is split, one it reaches into is trimmed
             Api.request("POST", "/api/blocks", body, null, fail)
         }
     }
@@ -285,6 +313,38 @@ AppDialog {
             // so the key reaches here; an open ComboBox popup takes it first
             Keys.onReturnPressed: dlg.saveIfValid()
             Keys.onEnterPressed: dlg.saveIfValid()
+
+            RowLayout {   // shortcuts on the block being edited
+                visible: dlg.block !== null
+                spacing: 8
+                Layout.fillWidth: true
+                AppButton {
+                    text: qsTr("Split…")
+                    flat: true
+                    Accessible.description: qsTr("Cut a part out as another block, for example a break you forgot")
+                    onClicked: dlg.splitBlock()
+                }
+                AppButton {
+                    visible: !!dlg.block && dlg.block.work_type === "work" && !!dlg.block.end
+                    text: qsTr("▶ Start again")
+                    flat: true
+                    Accessible.description: qsTr("Start the timer with this type and project")
+                    onClicked: {
+                        const body = dlg.againBody(dlg.block)
+                        dlg.close()
+                        dlg.startAgain(body)
+                    }
+                }
+                Item { Layout.fillWidth: true }
+            }
+            Label {
+                visible: dlg.splitOf !== null
+                text: qsTr("The part to cut out, for example a break you forgot. The rest keeps its type and project.")
+                color: Api.muted
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
 
             Caption { text: qsTr("Date") }
             AppButton {

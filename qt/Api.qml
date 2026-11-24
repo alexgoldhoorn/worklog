@@ -442,7 +442,7 @@ QtObject {
         body = Object.assign({}, body, { request_id: newRequestId() })
         const queueIt = function () {
             const b = Object.assign({}, body)
-            b.at = atNow()
+            b.at = b.at || atNow()   // a backdated action keeps its own time
             queue = queue.concat([{ path: path, body: b }])
             saveQueue()
             if (onQueued) onQueued()
