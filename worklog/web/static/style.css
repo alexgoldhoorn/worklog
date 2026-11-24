@@ -646,6 +646,10 @@ button.help:hover, button.help:focus-visible { color: var(--fg); border-color: v
 .at-row { margin: 8px 0 0; font-size: .82rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .at-row #at-box { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .at-row #at-box[hidden] { display: none; }
+.at-row #at-note { color: var(--amber); }
+.at-row #at-note.error { color: var(--danger); }
+.hero.backdated { border-color: var(--amber); }
+@media (max-width: 359px) { .act small .at-type { display: none; } }
 .at-row input { width: 5.2em; }
 dialog.split p { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 dialog.split input.time { width: 5.2em; }

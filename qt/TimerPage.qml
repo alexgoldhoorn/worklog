@@ -93,15 +93,29 @@ ScrollView {
         })
     }
 
-    // The body of a timer action with the time typed in "at" (today, when the button was forgotten);
-    // null when that text is not a time
+    // ---- "when": the next Start, Pause or Stop counts from now, or from a time today set under the buttons
+
+    // The body of a timer action with the time typed in "At"; null when that text is not a time
     function atBody(body, typed) {
         if (typed.trim() === "")
             return body
         const t = Api.normTime(typed)
         return /^\d\d:\d\d$/.test(t) ? Object.assign({}, body, { at: Api.today() + "T" + t }) : null
     }
-    // where today's last block ended, while nothing runs and that is in the past: "Start from" offers it
+    // "" when the typed time can be used, else why not. `since`: the running block's start when it began today
+    function atProblem(typed, now, since) {
+        if (typed.trim() === "")
+            return ""
+        const t = Api.normTime(typed)
+        if (!/^\d\d:\d\d$/.test(t))
+            return qsTr("Enter the time as HH:MM")
+        if (t > now)
+            return qsTr("Later than now")
+        if (since && t < since)
+            return qsTr("Before this block started (%1)").arg(since)
+        return ""
+    }
+    // where today's last block ended, while nothing runs and that is in the past: "From … (last end)" offers it
     readonly property string lastEnd: {
         if (timerState !== "stopped" || !day)
             return ""
@@ -109,24 +123,62 @@ ScrollView {
         return e !== "" && e < Api.nowHHMM() ? e : ""
     }
 
-    property bool atOpen: false   // the "at" time field is shown
+    property bool atOpen: false   // the "At" time field is shown
+    property string atDay: ""     // the day it was opened on: a time left open over midnight is not used
+    readonly property string atSince: runningBlock && runningBlock.date === Api.today() ? runningBlock.start : ""
+    readonly property string atError: atOpen ? atProblem(atField.text, Api.nowHHMM(), atSince) : ""
+    // "HH:MM" only while a usable time is set: the buttons say it and the card's border warns
+    readonly property string atTime: atOpen && atField.text.trim() !== "" && atError === "" ? Api.normTime(atField.text) : ""
+    function openAt(value) {
+        atField.text = value || ""
+        atDay = Api.today()
+        atOpen = true
+        atField.forceActiveFocus()
+    }
+    function closeAt() {
+        atOpen = false
+        atField.text = ""
+    }
+    // "work" -> "work · from 13:00" (just "from 13:00" on a narrow screen: the chips show the type)
+    function fromAt(text) {
+        return atTime === "" ? text : narrow ? qsTr("from %1").arg(atTime) : qsTr("%1 · from %2").arg(text).arg(atTime)
+    }
+    Timer {   // left untouched for half an hour, the time goes back to now
+        id: atIdle
+        interval: 30 * 60000
+        running: page.atOpen
+        onTriggered: page.closeAt()
+    }
 
     function action(path, body) {
         if (busy)
             return
-        body = atBody(body, atField.text)
-        if (body === null) {
-            page.error = qsTr("Enter the time as HH:MM")
+        if (atError !== "") {
+            page.error = atError
             return
         }
-        atField.text = ""
-        atOpen = false
+        const t = atTime
+        if (t !== "" && atDay !== Api.today()) {
+            closeAt()
+            page.error = qsTr("The day changed: set the time again")
+            return
+        }
+        if (t !== "")
+            body = atBody(body, t)
         busy = true
-        Api.timerAction(path, body, () => page.busy = false, function (e) {
+        // the time is cleared only after a good answer: a refused one stays to be corrected
+        Api.timerAction(path, body, function () {
+            page.busy = false
+            page.closeAt()
+            if (t !== "")
+                snackbar.show((path === "/api/start" ? qsTr("Started at %1") : path === "/api/pause" ? qsTr("Paused at %1")
+                                                                                : qsTr("Stopped at %1")).arg(t))
+        }, function (e) {
             page.busy = false
             page.error = e
         }, function () {
             page.busy = false
+            page.closeAt()
             snackbar.show(qsTr("Saved offline, it is sent when the server answers"))
         })
     }
@@ -234,7 +286,7 @@ ScrollView {
             background: Rectangle {
                 radius: 14
                 color: page.toneBg
-                border.color: Qt.alpha(page.tone, 0.3)
+                border.color: page.atTime !== "" ? Api.warnColor : Qt.alpha(page.tone, 0.3)
                 Behavior on color { ColorAnimation { duration: 250 } }
             }
 
@@ -353,13 +405,13 @@ ScrollView {
                         id: startButton
                         text: page.timerState === "working" ? qsTr("Switch")
                               : page.timerState === "break" ? qsTr("Resume") : qsTr("Start")
-                        subtext: page.pendingType || (page.runningBlock && page.timerState === "working"
-                                                      ? page.runningBlock.type : qsTr("default type"))
+                        subtext: page.fromAt(page.pendingType || (page.runningBlock && page.timerState === "working"
+                                                                  ? page.runningBlock.type : qsTr("default type")))
                         tip: page.timerState === "working" ? qsTr("End this block and start a new one with this type")
                              : page.timerState === "break" ? qsTr("End the break and go back to work") : qsTr("Start a work block")
                         fill: Api.workColor
                         ink: Api.workFg
-                        enabled: !page.busy
+                        enabled: !page.busy && page.atError === ""
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         onClicked: {
@@ -370,12 +422,13 @@ ScrollView {
                     ActionButton {
                         id: pauseButton
                         text: page.timerState === "break" ? qsTr("Change") : qsTr("Pause")
-                        subtext: page.breakType || qsTr("break")
+                        subtext: page.fromAt(page.breakType || qsTr("break"))
                         tip: page.timerState === "break" ? qsTr("Change the type of this break") : qsTr("Start a break")
                         fill: Api.breakColor
                         ink: Api.breakFg
                         // a break can start from stopped too, as on the web
-                        enabled: !page.busy && (page.timerState !== "break" || page.breakType !== page.runningBlock?.type)
+                        enabled: !page.busy && page.atError === ""
+                                 && (page.timerState !== "break" || page.breakType !== page.runningBlock?.type)
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         onClicked: page.action("/api/pause", Api.pauseBody(page.breakType))
@@ -383,43 +436,36 @@ ScrollView {
                     ActionButton {
                         id: stopButton
                         text: qsTr("Stop")
-                        subtext: page.timerState === "stopped" ? qsTr("nothing running") : qsTr("close block")
+                        subtext: page.timerState === "stopped" ? qsTr("nothing running")
+                                 : page.atTime !== "" ? qsTr("at %1").arg(page.atTime) : qsTr("close block")
                         tip: qsTr("End the running block")
                         fill: Api.idleColor
                         ink: Api.card
-                        enabled: !page.busy && page.timerState !== "stopped"
+                        enabled: !page.busy && page.atError === "" && page.timerState !== "stopped"
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         onClicked: page.action("/api/stop", {})
                     }
                 }
 
-                // Forgot to press the button: "Start from" continues where the last block ended, and the
-                // link opens a time field: the next Start, Pause or Stop then counts from that time today
-                RowLayout {
-                    visible: page.lastEnd !== "" || !page.atOpen
+                // When: the next press counts from now, or from a time today (the button was forgotten).
+                // Closed it says "Now"; open it is a time field, and the buttons above say the time.
+                Flow {
+                    visible: !page.atOpen
                     spacing: 8
                     Layout.fillWidth: true
                     AppButton {
-                        visible: page.lastEnd !== ""
-                        text: qsTr("Start from %1").arg(page.lastEnd)
+                        text: qsTr("Now · change time")
                         flat: true
-                        enabled: !page.busy
-                        Accessible.description: qsTr("Start where the last block ended")
-                        onClicked: {
-                            atField.text = page.lastEnd
-                            page.action("/api/start", Api.startBody(page.pendingType, projectField.text.trim()))
-                        }
+                        Accessible.description: qsTr("The next Start, Pause or Stop counts from now. Change it when you forgot to press the button")
+                        onClicked: page.openAt("")
                     }
-                    Item { Layout.fillWidth: true }
                     AppButton {
-                        visible: !page.atOpen
-                        text: qsTr("Forgot to press? Set the time…")
+                        visible: page.lastEnd !== ""
+                        text: qsTr("From %1 (last end)").arg(page.lastEnd)
                         flat: true
-                        onClicked: {
-                            page.atOpen = true
-                            atField.forceActiveFocus()
-                        }
+                        Accessible.description: qsTr("Set the time to where the last block ended; Start then starts there")
+                        onClicked: page.openAt(page.lastEnd)
                     }
                 }
                 RowLayout {
@@ -427,26 +473,41 @@ ScrollView {
                     spacing: 8
                     Layout.fillWidth: true
                     Label {
-                        text: qsTr("The next Start, Pause or Stop happened today at")
+                        text: qsTr("At")
                         color: Api.muted
                         font.pixelSize: 12
-                        wrapMode: Text.Wrap
-                        horizontalAlignment: Text.AlignRight
-                        Layout.fillWidth: true
                     }
                     TimeField {
                         id: atField
                         Accessible.name: qsTr("Time of the next Start, Pause or Stop")
                         Layout.preferredWidth: 84
+                        onTextChanged: atIdle.restart()
                     }
                     AppIconButton {
                         text: "×"
-                        name: qsTr("Use the time now again")
-                        onClicked: {
-                            atField.text = ""
-                            page.atOpen = false
-                        }
+                        name: qsTr("Back to now")
+                        onClicked: page.closeAt()
                     }
+                    Label {   // the note sits beside the field; on a narrow screen it goes below
+                        id: atNote
+                        // a half-typed time is not called wrong while it is being typed
+                        readonly property bool typing: atField.activeFocus && page.atError === qsTr("Enter the time as HH:MM")
+                        readonly property string note: page.atError !== "" ? (typing ? "" : page.atError)
+                              : page.atTime !== "" ? qsTr("Backdated: next press counts from %1").arg(page.atTime) : ""
+                        text: page.narrow ? "" : note
+                        color: page.atError !== "" ? Api.errorColor : Api.warnColor
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                    }
+                }
+                Label {
+                    visible: page.atOpen && page.narrow && text !== ""
+                    text: atNote.note
+                    color: atNote.color
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
                 }
 
                 Label {

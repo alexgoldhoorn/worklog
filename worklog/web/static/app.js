@@ -238,22 +238,33 @@ function renderButtons() {
   const pause = $("btn-pause");
   const stop = $("btn-stop");
   // the small line says what the button will use; the tooltip what it does (the Qt app's ActionButtons say the same)
-  start.replaceChildren(s.state === "working" ? "Switch" : s.state === "break" ? "Resume" : "Start", el("small", { text: type === "default" ? "default type" : type }));
+  // a time set under the buttons ("At 13:00"): every button says it, and a time that cannot be disables them
+  const at = atState();
+  // "work · from 13:00"; a narrow screen drops the type (the chips show it), as the Qt app does
+  const from = (text) => (at.time ? [el("span", { class: "at-type", text: `${text} · ` }), `from ${at.time}`] : text);
+  start.replaceChildren(s.state === "working" ? "Switch" : s.state === "break" ? "Resume" : "Start", el("small", {}, from(type === "default" ? "default type" : type)));
   start.title = s.state === "working" ? "End this block and start a new one with this type" : s.state === "break" ? "End the break and go back to work" : "Start a work block";
-  pause.replaceChildren(s.state === "break" ? "Change" : "Pause", el("small", { text: pauseType() || "break" }));
+  pause.replaceChildren(s.state === "break" ? "Change" : "Pause", el("small", {}, from(pauseType() || "break")));
   pause.title = s.state === "break" ? "Change the type of this break" : "Start a break";
-  stop.replaceChildren("Stop", el("small", { text: s.state === "stopped" ? "nothing running" : "close block" }));
+  stop.replaceChildren("Stop", el("small", { text: s.state === "stopped" ? "nothing running" : at.time ? `at ${at.time}` : "close block" }));
   stop.title = "End the running block";
-  stop.disabled = timer.busy || s.state === "stopped";
-  // forgot to start after the last block: one tap starts where it ended
+  start.disabled = pause.disabled = timer.busy || !!at.problem;
+  stop.disabled = timer.busy || s.state === "stopped" || !!at.problem;
+  $("state").classList.toggle("backdated", !!at.time);
+  const note = $("at-note");
+  // a half-typed time is not called wrong while it is being typed
+  const typing = at.problem === wl.TIME_MSG && document.activeElement === $("at-time");
+  note.textContent = at.problem ? (typing ? "" : at.problem) : at.time ? `Backdated: next press counts from ${at.time}` : "";
+  note.className = at.problem ? "error" : "";
+  // forgot to start after the last block: one tap sets the time to where it ended (Start then starts there)
   const last = $("at-last");
   const lastEnd = s.state === "stopped" && timer.day && timer.date === todayIso()
     ? timer.day.blocks.map((b) => b.end).filter(Boolean).sort().pop() : null;
-  last.hidden = !(lastEnd && lastEnd < nowHHMM());
+  last.hidden = at.open || !(lastEnd && lastEnd < nowHHMM());
   if (!last.hidden) {
     last.dataset.at = lastEnd;
-    last.textContent = `Start from ${lastEnd}`;
-    last.title = `Start at ${lastEnd}, where the last block ended`;
+    last.textContent = `From ${lastEnd} (last end)`;
+    last.title = `Set the time to ${lastEnd}, where the last block ended; Start then starts there`;
   }
 }
 
@@ -670,27 +681,62 @@ async function failed(err) {
   showError(err);
 }
 
-// the "at" time field: hidden behind its link until asked for; closing it means "now" again
-function showAt(on) {
+// ---- "when": the next Start, Pause or Stop counts from now, or from a time today set under the buttons ----
+
+// "" when the typed time can be used, else why not. `since`: the running block's start when it began today.
+function atProblem(typed, now, since) {
+  const v = typed.trim();
+  if (!v) return "";
+  const t = normTime(v);
+  if (!isHHMM(t)) return wl.TIME_MSG;
+  if (t > now) return "Later than now";
+  if (since && t < since) return `Before this block started (${since})`;
+  return "";
+}
+
+// { open, problem, time }: time is "HH:MM" only when one is set and usable
+function atState() {
+  const open = !$("at-box").hidden;
+  const typed = open ? $("at-time").value : "";
+  const b = timer.status && timer.status.block;
+  const problem = atProblem(typed, nowHHMM(), b && b.date === todayIso() ? b.start : "");
+  return { open, problem, time: typed.trim() && !problem ? normTime(typed.trim()) : "" };
+}
+
+let atDay = ""; // the day the time was set on: a time left open over midnight is not used
+let atIdle = null;
+function showAt(on, value) {
   $("at-box").hidden = !on;
   $("at-open").hidden = on;
-  if (on) $("at-time").focus(); else $("at-time").value = "";
+  $("at-time").value = on ? value || "" : "";
+  atDay = on ? todayIso() : "";
+  if (on) $("at-time").focus();
+  touchAt();
+}
+// the time changed: the buttons say it; left untouched for half an hour it goes back to now
+function touchAt() {
+  clearTimeout(atIdle);
+  if (!$("at-box").hidden) atIdle = setTimeout(() => showAt(false), 30 * 60000);
+  renderButtons();
 }
 
 async function timerAction(path, body) {
   if (timer.busy) return;
-  // a time typed in "at": the action happened then (today), not now; the server refuses a time that cannot be
-  const typed = $("at-time").value.trim();
-  if (typed) {
-    const v = normTime(typed);
-    if (!isHHMM(v)) { showError(new Error(wl.TIME_MSG)); return; }
-    body = { ...body, at: `${todayIso()}T${v}` };
-  }
+  const at = atState();
+  if (at.problem) { showError(new Error(at.problem)); return; }
+  if (at.time && atDay !== todayIso()) { showAt(false); showError(new Error("The day changed: set the time again")); return; }
+  if (at.time) body = { ...body, at: `${todayIso()}T${at.time}` }; // the action happened then, not now
   setBusy(true);
   try {
     const r = await wl.queue.act(path, body); // goes now, or waits in the offline queue
-    showAt(false);
-    if (r.queued) { applyQueue(); if (timer.status) renderStatus(); } else await refreshAll();
+    showAt(false); // only after a good answer: a refused time stays to be corrected
+    if (r.queued) { applyQueue(); if (timer.status) renderStatus(); return; }
+    await refreshAll();
+    if (at.time) {
+      const did = { "/api/start": "Started", "/api/pause": "Paused", "/api/stop": "Stopped" }[path];
+      timer.followup = { text: `${did} at ${at.time}`, cls: "offer" };
+      renderStatus();
+    }
   } catch (err) { await failed(err); } finally { setBusy(false); }
 }
 
@@ -1272,7 +1318,8 @@ async function initTimer() {
   $("add-row").addEventListener("click", addRow);
   $("at-open").addEventListener("click", () => showAt(true));
   $("at-close").addEventListener("click", () => showAt(false));
-  $("at-last").addEventListener("click", (e) => { $("at-time").value = e.currentTarget.dataset.at; startTimer(); });
+  for (const ev of ["input", "focus", "blur"]) $("at-time").addEventListener(ev, touchAt);
+  $("at-last").addEventListener("click", (e) => showAt(true, e.currentTarget.dataset.at));
   $("project").addEventListener("input", () => {
     timer.pending.project = null;
     if (timer.status) { renderChips("chips-projects", timer.status.chips.projects, "project"); renderButtons(); }

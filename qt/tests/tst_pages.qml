@@ -67,6 +67,13 @@ TestCase {
         tryVerify(() => p.log.day !== null && p.log.day.date === yesterday, 3000)
         p.log.date = Api.addDays(yesterday, -1)   // the Log's own picker or arrow keys move the screen along
         compare(p.viewDate, Api.addDays(yesterday, -1))
+        // the "At" time under the buttons: usable, or why not
+        compare(p.timer.atProblem("", "14:00", ""), "")
+        compare(p.timer.atProblem("1300", "14:00", "09:12"), "")
+        compare(p.timer.atProblem("14:30", "14:00", ""), "Later than now")
+        compare(p.timer.atProblem("09:00", "14:00", "09:12"), "Before this block started (09:12)")
+        verify(p.timer.atProblem("13", "14:00", "") !== "")
+        compare(p.timer.atBody({ type: "dev" }, "13:00").at, Api.today() + "T13:00")
         compare(p.log.relDay("2026-03-01", "2026-03-02"), "Yesterday")
         compare(p.log.relDay("2026-02-27", "2026-03-02"), "3 days ago")
         compare(p.log.relDay("2026-03-04", "2026-03-02"), "In 2 days")

@@ -20,12 +20,13 @@
     <button id="btn-pause" class="act pause" type="button">Pause</button>
     <button id="btn-stop" class="act stop" type="button">Stop</button>
   </div>
-  <p class="at-row muted">
+  <div class="at-row muted">
+    <button id="at-open" class="small ghost" type="button" title="The next Start, Pause or Stop counts from now. Change it when you forgot to press the button">Now · change time</button>
     <button id="at-last" class="small ghost" type="button" hidden></button>
-    <button id="at-open" class="small ghost" type="button">Forgot to press? Set the time…</button>
-    <span id="at-box" hidden><label for="at-time">The next Start, Pause or Stop happened today at</label>
+    <span id="at-box" hidden><label for="at-time">At</label>
       <input id="at-time" class="time" type="text" inputmode="numeric" placeholder="HH:MM" autocomplete="off">
-      <button id="at-close" class="ghost x" type="button" aria-label="Use the time now again" title="Use the time now again">×</button></span></p>
+      <button id="at-close" class="ghost x" type="button" aria-label="Back to now" title="Back to now">×</button>
+      <span id="at-note" role="status"></span></span></div>
   <p class="kbd-hint" id="kbd-hint"><kbd>S</kbd> start · <kbd>P</kbd> pause · <kbd>X</kbd> stop · <kbd>1</kbd>–<kbd>6</kbd> type · <kbd>/</kbd> project</p>
 </section>
 <div id="notices" class="notices"></div>
