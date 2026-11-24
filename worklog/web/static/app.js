@@ -431,7 +431,8 @@ function blockRow(b) {
   return tr;
 }
 
-function gapRow(start, end) {
+// prev: the block the gap comes after (the one that ends last); next: the block it comes before
+function gapRow(start, end, prev, next) {
   const [h1, m1] = start.split(":").map(Number);
   const [h2, m2] = end.split(":").map(Number);
   // no type unless one is picked: the server's default applies (work), or the first break type (break)
@@ -440,9 +441,17 @@ function gapRow(start, end) {
   const brk = el("button", { type: "button", class: "small ghost fill", text: "+ break", "aria-label": `Fill ${start}–${end} as a break` });
   work.addEventListener("click", () => fill([work, brk], timer.pending.type || undefined));
   brk.addEventListener("click", () => fill([work, brk], pauseType() || undefined));
+  // or close it by moving one edge of a neighbour; a block still running gets require_open, as every edit of it
+  const ext = el("button", { type: "button", class: "small ghost fill", text: `↓ to ${end}`, title: `Extend the previous block to ${end}`,
+    "aria-label": `Extend ${blockLabel(prev)} to ${end}` });
+  const pull = el("button", { type: "button", class: "small ghost fill", text: `↑ from ${start}`, title: `Start the next block at ${start}`,
+    "aria-label": `Start ${blockLabel(next)} at ${start}` });
+  const stretch = (b, fields) => wl.locked([ext, pull, work, brk], () => mutate(() => api("PUT", `/api/blocks/${b.id}`, fields)));
+  ext.addEventListener("click", () => stretch(prev, { end }));
+  pull.addEventListener("click", () => stretch(next, next.end ? { start } : { start, require_open: true }));
   return el("tr", { class: "gap" },
     el("td", { text: start, class: "muted" }), el("td", { text: end, class: "muted" }),
-    el("td", { colspan: 4, class: "muted" }, `gap ${fmtHM((h2 * 60 + m2) - (h1 * 60 + m1))} · fill as `, work, brk),
+    el("td", { colspan: 4, class: "muted" }, `gap ${fmtHM((h2 * 60 + m2) - (h1 * 60 + m1))} · `, ext, pull, " · fill as ", work, brk),
     el("td", { colspan: 2 }));
 }
 
@@ -466,8 +475,10 @@ function renderBlocks() {
   const rows = [];
   const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
   let covered = null; // latest end seen so far, so an overlapping block never fakes a gap
+  let last = null; // the block that ends at `covered`
   for (const b of sorted) {
-    if (covered && covered < b.start) rows.push(gapRow(covered, b.start));
+    if (covered && covered < b.start) rows.push(gapRow(covered, b.start, last, b));
+    if (!b.end || !covered || b.end > covered) last = b;
     if (!b.end) covered = "24:00";
     else if (!covered || b.end > covered) covered = b.end;
     rows.push(blockRow(b));
@@ -717,7 +728,13 @@ function editBlockCell(td, block) {
     if (enterPressed) timer.refocus = { id: block.id, field };
     mutate(async () => {
       await api("PUT", `/api/blocks/${block.id}`, { [field]: v === "" && field === "end" ? null : v });
-      if (isTime) timer.followup = neighbourFollowup(block, field, original, v);
+      if (!isTime) return;
+      // moved into a neighbour: that one gives way at once (Undo puts it back); moved away from one: offer to follow
+      const fix = overlapFix(block, field, v);
+      if (!fix) { timer.followup = neighbourFollowup(block, field, original, v); return; }
+      timer.followup = null;
+      await api("PUT", `/api/blocks/${fix.block.id}`, fix.fields);
+      showUndo(fix.text, () => mutate(() => api("PUT", `/api/blocks/${fix.block.id}`, fix.undo)));
     });
   };
   let enterPressed = false;
@@ -742,6 +759,22 @@ function previewDur(tr, block, field, raw) {
   const min = toMin(end) - toMin(start);
   td.textContent = min < 0 ? `−${fmtHM(-min)}` : fmtHM(min);
   td.classList.toggle("neg", min < 0);
+}
+
+// A start moved into an earlier block, or an end moved into a later one: the edit that trims that block so the
+// two do not overlap ({ block, fields, undo, text }), or null. A block swallowed whole is left alone (the
+// overlap warning shows). A block still running gets require_open, as every edit of it.
+function overlapFix(block, field, newV) {
+  if (!isHHMM(newV)) return null;
+  const others = timer.day.blocks.filter((b) => b.id !== block.id);
+  if (field === "start") {
+    const prev = others.filter((b) => b.end && b.start < block.start && b.start < newV && b.end > newV).sort((a, b) => b.end.localeCompare(a.end))[0];
+    return prev ? { block: prev, fields: { end: newV }, undo: { end: prev.end }, text: `Previous block (${prev.type}) now ends at ${newV}, was ${prev.end}` } : null;
+  }
+  const next = others.filter((b) => b.start > block.start && b.start < newV && (!b.end || b.end > newV)).sort((a, b) => a.start.localeCompare(b.start))[0];
+  if (!next) return null;
+  const open = next.end ? {} : { require_open: true };
+  return { block: next, fields: { start: newV, ...open }, undo: { start: next.start, ...open }, text: `Next block (${next.type}) now starts at ${newV}, was ${next.start}` };
 }
 
 // After moving an edge, offer to drag the neighbour's matching edge along (the timeline is contiguous).

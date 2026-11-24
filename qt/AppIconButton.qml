@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 
 // The one icon-only button: a single glyph, always with an accessible name (and the same text as a tooltip).
-// The glyph set is fixed: ‹ › step, ⋮ more, ✓ approve, ✗ reject, × delete, ✎ edit, ↺ reset. 40 x 40 dp at least.
+// The glyph set is fixed: ‹ › step, ⋮ more, ✓ approve, ✗ reject, × delete, ✎ edit, ↺ reset, ↓ ↑ stretch a block over a gap. 40 x 40 dp at least.
 // Set `name` (what a screen reader says); `text` is the glyph.
 ToolButton {
     id: btn

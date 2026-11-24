@@ -103,6 +103,26 @@ TestCase {
         dlg.close()
     }
 
+    // an edge moved into a neighbour: the neighbour is trimmed, never left overlapping
+    function test_dialog_overlap_fix() {
+        const dlg = makeDialog()
+        const a = { id: 1, start: "12:30", end: "13:00", type: "dev" }
+        const b = { id: 2, start: "13:00", end: null, type: "meet" }
+        dlg.blocks = [a, b]
+        let fix = dlg.overlapFix(b, "start", "12:55")
+        compare(fix.block.id, 1)
+        compare(fix.fields, { end: "12:55" })
+        compare(fix.undo, { end: "13:00" })
+        compare(dlg.overlapFix(b, "start", "13:10"), null, "moved away: a gap, only the offer")
+        compare(dlg.overlapFix(b, "start", "12:30"), null, "swallowed whole: left alone")
+        fix = dlg.overlapFix(a, "end", "13:20")
+        compare(fix.block.id, 2)
+        compare(fix.fields, { start: "13:20", require_open: true })
+        compare(fix.undo, { start: "13:00", require_open: true })
+        compare(dlg.overlapFix(a, "end", "12:50"), null)
+        compare(dlg.overlapFix(a, "end", ""), null)
+    }
+
     // saving an auto-closed block untouched still sends its end: that is what clears the review notice
     function test_auto_closed_block_is_confirmed_by_saving() {
         const dlg = makeDialog()
@@ -152,6 +172,27 @@ TestCase {
         compare(list.items[1].start, "10:00")
         compare(list.items[1].end, "11:00")
         compare(list.minutes("10:00", "11:30"), 90)
+        // closing the gap: the block before it ends later, or the block after it starts earlier
+        compare(list.items[1].prev.id, 1)
+        compare(list.items[1].next.id, 2)
+        compare(list.stretchFields(list.items[1], true), { end: "11:00" })
+        compare(list.stretchFields(list.items[1], false), { start: "10:00" })
+    }
+
+    function test_list_gap_neighbours() {
+        // the block before a gap is the one that ends last, not the one that starts last
+        const list = createTemporaryObject(listComp, tc, { blocks: [
+            { id: 1, start: "09:00", end: "12:00", work_type: "work" },
+            { id: 2, start: "10:00", end: "11:00", work_type: "work" },
+            { id: 3, start: "13:00", end: null, work_type: "work" },
+        ] })
+        const gap = list.items[2]
+        verify(gap.gap)
+        compare(gap.start, "12:00")
+        compare(gap.prev.id, 1)
+        compare(gap.next.id, 3)
+        // the block after it is still running: a stale snapshot must get a 409
+        compare(list.stretchFields(gap, false), { start: "12:00", require_open: true })
     }
 
     function test_list_overlap_makes_no_false_gap() {

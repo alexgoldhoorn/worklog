@@ -12,6 +12,8 @@ AppDialog {
     property var blocks: []        // the day's blocks, to offer moving a neighbour's edge along
     property string error: ""
     signal offer(string text, var action)
+    // a neighbour was trimmed so the edited block does not overlap it; `undo` puts its time back
+    signal trimmed(string text, var undo)
     // a block was deleted; `undo` re-creates it (the page shows it in its Snackbar)
     signal deleted(string text, var undo)
 
@@ -64,6 +66,43 @@ AppDialog {
                 offer(qsTr("Previous block (%1) still ends at %2").arg(prev.type).arg(oldV),
                       () => Api.request("PUT", "/api/blocks/" + prev.id, { end: newV }, null, null))
         }
+    }
+
+    // A start moved into an earlier block, or an end moved into a later one: the edit that trims that block so
+    // the two do not overlap ({ block, fields, undo, text }), or null. A block swallowed whole is left alone
+    // (the overlap warning shows). A block still running gets require_open, as every edit of it.
+    function overlapFix(b, field, newV) {
+        if (!/^\d\d:\d\d$/.test(newV))
+            return null
+        const others = blocks.filter(x => x.id !== b.id)
+        if (field === "start") {
+            const prev = others.filter(x => x.end && x.start < b.start && x.start < newV && x.end > newV)
+                               .sort((x, y) => y.end.localeCompare(x.end))[0]
+            return prev ? { block: prev, fields: { end: newV }, undo: { end: prev.end },
+                            text: qsTr("Previous block (%1) now ends at %2, was %3").arg(prev.type).arg(newV).arg(prev.end) } : null
+        }
+        const next = others.filter(x => x.start > b.start && x.start < newV && (!x.end || x.end > newV))
+                           .sort((x, y) => x.start.localeCompare(y.start))[0]
+        if (!next)
+            return null
+        const fields = { start: newV }, undo = { start: next.start }
+        if (!next.end)
+            fields.require_open = undo.require_open = true
+        return { block: next, fields: fields, undo: undo,
+                 text: qsTr("Next block (%1) now starts at %2, was %3").arg(next.type).arg(newV).arg(next.start) }
+    }
+
+    // After a saved time edit: a neighbour the block moved into gives way at once (with Undo); a neighbour
+    // it moved away from gets the offer to follow.
+    function settleNeighbour(b, field, oldV, newV) {
+        const fix = oldV === newV ? null : overlapFix(b, field, newV)
+        if (!fix) {
+            neighbourOffer(b, field, oldV, newV)
+            return
+        }
+        const path = "/api/blocks/" + fix.block.id
+        Api.request("PUT", path, fix.fields,
+                    () => dlg.trimmed(fix.text, () => Api.request("PUT", path, fix.undo, null, null)), null)
     }
 
     function isTime(v) { return /^\d\d:\d\d$/.test(v) }
@@ -165,9 +204,9 @@ AppDialog {
             Api.request("PUT", "/api/blocks/" + b.id, changes, function () {
                 if (!sameDay)
                     return
-                dlg.neighbourOffer(b, "start", b.start, f.start)
+                dlg.settleNeighbour(b, "start", b.start, f.start)
                 if (b.end)
-                    dlg.neighbourOffer(b, "end", b.end, f.end || "")
+                    dlg.settleNeighbour(b, "end", b.end, f.end || "")
             }, fail)
         } else {
             const body = { date: f.date, start: f.start, end: f.end, type: f.type, project: f.project }

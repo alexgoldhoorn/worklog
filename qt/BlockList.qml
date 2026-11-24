@@ -14,14 +14,19 @@ ColumnLayout {
     signal editRequested(var block)
     signal billableToggled(var block, var next)        // € tapped: true -> false -> null -> true
     signal fillGap(string start, string end, bool asBreak)
+    // close a gap by moving one edge of a neighbour: `fields` is the PUT body for /api/blocks/{block.id}
+    signal stretchRequested(var block, var fields)
 
     // blocks in start order, with a {gap} item wherever nothing covers the time between two blocks
     readonly property var items: {
         const out = []
         let covered = null   // latest end so far, so an overlapping block never fakes a gap
+        let last = null      // the block that ends at `covered`: the one a gap comes after
         for (const b of blocks.slice().sort((x, y) => x.start.localeCompare(y.start))) {
             if (covered && covered < b.start)
-                out.push({ gap: true, start: covered, end: b.start })
+                out.push({ gap: true, start: covered, end: b.start, prev: last, next: b })
+            if (!b.end || !covered || b.end > covered)
+                last = b
             covered = !b.end ? "24:00" : (!covered || b.end > covered ? b.end : covered)
             out.push(b)
         }
@@ -30,6 +35,17 @@ ColumnLayout {
     function minutes(a, b) {
         const p = a.split(":").map(Number), q = b.split(":").map(Number)
         return q[0] * 60 + q[1] - p[0] * 60 - p[1]
+    }
+
+    // the PUT body that closes a gap: the block before it ends later, or the block after it starts earlier
+    // (a block still running gets require_open, as every edit of the running block)
+    function stretchFields(gap, previous) {
+        if (previous)
+            return { end: gap.end }
+        const fields = { start: gap.start }
+        if (!gap.next.end)
+            fields.require_open = true
+        return fields
     }
 
     spacing: 0
@@ -83,9 +99,9 @@ ColumnLayout {
                 Layout.fillWidth: true
             }
 
-            RowLayout {   // a gap: offer to fill it
+            RowLayout {   // a gap: offer to close it (stretch a neighbour) or to fill it
                 visible: row.gap
-                spacing: 8
+                spacing: 4
                 Layout.fillWidth: true
                 Layout.leftMargin: 26
                 implicitHeight: 40
@@ -94,7 +110,22 @@ ColumnLayout {
                                                           .arg(row.modelData.start).arg(row.modelData.end) : ""
                     color: Api.muted
                     font.pixelSize: 12
+                    elide: Text.ElideRight
                     Layout.fillWidth: true
+                }
+                AppIconButton {
+                    text: "↓"
+                    font.pixelSize: 18
+                    ink: Api.muted
+                    name: row.gap ? qsTr("Extend the previous block to %1").arg(row.modelData.end) : ""
+                    onClicked: root.stretchRequested(row.modelData.prev, root.stretchFields(row.modelData, true))
+                }
+                AppIconButton {
+                    text: "↑"
+                    font.pixelSize: 18
+                    ink: Api.muted
+                    name: row.gap ? qsTr("Start the next block at %1").arg(row.modelData.start) : ""
+                    onClicked: root.stretchRequested(row.modelData.next, root.stretchFields(row.modelData, false))
                 }
                 AppButton {
                     text: qsTr("+ work")

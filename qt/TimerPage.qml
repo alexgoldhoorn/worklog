@@ -650,6 +650,7 @@ ScrollView {
                 liveSec: page.liveSec
                 onEditRequested: b => blockDialog.editBlock(b)
                 onBillableToggled: (b, next) => Api.request("PUT", "/api/blocks/" + b.id, { billable: next }, null, e => page.error = e)
+                onStretchRequested: (b, fields) => Api.request("PUT", "/api/blocks/" + b.id, fields, null, e => page.error = e)
                 onFillGap: (start, end, asBreak) => {
                     const body = { date: page.status.date, start: start, end: end }
                     const t = asBreak ? page.breakType : page.pendingType
@@ -669,6 +670,7 @@ ScrollView {
         blocks: page.day ? page.day.blocks : []
         onOffer: (text, action) => snackbar.show(text, action, qsTr("Move it too"))
         onDeleted: (text, undo) => snackbar.show(text, undo)
+        onTrimmed: (text, undo) => snackbar.show(text, undo)
     }
 
     Snackbar { id: snackbar }
