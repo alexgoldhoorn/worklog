@@ -67,6 +67,9 @@ TestCase {
         tryVerify(() => p.log.day !== null && p.log.day.date === yesterday, 3000)
         p.log.date = Api.addDays(yesterday, -1)   // the Log's own picker or arrow keys move the screen along
         compare(p.viewDate, Api.addDays(yesterday, -1))
+        compare(p.log.relDay("2026-03-01", "2026-03-02"), "Yesterday")
+        compare(p.log.relDay("2026-02-27", "2026-03-02"), "3 days ago")
+        compare(p.log.relDay("2026-03-04", "2026-03-02"), "In 2 days")
         p.log.date = p.today                      // its "Back to today"
         verify(p.isToday && p.timer.visible)
         p.show(yesterday)

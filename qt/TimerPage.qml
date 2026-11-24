@@ -109,6 +109,8 @@ ScrollView {
         return e !== "" && e < Api.nowHHMM() ? e : ""
     }
 
+    property bool atOpen: false   // the "at" time field is shown
+
     function action(path, body) {
         if (busy)
             return
@@ -118,6 +120,7 @@ ScrollView {
             return
         }
         atField.text = ""
+        atOpen = false
         busy = true
         Api.timerAction(path, body, () => page.busy = false, function (e) {
             page.busy = false
@@ -391,20 +394,12 @@ ScrollView {
                     }
                 }
 
-                RowLayout {   // forgot to press the button: the next Start, Pause or Stop happened at this time
+                // Forgot to press the button: "Start from" continues where the last block ended, and the
+                // link opens a time field: the next Start, Pause or Stop then counts from that time today
+                RowLayout {
+                    visible: page.lastEnd !== "" || !page.atOpen
                     spacing: 8
                     Layout.fillWidth: true
-                    Label {
-                        text: qsTr("at")
-                        color: Api.muted
-                        font.pixelSize: 12
-                    }
-                    TimeField {
-                        id: atField
-                        placeholderText: qsTr("now")
-                        Accessible.name: qsTr("Time for the next Start, Pause or Stop (empty is now)")
-                        Layout.preferredWidth: 84
-                    }
                     AppButton {
                         visible: page.lastEnd !== ""
                         text: qsTr("Start from %1").arg(page.lastEnd)
@@ -417,6 +412,41 @@ ScrollView {
                         }
                     }
                     Item { Layout.fillWidth: true }
+                    AppButton {
+                        visible: !page.atOpen
+                        text: qsTr("Forgot to press? Set the time…")
+                        flat: true
+                        onClicked: {
+                            page.atOpen = true
+                            atField.forceActiveFocus()
+                        }
+                    }
+                }
+                RowLayout {
+                    visible: page.atOpen
+                    spacing: 8
+                    Layout.fillWidth: true
+                    Label {
+                        text: qsTr("The next Start, Pause or Stop happened today at")
+                        color: Api.muted
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                        horizontalAlignment: Text.AlignRight
+                        Layout.fillWidth: true
+                    }
+                    TimeField {
+                        id: atField
+                        Accessible.name: qsTr("Time of the next Start, Pause or Stop")
+                        Layout.preferredWidth: 84
+                    }
+                    AppIconButton {
+                        text: "×"
+                        name: qsTr("Use the time now again")
+                        onClicked: {
+                            atField.text = ""
+                            page.atOpen = false
+                        }
+                    }
                 }
 
                 Label {

@@ -109,6 +109,7 @@ ScrollView {
         { key: "todoist_project", label: qsTr("Todoist project"), help: qsTr("Where the top 3 and milestones come from.") },
         { key: "milestone_label", label: qsTr("Milestone label"), help: qsTr("Milestones are dated Todoist tasks in that project carrying this label; they are not stored here.") }
     ]
+    property string view: "week"          // "week" | "goals" | "load": the part of the page that shows
     property bool balanceOpen: false
     property bool balanceDirty: false     // typed in, not saved: a reload must not overwrite it
     property string balanceMessage: ""
@@ -330,9 +331,373 @@ ScrollView {
             onTapped: page.info = ""
         }
 
+        // The page in three parts: the week's days (and planning them), the work goals, and the load
+        // check with its history and settings. The verdict stays in sight on the Load tab's label.
+        RowLayout {
+            spacing: 8
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Repeater {
+                model: [
+                    { key: "week", label: qsTr("Week") },
+                    { key: "goals", label: qsTr("Goals") },
+                    { key: "load", label: page.gate && page.gate.colour ? qsTr("Load: %1").arg(page.colourName(page.gate.colour)) : qsTr("Load") }
+                ]
+                delegate: AppButton {
+                    id: viewTab
+                    required property var modelData
+                    text: modelData.label
+                    primary: page.view === modelData.key
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: modelData.label
+                    Accessible.role: Accessible.PageTab
+                    onClicked: page.view = viewTab.modelData.key
+                }
+            }
+        }
+
+        Repeater {
+            model: page.agenda
+            delegate: Card {
+                id: dayCard
+                visible: page.view === "week"
+                required property var modelData
+                title: modelData.label + (modelData.isToday ? " · " + qsTr("today") : "")
+
+                Label {
+                    visible: dayCard.modelData.allDay.length > 0
+                    text: dayCard.modelData.allDay.join(" · ")
+                    color: Api.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                Label {
+                    visible: dayCard.modelData.items.length === 0
+                    text: qsTr("nothing on the calendars")
+                    color: Api.faint
+                }
+                Repeater {
+                    model: dayCard.modelData.items
+                    delegate: RowLayout {
+                        id: row
+                        required property var modelData
+                        spacing: 8
+                        Layout.fillWidth: true
+                        Rectangle { implicitWidth: 4; radius: 2; color: row.modelData.tone; Layout.fillHeight: true }
+                        ColumnLayout {
+                            spacing: 0
+                            Layout.fillWidth: true
+                            Label {
+                                text: row.modelData.time + "  " + row.modelData.text
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+                            Label {
+                                visible: text !== ""
+                                text: row.modelData.sub
+                                color: Api.muted
+                                font.pixelSize: 11
+                                Layout.fillWidth: true
+                            }
+                        }
+                        AppIconButton {
+                            visible: !!row.modelData.block && row.modelData.block.state === "proposed"
+                            text: "✓"
+                            ink: Api.accent
+                            name: qsTr("Approve %1").arg(row.modelData.text)
+                            onClicked: page.decide(row.modelData.block.id, "approve")
+                        }
+                        AppIconButton {
+                            visible: !!row.modelData.block
+                            text: "✗"
+                            ink: Api.errorColor
+                            name: qsTr("Reject %1").arg(row.modelData.text)
+                            onClicked: page.reject(row.modelData.block)
+                        }
+                    }
+                }
+            }
+        }
+
+        // what you can do with the week; each action says what it is for
+        Card {
+            visible: page.weekData !== null && page.view === "week"
+            title: qsTr("Plan this week")
+
+            Caption {
+                text: qsTr("Block time for runs, family and hard stops, or add an appointment")
+                font.capitalization: Font.MixedCase
+                font.letterSpacing: 0
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+
+            // the button, and what it is for beside it (below it on a narrow screen, where the text got a few words a line)
+            component Act: GridLayout {
+                id: act
+                property string label
+                property string hint
+                signal clicked()
+                columns: page.availableWidth < 420 ? 1 : 2
+                columnSpacing: 12
+                rowSpacing: 4
+                Layout.fillWidth: true
+                AppButton {
+                    text: act.label
+                    Layout.preferredWidth: 150
+                    Layout.fillWidth: page.availableWidth < 420
+                    Accessible.name: act.label
+                    Accessible.description: act.hint
+                    Accessible.role: Accessible.Button
+                    onClicked: act.clicked()
+                }
+                Label {
+                    text: act.hint
+                    color: Api.muted
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+            }
+            Act {
+                label: qsTr("Propose blocks")
+                hint: qsTr("Suggests runs and hard stops for the rest of this week. Nothing counts until you approve it.")
+                onClicked: page.propose()
+            }
+            Act {
+                label: qsTr("Add a block")
+                hint: qsTr("Protect a time yourself: family, a run, a stop. It is approved at once.")
+                onClicked: {
+                    dateField.text = page.todayIso
+                    page.addError = ""
+                    page.adding = !page.adding
+                }
+            }
+            Act {
+                label: qsTr("Outlook list")
+                hint: qsTr("Your approved blocks as text, to paste into Outlook as busy time.")
+                onClicked: page.showOutlook()
+            }
+            Act {
+                label: qsTr("Add to calendar")
+                hint: qsTr("A meeting or appointment at a time you know, or find a free time for it.")
+                onClicked: page.addToCalendar()
+            }
+        }
+
+        Card {
+            visible: page.outlook !== "" && page.view === "week"
+            title: qsTr("Outlook list")
+            actions: Button {
+                text: qsTr("Copy")
+                flat: true
+                Accessible.name: qsTr("Copy the Outlook list")
+                Accessible.role: Accessible.Button
+                onClicked: page.copyOutlook()
+            }
+            // selectable (and copyable with the button): the list is meant to be pasted elsewhere
+            TextEdit {
+                id: outlookText
+                text: page.outlook
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                color: Api.fg
+                selectionColor: Api.accent
+                selectedTextColor: Api.accentFg
+                font.family: page.monoFamily
+                font.pixelSize: 12
+                Layout.fillWidth: true
+                Accessible.role: Accessible.StaticText
+                Accessible.name: qsTr("Outlook list")
+                Accessible.description: text
+            }
+        }
+
+        Card {
+            visible: page.adding && page.view === "week"
+            title: qsTr("Add a block")
+            GridLayout {
+                columns: 2
+                columnSpacing: 8
+                Layout.fillWidth: true
+                RowLayout {
+                    spacing: 8
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    TextField {
+                        id: dateField
+                        placeholderText: qsTr("Date YYYY-MM-DD")
+                        validator: RegularExpressionValidator { regularExpression: /^[0-9-]{0,10}$/ }
+                        inputMethodHints: Qt.ImhDigitsOnly
+                        readOnly: true   // the date is chosen in the calendar
+                        Layout.fillWidth: true
+                        Accessible.name: qsTr("Date")
+                        MouseArea { anchors.fill: parent; onClicked: datePicker.openFor(dateField.text) }
+                    }
+                    AppButton {
+                        text: qsTr("Pick")
+                        flat: true
+                        Accessible.name: qsTr("Pick a date")
+                        Accessible.role: Accessible.Button
+                        onClicked: datePicker.openFor(dateField.text)
+                    }
+                }
+                TimeField {
+                    id: fromField
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: qsTr("From")
+                }
+                TimeField {
+                    id: toField
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: qsTr("To")
+                }
+                ComboBox {
+                    id: kindBox
+                    model: page.kindModel
+                    textRole: "text"
+                    valueRole: "value"
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("Kind")
+                }
+                TextField {
+                    id: titleField
+                    placeholderText: qsTr("Title")
+                    maximumLength: 120
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    Accessible.name: qsTr("Title")
+                }
+            }
+            Label {
+                // only once something is typed, so an empty form is not shouted at
+                visible: page.formProblem !== "" && (titleField.text !== "" || fromField.text !== "" || toField.text !== "")
+                text: page.formProblem
+                color: Api.warnColor
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: page.addError !== ""
+                text: qsTr("Could not save: %1").arg(page.addError)
+                color: Api.errorColor
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            AppButton {
+                text: qsTr("Save as approved")
+                primary: true
+                enabled: page.formProblem === ""
+                Accessible.name: text
+                Accessible.role: Accessible.Button
+                onClicked: page.addBlock()
+            }
+        }
+
+        DatePicker {
+            id: datePicker
+            onPicked: iso => dateField.text = iso
+        }
+        Card {
+            id: goalsCard
+            title: qsTr("Work goals")
+            visible: page.weekData !== null && page.view === "goals"
+            readonly property var goals: page.weekData ? page.weekData.goals : null
+            readonly property bool has: !!goals && !!goals.project
+            readonly property string milestoneLabel: page.weekData && page.weekData.settings ? page.weekData.settings.milestone_label || "" : ""
+
+            Label {
+                visible: !goalsCard.has
+                text: qsTr("No Todoist snapshot yet (sync runs every 15 min).")
+                color: Api.muted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Label {
+                visible: goalsCard.has
+                text: goalsCard.has ? [goalsCard.goals.project, qsTr("%1 open").arg(goalsCard.goals.open),
+                                       goalsCard.goals.fetched ? String(goalsCard.goals.fetched).slice(0, 16).replace("T", " ") : ""]
+                                      .filter(x => x).join(" · ") : ""
+                color: Api.muted
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Caption { visible: goalsCard.has; text: qsTr("Milestones") }
+            Label {
+                visible: goalsCard.has && goalsCard.goals.milestones.length === 0
+                text: goalsCard.has ? qsTr("None yet. Milestones live in Todoist, not here: give a dated task in %1 the label %2 and it appears on the next sync.")
+                                      .arg(goalsCard.goals.project).arg(goalsCard.milestoneLabel) : ""
+                color: Api.muted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: goalsCard.has ? goalsCard.goals.milestones : []
+                delegate: GridLayout {
+                    id: ms
+                    required property var modelData
+                    readonly property int daysLeft: page.daysFrom(modelData.due)
+                    readonly property color tone: daysLeft < 0 ? Api.errorColor : daysLeft <= 7 ? Api.warnColor : Api.muted
+                    columns: 2
+                    columnSpacing: 10
+                    rowSpacing: 0
+                    Layout.fillWidth: true
+                    Label { text: ms.modelData.due.slice(0, 10); color: ms.tone; font.pixelSize: 12 }
+                    Label { text: page.leftText(ms.daysLeft); color: ms.tone; font.pixelSize: 12; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
+                    Label {
+                        text: Api.mdHtml(ms.modelData.content)
+                        textFormat: Text.StyledText
+                        wrapMode: Text.Wrap
+                        Layout.columnSpan: 2
+                        Layout.fillWidth: true
+                        onLinkActivated: link => Qt.openUrlExternally(link)
+                    }
+                }
+            }
+            Caption { visible: goalsCard.has; text: qsTr("Top 3 tasks today (Todoist)") }
+            Label {
+                visible: goalsCard.has && goalsCard.goals.top3.length === 0
+                text: qsTr("Nothing due today in this project.")
+                color: Api.muted
+                Layout.fillWidth: true
+            }
+            Repeater {
+                model: goalsCard.has ? goalsCard.goals.top3 : []
+                delegate: Label {
+                    id: top
+                    required property var modelData
+                    required property int index
+                    readonly property bool overdue: !!modelData.due && String(modelData.due).slice(0, 10) < page.todayIso
+                    text: (index + 1) + ". " + Api.mdHtml(modelData.content)
+                          + (overdue ? " <font color=\"" + Api.muted + "\">(" + Api.esc(String(modelData.due).slice(0, 10)) + ")</font>" : "")
+                    textFormat: Text.StyledText
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                    onLinkActivated: link => Qt.openUrlExternally(link)
+                }
+            }
+            Label {
+                visible: goalsCard.has && goalsCard.goals.due_today_or_overdue > 3
+                text: goalsCard.has ? qsTr("%1 due or overdue in total; the three highest priority are shown.").arg(goalsCard.goals.due_today_or_overdue) : ""
+                color: Api.muted
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+        }
+
         Card {
             title: qsTr("Load check")
-            visible: page.weekData !== null
+            visible: page.weekData !== null && page.view === "load"
             actions: Label {
                 text: page.gate && page.gate.colour ? qsTr("Load: %1").arg(page.colourName(page.gate.colour)) : qsTr("No verdict yet")
                 color: page.gateColor(page.gate ? page.gate.colour : "")
@@ -438,337 +803,9 @@ ScrollView {
             }
         }
 
-        // what you can do with the week; each action says what it is for
-        Card {
-            visible: page.weekData !== null
-            title: qsTr("Protected time")
-
-            // the button, and what it is for beside it (below it on a narrow screen, where the text got a few words a line)
-            component Act: GridLayout {
-                id: act
-                property string label
-                property string hint
-                signal clicked()
-                columns: page.availableWidth < 420 ? 1 : 2
-                columnSpacing: 12
-                rowSpacing: 4
-                Layout.fillWidth: true
-                AppButton {
-                    text: act.label
-                    Layout.preferredWidth: 150
-                    Layout.fillWidth: page.availableWidth < 420
-                    Accessible.name: act.label
-                    Accessible.description: act.hint
-                    Accessible.role: Accessible.Button
-                    onClicked: act.clicked()
-                }
-                Label {
-                    text: act.hint
-                    color: Api.muted
-                    font.pixelSize: 12
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
-            }
-            Act {
-                label: qsTr("Propose blocks")
-                hint: qsTr("Suggests runs and hard stops for the rest of this week. Nothing counts until you approve it.")
-                onClicked: page.propose()
-            }
-            Act {
-                label: qsTr("Add a block")
-                hint: qsTr("Protect a time yourself: family, a run, a stop. It is approved at once.")
-                onClicked: {
-                    dateField.text = page.todayIso
-                    page.addError = ""
-                    page.adding = !page.adding
-                }
-            }
-            Act {
-                label: qsTr("Outlook list")
-                hint: qsTr("Your approved blocks as text, to paste into Outlook as busy time.")
-                onClicked: page.showOutlook()
-            }
-            Act {
-                label: qsTr("Add to calendar")
-                hint: qsTr("A meeting or appointment at a time you know, or find a free time for it.")
-                onClicked: page.addToCalendar()
-            }
-        }
-
-        Card {
-            visible: page.outlook !== ""
-            title: qsTr("Outlook list")
-            actions: Button {
-                text: qsTr("Copy")
-                flat: true
-                Accessible.name: qsTr("Copy the Outlook list")
-                Accessible.role: Accessible.Button
-                onClicked: page.copyOutlook()
-            }
-            // selectable (and copyable with the button): the list is meant to be pasted elsewhere
-            TextEdit {
-                id: outlookText
-                text: page.outlook
-                readOnly: true
-                selectByMouse: true
-                wrapMode: TextEdit.Wrap
-                color: Api.fg
-                selectionColor: Api.accent
-                selectedTextColor: Api.accentFg
-                font.family: page.monoFamily
-                font.pixelSize: 12
-                Layout.fillWidth: true
-                Accessible.role: Accessible.StaticText
-                Accessible.name: qsTr("Outlook list")
-                Accessible.description: text
-            }
-        }
-
-        Card {
-            visible: page.adding
-            title: qsTr("Add a block")
-            GridLayout {
-                columns: 2
-                columnSpacing: 8
-                Layout.fillWidth: true
-                RowLayout {
-                    spacing: 8
-                    Layout.columnSpan: 2
-                    Layout.fillWidth: true
-                    TextField {
-                        id: dateField
-                        placeholderText: qsTr("Date YYYY-MM-DD")
-                        validator: RegularExpressionValidator { regularExpression: /^[0-9-]{0,10}$/ }
-                        inputMethodHints: Qt.ImhDigitsOnly
-                        readOnly: true   // the date is chosen in the calendar
-                        Layout.fillWidth: true
-                        Accessible.name: qsTr("Date")
-                        MouseArea { anchors.fill: parent; onClicked: datePicker.openFor(dateField.text) }
-                    }
-                    AppButton {
-                        text: qsTr("Pick")
-                        flat: true
-                        Accessible.name: qsTr("Pick a date")
-                        Accessible.role: Accessible.Button
-                        onClicked: datePicker.openFor(dateField.text)
-                    }
-                }
-                TimeField {
-                    id: fromField
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Accessible.name: qsTr("From")
-                }
-                TimeField {
-                    id: toField
-                    Layout.fillWidth: true
-                    Layout.preferredWidth: 1
-                    Accessible.name: qsTr("To")
-                }
-                ComboBox {
-                    id: kindBox
-                    model: page.kindModel
-                    textRole: "text"
-                    valueRole: "value"
-                    Layout.columnSpan: 2
-                    Layout.fillWidth: true
-                    Accessible.name: qsTr("Kind")
-                }
-                TextField {
-                    id: titleField
-                    placeholderText: qsTr("Title")
-                    maximumLength: 120
-                    Layout.columnSpan: 2
-                    Layout.fillWidth: true
-                    Accessible.name: qsTr("Title")
-                }
-            }
-            Label {
-                // only once something is typed, so an empty form is not shouted at
-                visible: page.formProblem !== "" && (titleField.text !== "" || fromField.text !== "" || toField.text !== "")
-                text: page.formProblem
-                color: Api.warnColor
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
-            Label {
-                visible: page.addError !== ""
-                text: qsTr("Could not save: %1").arg(page.addError)
-                color: Api.errorColor
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
-            AppButton {
-                text: qsTr("Save as approved")
-                primary: true
-                enabled: page.formProblem === ""
-                Accessible.name: text
-                Accessible.role: Accessible.Button
-                onClicked: page.addBlock()
-            }
-        }
-
-        DatePicker {
-            id: datePicker
-            onPicked: iso => dateField.text = iso
-        }
-        Repeater {
-            model: page.agenda
-            delegate: Card {
-                id: dayCard
-                required property var modelData
-                title: modelData.label + (modelData.isToday ? " · " + qsTr("today") : "")
-
-                Label {
-                    visible: dayCard.modelData.allDay.length > 0
-                    text: dayCard.modelData.allDay.join(" · ")
-                    color: Api.muted
-                    font.pixelSize: 12
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                }
-                Label {
-                    visible: dayCard.modelData.items.length === 0
-                    text: qsTr("nothing on the calendars")
-                    color: Api.faint
-                }
-                Repeater {
-                    model: dayCard.modelData.items
-                    delegate: RowLayout {
-                        id: row
-                        required property var modelData
-                        spacing: 8
-                        Layout.fillWidth: true
-                        Rectangle { implicitWidth: 4; radius: 2; color: row.modelData.tone; Layout.fillHeight: true }
-                        ColumnLayout {
-                            spacing: 0
-                            Layout.fillWidth: true
-                            Label {
-                                text: row.modelData.time + "  " + row.modelData.text
-                                wrapMode: Text.Wrap
-                                Layout.fillWidth: true
-                            }
-                            Label {
-                                visible: text !== ""
-                                text: row.modelData.sub
-                                color: Api.muted
-                                font.pixelSize: 11
-                                Layout.fillWidth: true
-                            }
-                        }
-                        AppIconButton {
-                            visible: !!row.modelData.block && row.modelData.block.state === "proposed"
-                            text: "✓"
-                            ink: Api.accent
-                            name: qsTr("Approve %1").arg(row.modelData.text)
-                            onClicked: page.decide(row.modelData.block.id, "approve")
-                        }
-                        AppIconButton {
-                            visible: !!row.modelData.block
-                            text: "✗"
-                            ink: Api.errorColor
-                            name: qsTr("Reject %1").arg(row.modelData.text)
-                            onClicked: page.reject(row.modelData.block)
-                        }
-                    }
-                }
-            }
-        }
-
-        Card {
-            id: goalsCard
-            title: qsTr("Work goals")
-            visible: page.weekData !== null
-            readonly property var goals: page.weekData ? page.weekData.goals : null
-            readonly property bool has: !!goals && !!goals.project
-            readonly property string milestoneLabel: page.weekData && page.weekData.settings ? page.weekData.settings.milestone_label || "" : ""
-
-            Label {
-                visible: !goalsCard.has
-                text: qsTr("No Todoist snapshot yet (sync runs every 15 min).")
-                color: Api.muted
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
-            Label {
-                visible: goalsCard.has
-                text: goalsCard.has ? [goalsCard.goals.project, qsTr("%1 open").arg(goalsCard.goals.open),
-                                       goalsCard.goals.fetched ? String(goalsCard.goals.fetched).slice(0, 16).replace("T", " ") : ""]
-                                      .filter(x => x).join(" · ") : ""
-                color: Api.muted
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
-            Caption { visible: goalsCard.has; text: qsTr("Milestones") }
-            Label {
-                visible: goalsCard.has && goalsCard.goals.milestones.length === 0
-                text: goalsCard.has ? qsTr("None yet. Milestones live in Todoist, not here: give a dated task in %1 the label %2 and it appears on the next sync.")
-                                      .arg(goalsCard.goals.project).arg(goalsCard.milestoneLabel) : ""
-                color: Api.muted
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
-            Repeater {
-                model: goalsCard.has ? goalsCard.goals.milestones : []
-                delegate: GridLayout {
-                    id: ms
-                    required property var modelData
-                    readonly property int daysLeft: page.daysFrom(modelData.due)
-                    readonly property color tone: daysLeft < 0 ? Api.errorColor : daysLeft <= 7 ? Api.warnColor : Api.muted
-                    columns: 2
-                    columnSpacing: 10
-                    rowSpacing: 0
-                    Layout.fillWidth: true
-                    Label { text: ms.modelData.due.slice(0, 10); color: ms.tone; font.pixelSize: 12 }
-                    Label { text: page.leftText(ms.daysLeft); color: ms.tone; font.pixelSize: 12; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
-                    Label {
-                        text: Api.mdHtml(ms.modelData.content)
-                        textFormat: Text.StyledText
-                        wrapMode: Text.Wrap
-                        Layout.columnSpan: 2
-                        Layout.fillWidth: true
-                        onLinkActivated: link => Qt.openUrlExternally(link)
-                    }
-                }
-            }
-            Caption { visible: goalsCard.has; text: qsTr("Top 3 tasks today (Todoist)") }
-            Label {
-                visible: goalsCard.has && goalsCard.goals.top3.length === 0
-                text: qsTr("Nothing due today in this project.")
-                color: Api.muted
-                Layout.fillWidth: true
-            }
-            Repeater {
-                model: goalsCard.has ? goalsCard.goals.top3 : []
-                delegate: Label {
-                    id: top
-                    required property var modelData
-                    required property int index
-                    readonly property bool overdue: !!modelData.due && String(modelData.due).slice(0, 10) < page.todayIso
-                    text: (index + 1) + ". " + Api.mdHtml(modelData.content)
-                          + (overdue ? " <font color=\"" + Api.muted + "\">(" + Api.esc(String(modelData.due).slice(0, 10)) + ")</font>" : "")
-                    textFormat: Text.StyledText
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
-                    onLinkActivated: link => Qt.openUrlExternally(link)
-                }
-            }
-            Label {
-                visible: goalsCard.has && goalsCard.goals.due_today_or_overdue > 3
-                text: goalsCard.has ? qsTr("%1 due or overdue in total; the three highest priority are shown.").arg(goalsCard.goals.due_today_or_overdue) : ""
-                color: Api.muted
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
-            }
-        }
-
         Card {
             title: qsTr("Load check history")
-            visible: page.weekData !== null
+            visible: page.weekData !== null && page.view === "load"
             Label {
                 visible: !!page.weekData && page.weekData.history.length === 0
                 text: qsTr("No history yet.")
@@ -808,7 +845,7 @@ ScrollView {
 
         Card {
             title: qsTr("Balance settings")
-            visible: page.weekData !== null
+            visible: page.weekData !== null && page.view === "load"
             actions: Button {
                 text: page.balanceOpen ? qsTr("Hide") : qsTr("Show")
                 flat: true

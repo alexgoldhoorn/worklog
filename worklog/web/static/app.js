@@ -670,6 +670,13 @@ async function failed(err) {
   showError(err);
 }
 
+// the "at" time field: hidden behind its link until asked for; closing it means "now" again
+function showAt(on) {
+  $("at-box").hidden = !on;
+  $("at-open").hidden = on;
+  if (on) $("at-time").focus(); else $("at-time").value = "";
+}
+
 async function timerAction(path, body) {
   if (timer.busy) return;
   // a time typed in "at": the action happened then (today), not now; the server refuses a time that cannot be
@@ -682,7 +689,7 @@ async function timerAction(path, body) {
   setBusy(true);
   try {
     const r = await wl.queue.act(path, body); // goes now, or waits in the offline queue
-    $("at-time").value = "";
+    showAt(false);
     if (r.queued) { applyQueue(); if (timer.status) renderStatus(); } else await refreshAll();
   } catch (err) { await failed(err); } finally { setBusy(false); }
 }
@@ -1263,6 +1270,8 @@ async function initTimer() {
   $("btn-pause").addEventListener("click", pauseTimer);
   $("btn-stop").addEventListener("click", stopTimer);
   $("add-row").addEventListener("click", addRow);
+  $("at-open").addEventListener("click", () => showAt(true));
+  $("at-close").addEventListener("click", () => showAt(false));
   $("at-last").addEventListener("click", (e) => { $("at-time").value = e.currentTarget.dataset.at; startTimer(); });
   $("project").addEventListener("input", () => {
     timer.pending.project = null;

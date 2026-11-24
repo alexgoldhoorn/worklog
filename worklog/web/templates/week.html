@@ -12,12 +12,19 @@
     <button id="next" class="small ghost arrow" type="button" aria-label="Next week">›</button>
   </div>
 </div>
+<div class="seg weekviews" id="views">
+  <button type="button" data-view="week" class="on" aria-pressed="true">Week</button>
+  <button type="button" data-view="goals" aria-pressed="false">Goals</button>
+  <button type="button" data-view="load" aria-pressed="false" id="view-load">Load</button>
+</div>
+<div data-pane="week">
 <div class="legend">
   <span class="lg work">Work</span><span class="lg personal">Personal</span>
   <span class="lg proposed">Proposed</span><span class="lg approved">Approved</span>
   <span class="lg stop">Hard stop</span>
 </div>
 <section class="card week" id="week"></section>
+<h2>Plan this week <small>block time for runs, family and hard stops, or add an appointment</small></h2>
 <div class="actions">
   <button id="propose" type="button" title="Suggests runs and hard stops for the rest of this week. Nothing counts until you approve it.">Propose blocks</button>
   <button id="add" type="button" title="Protect a time yourself: family, a run, a stop. It is approved at once.">Add a block</button>
@@ -37,14 +44,19 @@
   <label class="wide">Title <input type="text" name="title" required maxlength="120"></label>
   <button type="submit" class="small primary">Save as approved</button>
 </form>
-<h2>Load check <small>a daily check at 07:22 of your work hours, sleep, heart rate and runs. Green is fine, amber is watch it, red is protect the week</small></h2>
-<section class="card gate" id="gate"></section>
+</div>
+<div data-pane="goals" hidden>
 <h2>Work goals <small id="goals-meta"></small></h2>
 <section class="card goals" id="goals"></section>
+</div>
+<div data-pane="load" hidden>
+<h2>Load check <small>a daily check at 07:22 of your work hours, sleep, heart rate and runs. Green is fine, amber is watch it, red is protect the week</small></h2>
+<section class="card gate" id="gate"></section>
 <h2>Load check history <small>one square per day, last 28 days: green / amber / red, number = day of month</small></h2>
 <section class="card history" id="history"></section>
 <details class="card settings-wrap" id="settings-wrap">
   <summary>Balance settings <small class="hint">hard stop, run slot, normal week hours, calendar, Todoist project · stored in balance.db</small></summary>
   <form class="settings" id="settings"></form>
 </details>
+</div>
 {% endblock %}

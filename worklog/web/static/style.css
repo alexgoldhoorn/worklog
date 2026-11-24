@@ -261,6 +261,7 @@ table.grid { border-collapse: separate; border-spacing: 0; width: 100%; backgrou
 .filters label { display: flex; flex-direction: column; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); gap: 3px; font-weight: 600; }
 .filters label input, .filters label select { font-size: .9rem; min-height: 36px; padding: 6px 8px; text-transform: none; letter-spacing: 0; color: var(--fg); font-weight: 400; }
 .filters .spacer { flex: 1; }
+.seg.weekviews { margin: 0 0 10px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; background: var(--card); }
 .seg button { border: 0; border-radius: 0; min-height: 36px; padding: 6px 12px; font-size: .9rem; color: var(--muted); background: transparent; }
 .seg button + button { border-left: 1px solid var(--line); }
@@ -642,7 +643,9 @@ button.help:hover, button.help:focus-visible { color: var(--fg); border-color: v
 #day-chips { margin: 8px 0; }
 #day-chips[hidden], #day-chips:empty { display: none; }
 
-.at-row { margin: 8px 0 0; font-size: .82rem; display: flex; align-items: center; gap: 6px; }
+.at-row { margin: 8px 0 0; font-size: .82rem; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.at-row #at-box { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.at-row #at-box[hidden] { display: none; }
 .at-row input { width: 5.2em; }
 dialog.split p { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 dialog.split input.time { width: 5.2em; }

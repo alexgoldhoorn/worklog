@@ -49,98 +49,87 @@ ScrollView {
         function onServerChanged() { if (page.visible) page.reload() }
     }
 
-    component Stat: ColumnLayout {
-        property string caption
+    // "Yesterday", "3 days ago", "In 2 days": where the shown day lies from today
+    function relDay(iso, today) {
+        const n = Math.round((Api.parseDate(iso) - Api.parseDate(today)) / 86400000)
+        return n === 0 ? qsTr("Today") : n === -1 ? qsTr("Yesterday") : n === 1 ? qsTr("Tomorrow")
+             : n < 0 ? qsTr("%1 days ago").arg(-n) : qsTr("In %1 days").arg(n)
+    }
+
+    component DayTile: Tile {
+        id: dayTile
         property string value
-        spacing: 0
         Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.preferredWidth: 1
         Label {
-            text: parent.value
+            text: dayTile.value
             font.pixelSize: 22
-            font.bold: true
+            font.weight: Font.Bold
             font.features: { "tnum": 1 }
-            horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true
-        }
-        Caption {
-            text: parent.caption
-            horizontalAlignment: Text.AlignHCenter
-            Layout.fillWidth: true
         }
     }
 
     ColumnLayout {
         width: page.availableWidth
-        spacing: 16
+        spacing: 12   // as the Timer page
 
-        // ---- date hero --------------------------------------------------------
+        // ---- date hero: the same card, in the same place, as the Timer's state card, so stepping
+        // a day keeps the page's shape. "Back to today" is a real button, not a word.
         Pane {
             Layout.fillWidth: true
             Layout.topMargin: 12
             Layout.leftMargin: 12
             Layout.rightMargin: 12
-            padding: 12
-            Material.background: Qt.alpha(Material.accent, 0.15)
-            Material.elevation: 0
-            Material.roundedScale: Material.LargeScale
+            padding: 16
+            background: Rectangle {
+                radius: 14
+                color: Api.card
+                border.color: Api.line
+            }
 
-            ColumnLayout {
+            RowLayout {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 spacing: 8
-
-                RowLayout {
+                AppIconButton {
+                    visible: page.showArrows
+                    text: "‹"
+                    name: qsTr("Previous day")
+                    onClicked: page.date = Api.addDays(page.date, -1)
+                }
+                ColumnLayout {   // tap the date to pick any day
+                    id: dateHeader
+                    spacing: 0
                     Layout.fillWidth: true
-                    AppIconButton {
-                        visible: page.showArrows
-                        text: "‹"
-                        name: qsTr("Previous day")
-                        onClicked: page.date = Api.addDays(page.date, -1)
-                    }
-                    ColumnLayout {   // tap the date to pick any day
-                        id: dateHeader
-                        spacing: 0
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("Pick a date, now %1").arg(page.date)
+                    Accessible.onPressAction: datePicker.openFor(page.date)
+                    TapHandler { onTapped: datePicker.openFor(page.date) }
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    Label {
+                        text: Api.parseDate(page.date).toLocaleDateString(Api.locale, "dddd d MMMM yyyy")
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        wrapMode: Text.Wrap
                         Layout.fillWidth: true
-                        Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("Pick a date, now %1").arg(page.date)
-                        Accessible.onPressAction: datePicker.openFor(page.date)
-                        TapHandler { onTapped: datePicker.openFor(page.date) }
-                        HoverHandler { cursorShape: Qt.PointingHandCursor }
-                        Label {
-                            text: Api.parseDate(page.date).toLocaleDateString(Api.locale, "dddd")
-                            font.pixelSize: 12
-                            opacity: 0.7
-                            horizontalAlignment: Text.AlignHCenter
-                            Layout.fillWidth: true
-                        }
-                        Label {
-                            text: Api.parseDate(page.date).toLocaleDateString(Api.locale, "d MMMM yyyy")
-                            font.pixelSize: 20
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            Layout.fillWidth: true
-                        }
                     }
-                    AppIconButton {
-                        visible: page.showArrows
-                        text: "›"
-                        name: qsTr("Next day")
-                        onClicked: page.date = Api.addDays(page.date, 1)
+                    Label {
+                        text: page.relDay(page.date, Api.today())
+                        color: Api.muted
+                        font.pixelSize: 12
+                        Layout.fillWidth: true
                     }
                 }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Stat { caption: qsTr("Work"); value: page.day ? Api.fmtHM(page.day.totals.work_h) : "–" }
-                    Stat { caption: qsTr("Breaks"); value: page.day ? Api.fmtHM(page.day.totals.other_h) : "–" }
-                    Stat { caption: qsTr("Billable"); value: page.day ? Api.fmtHM(page.day.totals.billable_h) : "–" }
+                AppIconButton {
+                    visible: page.showArrows
+                    text: "›"
+                    name: qsTr("Next day")
+                    onClicked: page.date = Api.addDays(page.date, 1)
                 }
-
                 AppButton {
                     visible: !page.isToday
-                    text: qsTr("Today")
-                    flat: true
-                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTr("↩ Back to today")
                     onClicked: page.date = Api.today()
                 }
             }
@@ -161,6 +150,24 @@ ScrollView {
             }
         }
 
+        // ---- totals of the day, where the Timer has its tiles ------------------
+        RowLayout {
+            spacing: 12
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            DayTile { caption: qsTr("Work"); value: page.day ? Api.fmtHM(page.day.totals.work_h) : "–" }
+            DayTile { caption: qsTr("Breaks"); value: page.day ? Api.fmtHM(page.day.totals.other_h) : "–" }
+            DayTile { caption: qsTr("Billable"); value: page.day ? Api.fmtHM(page.day.totals.billable_h) : "–" }
+        }
+
+        // ---- calendar proposals -----------------------------------------------
+        ProposalCard {
+            date: page.date
+            showAll: true
+            meetings: page.day ? page.day.meetings || page.day.proposals : []
+            onFailed: e => page.error = e
+        }
         // ---- blocks -----------------------------------------------------------
         Card {
             title: qsTr("Blocks")
@@ -190,13 +197,6 @@ ScrollView {
             }
         }
 
-        // ---- calendar proposals -----------------------------------------------
-        ProposalCard {
-            date: page.date
-            showAll: true
-            meetings: page.day ? page.day.meetings || page.day.proposals : []
-            onFailed: e => page.error = e
-        }
         Item { implicitHeight: 8 }
     }
 
