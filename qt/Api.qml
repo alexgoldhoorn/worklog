@@ -632,6 +632,13 @@ QtObject {
         return new Date(p[0], p[1] - 1, p[2])  // local midnight, never UTC
     }
 
+    // "Yesterday", "3 days ago", "In 2 days": where a day lies from today (the Timer on another day, the Day screen)
+    function relDay(iso, today) {
+        const n = Math.round((parseDate(iso) - parseDate(today)) / 86400000)
+        return n === 0 ? qsTr("Today") : n === -1 ? qsTr("Yesterday") : n === 1 ? qsTr("Tomorrow")
+             : n < 0 ? qsTr("%1 days ago").arg(-n) : qsTr("In %1 days").arg(n)
+    }
+
     function addDays(iso, n) {
         const d = parseDate(iso)
         d.setDate(d.getDate() + n)

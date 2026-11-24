@@ -4,77 +4,103 @@
   <div class="notices" id="notices"></div>
   <div class="day-head">
     <div>
-      <div class="day-title" id="day-title"></div>
+      <div class="day-title" id="day-title">Day</div>
       <div class="hint" id="day-sub"></div>
     </div>
     <div class="toolbar">
       <button id="day-prev" class="small ghost arrow" type="button" aria-label="Previous day">‹</button>
       <button id="day-today" class="small ghost" type="button">Today</button>
       <button id="day-next" class="small ghost arrow" type="button" aria-label="Next day">›</button>
-      <button id="day-refresh" class="small ghost" type="button" title="Ask the host sync to refresh the snapshots">Refresh</button>
-      <a id="day-add" class="small btn" href="/find?mode=add" title="A meeting or appointment at a time you know">Add</a>
-      <a id="day-find" class="small btn" href="/find" title="Let it look for a free time">Find a date</a>
     </div>
   </div>
   <div class="capacity" id="capacity" hidden></div>
-  <div class="day-cols">
-    <section class="card day-timeline">
-      <div class="card-head">
-        <h3>Timeline</h3>
-        <span class="legend lanes-toggle">
-          <label><input type="checkbox" id="lane-work" checked><span class="lg work">Work</span></label>
-          <label><input type="checkbox" id="lane-personal" checked><span class="lg personal">Personal</span></label>
-          <label><input type="checkbox" id="lane-family" checked><span class="lg family">Family</span></label>
-          <label><input type="checkbox" id="lane-child" checked><span class="lg duty" id="lane-child-name">Child</span></label>
-          <label title="Blocks from the Week page: runs, hard stops and other time you set aside"><input type="checkbox" id="lane-blocks" checked><span class="lg blocks">Week blocks</span></label>
-        </span>
+  <div class="seg weekviews" id="views" hidden>
+    <button type="button" data-view="day" class="on" aria-pressed="true">Day</button>
+    <button type="button" data-view="work" aria-pressed="false">Work</button>
+    <button type="button" data-view="sync" aria-pressed="false" id="view-sync">Sync</button>
+  </div>
+  <div id="day-body" hidden>
+  <div data-pane="day">
+    <div class="day-cols">
+      <div class="day-main">
+        <div class="pane-head">
+          <h2>Timeline</h2>
+          <div class="toolbar">
+            <a id="day-add" class="small btn ghost" href="/find?mode=add" title="A meeting or appointment at a time you know">Add</a>
+            <a id="day-find" class="small btn ghost" href="/find" title="Let it look for a free time">Find a date</a>
+          </div>
+        </div>
+        <section class="card day-timeline">
+          <div class="chips lanes-toggle" aria-label="Calendars">
+            <button type="button" class="chip on" id="lane-work" aria-pressed="true">Work</button>
+            <button type="button" class="chip on" id="lane-personal" aria-pressed="true">Personal</button>
+            <button type="button" class="chip on" id="lane-family" aria-pressed="true">Family</button>
+            <button type="button" class="chip on" id="lane-child" aria-pressed="true">Child</button>
+            <button type="button" class="chip on" id="lane-blocks" aria-pressed="true" title="Blocks from the Week page: runs, hard stops and other time you set aside">Week blocks</button>
+          </div>
+          <p class="hint warn" id="classify-note" hidden></p>
+          <p class="hint warn" id="mirror-note" hidden></p>
+          <div class="tl" id="timeline"></div>
+        </section>
       </div>
-      <p class="hint" id="mirror-note" hidden></p>
-      <div class="tl" id="timeline"></div>
-    </section>
-    <div class="day-side">
-      <section class="card" id="first-things">
-        <div class="card-head"><h3>First up</h3><span class="hint">drop-off, first meeting, urgent tasks</span></div>
-        <div class="list" id="first-list"></div>
-      </section>
-      <section class="card" id="training">
-        <div class="card-head"><h3>Training</h3><span class="pill" id="training-pill" hidden></span></div>
-        <div id="training-body"></div>
-      </section>
-      <section class="card" id="work">
-        <div class="card-head"><h3>Work today</h3><span class="hint" id="week-line"></span></div>
-        <div class="timer-row">
-          <span class="dot" id="timer-dot"></span>
-          <span id="timer-line" class="grow"></span>
-          <button id="day-start" class="small" type="button">Start</button>
-          <button id="day-pause" class="small" type="button">Pause</button>
-          <button id="day-stop" class="small" type="button">Stop</button>
+      <div class="day-side">
+        <section class="hero stopped" id="first-things">
+          <div class="hero-label">First up</div>
+          <div class="list" id="first-list"></div>
+        </section>
+        <div class="totals" id="day-tiles">
+          <div class="card"><div class="k">Meetings</div><div class="v" id="tile-meetings">–</div><div class="s">left</div></div>
+          <div class="card"><div class="k">Tasks</div><div class="v" id="tile-tasks">–</div><div class="s">done</div></div>
+          <div class="card"><div class="k">Worked</div><div class="v" id="tile-worked">–</div><div class="s" id="tile-worked-of"></div></div>
         </div>
-        <div class="chips" id="day-chips" aria-label="Types"></div>
-        <div class="bar-bg"><div class="bar-fg" id="hours-bar"></div></div>
-        <p class="hint" id="hours-line"></p>
-        <h4>Top 3 tasks (Todoist)</h4>
-        <div class="list" id="top3"></div>
-        <h4>Milestones</h4>
-        <div class="list" id="milestones"></div>
-      </section>
-      <section class="card" id="mirror-card">
-        <div class="card-head"><h3><a href="/workcal">Work calendar</a></h3><span class="hint" id="mirror-cov"></span></div>
-        <p class="hint" id="mirror-line"></p>
-        <div class="row-wrap">
-          <label class="small btn file-btn">Upload Outlook PDF<input type="file" id="pdf-file" accept="application/pdf,.pdf" hidden></label>
-          <a class="small btn" href="/workcal">Catch up: paste, cancel, notes</a>
-        </div>
-      </section>
-      <section class="card" id="queue-card" hidden>
-        <div class="card-head"><h3>Pending writes</h3></div>
-        <div class="list" id="queue"></div>
-      </section>
+        <h2>Training <span class="pill" id="training-pill" hidden></span></h2>
+        <section class="card" id="training">
+          <div id="training-body"></div>
+        </section>
+      </div>
     </div>
   </div>
-  <div class="day-foot">
-    <span id="counts"></span>
-    <a href="/week">Week view</a>
+  <div data-pane="work" hidden>
+    <section class="hero stopped" id="work">
+      <div class="hero-label"><span class="dot" id="timer-dot"></span><span id="timer-line" class="grow"></span></div>
+      <div class="actions">
+        <button id="day-start" class="act start" type="button">Start</button>
+        <button id="day-pause" class="act pause" type="button">Pause</button>
+        <button id="day-stop" class="act stop" type="button">Stop</button>
+      </div>
+      <div class="chips" id="day-chips" aria-label="Types"></div>
+    </section>
+    <div class="totals" id="work-tiles">
+      <div class="card"><div class="k">Today</div><div class="v" id="hours-today">–</div><div class="s" id="hours-of"></div>
+        <div class="bar-bg"><div class="bar-fg" id="hours-bar"></div></div></div>
+      <div class="card" id="stop-tile"><div class="k" id="stop-k">Before stop</div><div class="v" id="stop-v">–</div><div class="s" id="stop-s"></div></div>
+      <div class="card"><div class="k">Week</div><div class="v" id="week-v">–</div><div class="s" id="week-s"></div></div>
+    </div>
+    <h2>Top 3 tasks <small>Todoist</small></h2>
+    <section class="card"><div class="list" id="top3"></div></section>
+    <h2>Milestones</h2>
+    <section class="card"><div class="list" id="milestones"></div></section>
+  </div>
+  <div data-pane="sync" hidden>
+    <h2>Snapshots</h2>
+    <section class="card">
+      <p class="hint" id="sync-line"></p>
+      <button id="day-refresh" class="small" type="button" title="Ask the host sync to refresh the snapshots">Refresh</button>
+    </section>
+    <h2><a href="/workcal">Work calendar</a></h2>
+    <section class="card" id="mirror-card">
+      <p id="mirror-cov"></p>
+      <p class="hint" id="mirror-line"></p>
+      <div class="row-wrap">
+        <label class="small btn file-btn">Upload Outlook PDF<input type="file" id="pdf-file" accept="application/pdf,.pdf" hidden></label>
+        <a class="small btn" href="/workcal">Catch up: paste, cancel, notes</a>
+      </div>
+    </section>
+    <h2>Pending writes</h2>
+    <section class="card" id="queue-card">
+      <div class="list" id="queue"></div>
+    </section>
+  </div>
   </div>
 </div>
 <dialog id="classify-dialog" class="sheet narrow" aria-labelledby="classify-title">
@@ -85,6 +111,18 @@
       <button class="small primary" value="once" autofocus>Only this one</button>
       <button class="small" value="always">Always for this title</button>
       <button class="small ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="prep-dialog" class="sheet narrow" aria-labelledby="prep-title">
+  <form method="dialog" class="classify prep">
+    <p class="q" id="prep-title">Prep</p>
+    <label>Prep minutes (0–480) <input type="text" inputmode="numeric" id="prep-minutes" autocomplete="off"></label>
+    <label>What to prepare <input type="text" id="prep-text" maxlength="500" autocomplete="off"></label>
+    <p class="hint warn" id="prep-problem" hidden>Minutes must be a number from 0 to 480</p>
+    <div class="row-wrap">
+      <button class="small ghost" type="button" id="prep-cancel">Cancel</button>
+      <button class="small primary" value="save">Save</button>
     </div>
   </form>
 </dialog>

@@ -1991,27 +1991,13 @@ function initDays() {
 
 // ---- boot --------------------------------------------------------------------
 
-// Top nav: the tabs can overflow a phone, so the nav scrolls; keep the active tab in view and show a fade while there is more.
-function initNav() {
-  const nav = document.querySelector(".top nav");
-  if (!nav) return;
-  const more = () => nav.classList.toggle("more", nav.scrollWidth - nav.clientWidth - nav.scrollLeft > 4);
-  const on = nav.querySelector("a.on");
-  if (on && nav.scrollWidth > nav.clientWidth) {
-    const nr = nav.getBoundingClientRect(), ar = on.getBoundingClientRect();
-    nav.scrollLeft += ar.left - nr.left - (nav.clientWidth - ar.width) / 2;
-  }
-  nav.addEventListener("scroll", more, { passive: true });
-  window.addEventListener("resize", more);
-  more();
-}
-
-// The More menu (Add or find a date, Move an event, Work calendar, Settings): a button that opens a list of links.
+// The More menu: a button that opens a list of links. In the top tabs (760 px and wider) it holds Add or find a date,
+// Move an event, Work calendar and Settings; in the bottom bar (narrower) also Reports and Expected hours, and it opens upward.
 // Enter / Space / click / ArrowDown open it, arrows move, Home / End jump, Esc closes and returns to the button.
 function initMore() {
   const btn = $("more-btn"), list = $("more-list");
   if (!btn || !list) return;
-  const items = () => [...list.querySelectorAll("a")];
+  const items = () => [...list.querySelectorAll("a")].filter((a) => a.getClientRects().length);   // not the links this layout hides
   const close = (refocus) => {
     list.hidden = true;
     btn.setAttribute("aria-expanded", "false");
@@ -2041,7 +2027,6 @@ function initMore() {
 
 document.addEventListener("DOMContentLoaded", async () => {
   const page = document.body.dataset.page;
-  initNav();
   initMore();
   if (page === "timer") initTimer();
   else if (page === "settings") initSettings();

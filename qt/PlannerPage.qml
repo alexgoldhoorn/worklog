@@ -9,7 +9,8 @@ import WorkLogApp
 
 // The Day planner (the web's Day page, `day.js` / `templates/day.html`, API in `day/web.py`): one day's
 // timeline of work meetings, personal and family events, the child's duties and protected blocks, the
-// first things to do, training, work today, and the writes that still wait for the host. Needs the
+// first things to do, training, work today, and the writes that still wait for the host, in three parts
+// as the Week screen's (Day · Work · Sync; the web's day.html has the same panes). Needs the
 // planner's balance store on the server; without it the page shows the server's message (503).
 // The timeline is one list sorted by start, as the web does on a phone, with a pill for the lane.
 // Move (MoveDialog), the work-calendar PDF upload, the timer row and "work on this" are here too, as on the web.
@@ -119,13 +120,12 @@ ScrollView {
         const hh = d.household || { me: "me", partner: "partner" }
         return { date: d.date, start: ev.at, title: ev.title, owner: ev.owner === hh.me ? hh.partner : hh.me }
     }
-    // the line under the title: when the snapshots were made
+    // the Sync tab's first line: when the snapshots were made
     function subLine(d) {
         if (!d)
             return ""
         const full = d.sync && (d.sync.full_ran || d.sync.ran)
         return full ? qsTr("snapshots %1 · google %2").arg(String(full).replace("T", " ").slice(0, 16)).arg(d.sync.google || "?")
-                      + (d.is_today ? "" : " · " + qsTr("not today: no timer"))
                     : qsTr("no snapshots yet")
     }
     function mirrorNote(d) {
@@ -138,12 +138,52 @@ ScrollView {
             return qsTr("Work calendar PDF is %1 days old.").arg(d.mirror.stale_days)
         return ""
     }
-    function countsLine(d) {
+    // ---- the three parts and their figures -----------------------------------------------------------
+    property string view: "day"      // "day" | "work" | "sync": the part of the page that shows (not remembered, as Week)
+    // the Sync tab's label: what waits to be written, else that the work calendar is out of date
+    function syncLabel(d) {
         if (!d)
+            return qsTr("Sync")
+        const n = d.queue ? d.queue.length : 0
+        return n > 0 ? qsTr("Sync: %1").arg(n) : d.mirror && mirrorNote(d) !== "" ? qsTr("Sync: stale") : qsTr("Sync")
+    }
+    // the Day tiles: meetings still to come, tasks done of all
+    function meetingsTile(d) {
+        const n = d && d.counts ? d.counts.meetings_left : null
+        return n === null || n === undefined ? "–" : String(n)
+    }
+    function tasksTile(d) { return d && d.counts ? d.counts.done + " / " + (d.counts.done + d.counts.todo) : "–" }
+    // "2 family events to classify" ("" when there are none)
+    function classifyLine(d) {
+        const n = d && d.counts ? d.counts.unclassified : 0
+        return !n ? "" : n === 1 ? qsTr("1 family event to classify") : qsTr("%1 family events to classify").arg(n)
+    }
+    // the work card's figures
+    readonly property var work: day && day.work ? day.work : null
+    readonly property var wst: work && work.status ? work.status : ({})
+    readonly property real expectedH: wst.today && wst.today.expected_h ? wst.today.expected_h : 0
+    readonly property bool overStop: wst.state === "working" && wst.past_stop_min > 0
+    readonly property string timerNow: timerState(day)
+    readonly property color tone: overStop ? Api.warnColor : timerNow === "working" ? Api.workColor
+                                : timerNow === "break" ? Api.breakColor : Api.idleColor
+    readonly property color toneBg: overStop ? Api.warnBg : timerNow === "working" ? Api.workBg
+                                  : timerNow === "break" ? Api.breakBg : Api.card
+    // the "Before stop" tile: the time left before the hard stop, or how far past it
+    function stopTile(d) {
+        const w = d && d.work ? d.work : null
+        const s = w && w.status ? w.status : {}
+        if (!w)
+            return "–"
+        if (s.state === "working" && s.past_stop_min > 0)
+            return h2(s.past_stop_min / 60)
+        return w.left_before_stop_h === null || w.left_before_stop_h === undefined ? "–" : h2(w.left_before_stop_h)
+    }
+    function stopNote(d) {
+        const w = d && d.work ? d.work : null
+        if (!w)
             return ""
-        const c = d.counts
-        return qsTr("Tasks: %1 done, %2 to do · meetings left: %3").arg(c.done).arg(c.todo).arg(c.meetings_left === null || c.meetings_left === undefined ? qsTr("unknown") : c.meetings_left)
-               + (c.unclassified ? " · " + (c.unclassified === 1 ? qsTr("1 family event to classify") : qsTr("%1 family events to classify").arg(c.unclassified)) : "")
+        return (w.left_before_stop_h === null || w.left_before_stop_h === undefined) && !(w.status && w.status.state === "working" && w.status.past_stop_min > 0)
+               ? qsTr("work calendar unknown") : qsTr("stop %1").arg(w.hard_stop)
     }
     function fmtDate(iso) { return Api.parseDate(iso).toLocaleDateString(Api.locale, "ddd d MMM") }
 
@@ -415,7 +455,6 @@ ScrollView {
         }
     }
 
-    // a small action button inside an event row
     // the small text actions of an event row: the shared flat button
     component Tiny: AppButton {
         flat: true
@@ -425,6 +464,37 @@ ScrollView {
     }
 
     // ---- layout -------------------------------------------------------------------------------------
+    // As the Week screen: the stepper, the banners, then three parts of which one shows (Day · Work · Sync).
+    // Inside a part the Timer's shape: a hero card (radius 14), tiles, cards.
+
+    // a figure with a line under it, as the Timer's tiles
+    component StatTile: Tile {
+        id: stat
+        property string value
+        property string sub: ""
+        property color ink: Api.fg
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        Layout.preferredWidth: 1
+        Label {
+            text: stat.value
+            color: stat.ink
+            font.pixelSize: 22
+            font.weight: Font.Bold
+            font.features: { "tnum": 1 }
+            fontSizeMode: Text.HorizontalFit   // "3 h 10" in a third of a 320 dp screen
+            minimumPixelSize: 13
+            Layout.fillWidth: true
+        }
+        Label {
+            visible: text !== ""
+            text: stat.sub
+            color: Api.muted
+            font.pixelSize: 12
+            wrapMode: Text.Wrap
+            Layout.fillWidth: true
+        }
+    }
 
     ColumnLayout {
         width: page.availableWidth
@@ -451,11 +521,10 @@ ScrollView {
                     Layout.fillWidth: true
                 }
                 Label {
-                    text: page.subLine(page.day)
+                    text: page.day ? Api.relDay(page.day.date, Api.today()) : ""
                     visible: text !== ""
                     color: Api.muted
-                    font.pixelSize: 11
-                    wrapMode: Text.Wrap
+                    font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
                     Layout.fillWidth: true
                 }
@@ -471,33 +540,6 @@ ScrollView {
                 text: "›"
                 name: qsTr("Next day")
                 onClicked: page.step(1)
-            }
-        }
-        RowLayout {
-            Layout.leftMargin: 12
-            Layout.rightMargin: 12
-            Layout.fillWidth: true
-            spacing: 8
-            AppButton {
-                text: qsTr("Refresh")
-                flat: true
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("Ask the host sync to refresh the snapshots")
-                Accessible.name: text
-                onClicked: page.refreshSnapshots()
-            }
-            Item { Layout.fillWidth: true }
-            AppButton {
-                text: qsTr("Add")
-                flat: true
-                Accessible.name: qsTr("Add a meeting or appointment at a time you know")
-                onClicked: page.addRequested()
-            }
-            AppButton {
-                text: qsTr("Find a date")
-                flat: true
-                Accessible.name: text
-                onClicked: page.findRequested()
             }
         }
 
@@ -519,43 +561,167 @@ ScrollView {
             text: page.day ? qsTr("Load: %1").arg(page.day.capacity.colour) + String(page.day.capacity.line || "").replace(/^[^A-Za-z]*Capacity:\s*\w+\.\s*/, " · ") : ""
         }
 
-        Card {
-            title: qsTr("Timeline")
+        // the three parts; what waits to be synced stays in sight on the Sync tab's label
+        RowLayout {
             visible: page.day !== null
+            spacing: 8
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Repeater {
+                model: [
+                    { key: "day", label: qsTr("Day") },
+                    { key: "work", label: qsTr("Work") },
+                    { key: "sync", label: page.syncLabel(page.day) }
+                ]
+                delegate: AppButton {
+                    id: viewTab
+                    required property var modelData
+                    text: modelData.label
+                    primary: page.view === modelData.key
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: modelData.label
+                    Accessible.role: Accessible.PageTab
+                    onClicked: page.view = viewTab.modelData.key
+                }
+            }
+        }
 
-            Flow {
-                spacing: 6
-                Layout.fillWidth: true
+        // ================= Day =================
+
+        // ---- first up: the hero of the day ----
+        Pane {
+            visible: page.day !== null && page.view === "day"
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            padding: 16
+            background: Rectangle {
+                radius: 14
+                color: Api.card
+                border.color: Api.line
+            }
+            ColumnLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: 8
+                Label {
+                    text: qsTr("First up")
+                    font.pixelSize: 16
+                    font.weight: Font.DemiBold
+                    color: page.Material.accent
+                    Layout.fillWidth: true
+                }
+                Label {
+                    visible: !!page.day && page.day.first_things.length === 0
+                    text: qsTr("Nothing first up.")
+                    color: Api.muted
+                    Layout.fillWidth: true
+                }
                 Repeater {
-                    model: page.lanes
-                    delegate: AbstractButton {
-                        id: laneChip
+                    model: page.day ? page.day.first_things : []
+                    delegate: RowLayout {
+                        id: ft
                         required property var modelData
-                        readonly property bool on: page.laneOn(modelData.value)
-                        text: modelData.label
-                        implicitHeight: 32
-                        leftPadding: 12
-                        rightPadding: 12
-                        Accessible.role: Accessible.CheckBox
-                        Accessible.name: modelData.label
-                        Accessible.checkable: true
-                        Accessible.checked: on
-                        Accessible.onPressAction: laneChip.clicked()
-                        onClicked: page.toggleLane(modelData.value)
-                        contentItem: Label {
-                            text: laneChip.text
-                            color: laneChip.on ? Api.accentFg : Api.fg
-                            font.pixelSize: 13
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
+                        spacing: 10
+                        Layout.fillWidth: true
+                        Label {
+                            text: ft.modelData.kind === "duty" ? ft.modelData.at : ft.modelData.kind === "meeting" ? ft.modelData.start : qsTr("now")
+                            color: Api.muted
+                            font.features: { "tnum": 1 }
+                            Layout.alignment: Qt.AlignTop
+                            Layout.preferredWidth: 44
                         }
-                        background: Rectangle {
-                            radius: 16
-                            color: laneChip.on ? page.laneColor(laneChip.modelData.value) : "transparent"
-                            border.color: laneChip.on ? "transparent" : Api.line
+                        ColumnLayout {
+                            spacing: 2
+                            Layout.fillWidth: true
+                            Label {
+                                text: ft.modelData.kind === "duty" ? ft.modelData.title + " · " + (ft.modelData.owner || qsTr("who does it?"))
+                                    : ft.modelData.kind === "meeting" ? ft.modelData.title
+                                    : ft.modelData.tasks.length > 0 ? qsTr("%n urgent", "", ft.modelData.tasks.length) : qsTr("Nothing urgent")
+                                font.weight: Font.DemiBold
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+                            Label {
+                                visible: ft.modelData.kind === "duty"
+                                text: ft.modelData.fit_line || ""
+                                color: ft.modelData.fits === false ? Api.warnColor : Api.muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+                            Label {
+                                visible: ft.modelData.kind === "meeting"
+                                readonly property var prep: ft.modelData.prep
+                                text: prep ? qsTr("Prep: %1 · %2 min · start by %3").arg(prep.text || qsTr("(no text)")).arg(prep.minutes).arg(prep.start_by)
+                                           : qsTr("No prep note yet.")
+                                color: Api.muted
+                                font.pixelSize: 12
+                                wrapMode: Text.Wrap
+                                Layout.fillWidth: true
+                            }
+                            Tiny {
+                                visible: ft.modelData.kind === "meeting"
+                                text: ft.modelData.prep ? qsTr("Edit prep") : qsTr("Add prep")
+                                onClicked: { page.prepMeeting = ft.modelData; prepDialog.open() }
+                            }
+                            Repeater {
+                                model: ft.modelData.kind === "urgent" ? ft.modelData.tasks : []
+                                delegate: TaskRow { Layout.fillWidth: true }
+                            }
                         }
                     }
                 }
+            }
+        }
+
+        // ---- the day in three figures (they were the counts line at the foot) ----
+        RowLayout {
+            visible: page.day !== null && page.view === "day"
+            spacing: 12
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            StatTile { caption: qsTr("Meetings"); value: page.meetingsTile(page.day); sub: qsTr("left") }
+            StatTile { caption: qsTr("Tasks"); value: page.tasksTile(page.day); sub: qsTr("done") }
+            StatTile {
+                caption: qsTr("Worked")
+                value: page.work && page.work.today_h !== null && page.work.today_h !== undefined ? page.h2(page.work.today_h) : "–"
+                sub: page.expectedH > 0 ? qsTr("of %1").arg(page.h2(page.expectedH)) : ""
+                ink: page.overStop ? Api.errorColor : Api.fg
+            }
+        }
+
+        Card {
+            title: qsTr("Timeline")
+            visible: page.day !== null && page.view === "day"
+            actions: RowLayout {
+                spacing: 0
+                Tiny {
+                    text: qsTr("Add")
+                    Accessible.name: qsTr("Add a meeting or appointment at a time you know")
+                    onClicked: page.addRequested()
+                }
+                Tiny {
+                    text: qsTr("Find a date")
+                    onClicked: page.findRequested()
+                }
+            }
+
+            ChipMulti {
+                model: page.lanes
+                selected: page.lanes.map(l => l.value).filter(v => page.lanesOff.split(",").indexOf(v) < 0)
+                onToggled: value => page.toggleLane(value)
+            }
+            Label {
+                visible: text !== ""
+                text: page.classifyLine(page.day)
+                color: Api.warnColor
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Label {
                 visible: page.mirrorNote(page.day) !== ""
@@ -589,37 +755,36 @@ ScrollView {
                     }
                     Component {
                         id: eventRow
-                        Rectangle {
+                        // as a row of the Week screen: a bar in the lane's colour, the line, the lane under it
+                        RowLayout {
                             id: evRow
                             readonly property var ev: tl.modelData.ev
                             readonly property string lane: tl.modelData.lane
                             readonly property var hh: page.day.household || { me: "me", partner: "partner", child: "child" }
-                            implicitHeight: evCol.implicitHeight + 16
-                            radius: 8
-                            color: ev.cancelled ? "transparent" : Qt.alpha(page.laneColor(lane), 0.1)
-                            border.color: Qt.alpha(page.laneColor(lane), 0.4)
-                            Rectangle { x: 0; width: 4; height: parent.height; radius: 2; color: page.laneColor(evRow.lane) }
+                            spacing: 8
+                            Rectangle {
+                                implicitWidth: 4
+                                radius: 2
+                                color: page.laneColor(evRow.lane)
+                                opacity: evRow.ev.cancelled ? 0.4 : 1
+                                Layout.fillHeight: true
+                            }
                             ColumnLayout {
-                                id: evCol
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.top: parent.top
-                                anchors.margins: 8
-                                anchors.leftMargin: 14
-                                spacing: 2
-                                Label {
-                                    text: page.laneName(evRow.lane).toUpperCase()
-                                    color: page.laneColor(evRow.lane)
-                                    font.pixelSize: 10
-                                    font.weight: Font.Bold
-                                    font.letterSpacing: 0.6
-                                }
+                                spacing: 0
+                                Layout.fillWidth: true
                                 Label {
                                     text: page.eventLabel(evRow.ev)
                                     font.strikeout: !!evRow.ev.cancelled
+                                    color: evRow.ev.cancelled ? Api.faint : Api.fg
                                     wrapMode: Text.Wrap
                                     Layout.fillWidth: true
                                     Accessible.name: text
+                                }
+                                Label {
+                                    text: page.laneName(evRow.lane)
+                                    color: page.laneColor(evRow.lane)
+                                    font.pixelSize: 12
+                                    Layout.fillWidth: true
                                 }
                                 Flow {
                                     spacing: 4
@@ -641,7 +806,8 @@ ScrollView {
                                     Tiny {
                                         visible: evRow.ev.layer === "personal" && evRow.ev.lane === "family" && evRow.ev.classification !== "unclassified"
                                                  && !evRow.ev.pending && page.reopened.indexOf(page.evKey(evRow.ev)) < 0
-                                        text: qsTr("change whose it is")
+                                        text: qsTr("Whose?")
+                                        Accessible.name: qsTr("Change whose \"%1\" is").arg(evRow.ev.title)
                                         onClicked: page.reopened = page.reopened.concat([page.evKey(evRow.ev)])   // shows the four choices again
                                     }
                                     Tiny {
@@ -690,68 +856,8 @@ ScrollView {
         }
 
         Card {
-            title: qsTr("First up")
-            visible: page.day !== null
-            Repeater {
-                model: page.day ? page.day.first_things : []
-                delegate: RowLayout {
-                    id: ft
-                    required property var modelData
-                    spacing: 10
-                    Layout.fillWidth: true
-                    Label {
-                        text: ft.modelData.kind === "duty" ? ft.modelData.at : ft.modelData.kind === "meeting" ? ft.modelData.start : qsTr("now")
-                        color: Api.muted
-                        font.features: { "tnum": 1 }
-                        Layout.alignment: Qt.AlignTop
-                        Layout.preferredWidth: 44
-                    }
-                    ColumnLayout {
-                        spacing: 2
-                        Layout.fillWidth: true
-                        Label {
-                            text: ft.modelData.kind === "duty" ? ft.modelData.title + " · " + (ft.modelData.owner || qsTr("who does it?"))
-                                : ft.modelData.kind === "meeting" ? ft.modelData.title
-                                : ft.modelData.tasks.length > 0 ? qsTr("%n urgent", "", ft.modelData.tasks.length) : qsTr("Nothing urgent")
-                            font.weight: Font.DemiBold
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                        }
-                        Label {
-                            visible: ft.modelData.kind === "duty"
-                            text: ft.modelData.fit_line || ""
-                            color: ft.modelData.fits === false ? Api.warnColor : Api.muted
-                            font.pixelSize: 12
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                        }
-                        Label {
-                            visible: ft.modelData.kind === "meeting"
-                            readonly property var prep: ft.modelData.prep
-                            text: prep ? qsTr("Prep: %1 · %2 min · start by %3").arg(prep.text || qsTr("(no text)")).arg(prep.minutes).arg(prep.start_by)
-                                       : qsTr("No prep note yet.")
-                            color: Api.muted
-                            font.pixelSize: 12
-                            wrapMode: Text.Wrap
-                            Layout.fillWidth: true
-                        }
-                        Tiny {
-                            visible: ft.modelData.kind === "meeting"
-                            text: ft.modelData.prep ? qsTr("Edit prep") : qsTr("Add prep")
-                            onClicked: { page.prepMeeting = ft.modelData; prepDialog.open() }
-                        }
-                        Repeater {
-                            model: ft.modelData.kind === "urgent" ? ft.modelData.tasks : []
-                            delegate: TaskRow { Layout.fillWidth: true }
-                        }
-                    }
-                }
-            }
-        }
-
-        Card {
             title: qsTr("Training")
-            visible: page.day !== null
+            visible: page.day !== null && page.view === "day"
             actions: Label {
                 visible: !!(page.day && page.day.training && page.day.training.easy_week)
                 text: qsTr("easy week")
@@ -798,148 +904,162 @@ ScrollView {
             }
         }
 
-        Card {
-            id: workCard
-            title: qsTr("Work today")
-            visible: page.day !== null
-            readonly property var w: page.day ? page.day.work : null
-            readonly property var st: w && w.status ? w.status : ({})
-            readonly property real expected: st.today && st.today.expected_h ? st.today.expected_h : 0
-            readonly property bool over: st.state === "working" && st.past_stop_min > 0
-            actions: Label {
-                text: workCard.w ? qsTr("worked this week: %1 h (normal %2–%3 h)").arg(page.h2(workCard.w.week_h)).arg(workCard.w.band[0]).arg(workCard.w.band[1]) : ""
-                color: Api.muted
-                font.pixelSize: 12
+        // ================= Work =================
+
+        // ---- the timer: the hero, tinted by its state as on the Timer screen ----
+        Pane {
+            visible: page.day !== null && page.view === "work" && page.timerNow !== "none"
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            padding: 16
+            background: Rectangle {
+                radius: 14
+                color: page.toneBg
+                border.color: page.timerNow === "stopped" ? Api.line : Qt.alpha(page.tone, 0.3)
             }
-            RowLayout {
-                visible: page.timerState(page.day) !== "none"
+            ColumnLayout {
+                anchors.left: parent.left
+                anchors.right: parent.right
                 spacing: 8
-                Layout.fillWidth: true
-                Rectangle {
-                    implicitWidth: 10
-                    implicitHeight: 10
-                    radius: 5
-                    Layout.alignment: Qt.AlignTop
-                    Layout.topMargin: 5
-                    color: page.timerState(page.day) === "working" ? Api.workColor
-                         : page.timerState(page.day) === "break" ? Api.breakColor : Api.idleColor
-                }
-                Label {
-                    text: page.timerLine(page.day)
-                    wrapMode: Text.Wrap
+                RowLayout {
+                    spacing: 8
                     Layout.fillWidth: true
-                    Accessible.name: text
+                    Rectangle {
+                        implicitWidth: 10
+                        implicitHeight: 10
+                        radius: 5
+                        Layout.alignment: Qt.AlignTop
+                        Layout.topMargin: 8
+                        color: page.timerNow === "working" ? Api.workColor
+                             : page.timerNow === "break" ? Api.breakColor : Api.idleColor
+                    }
+                    Label {
+                        text: page.timerLine(page.day)
+                        font.pixelSize: 18
+                        font.weight: Font.Bold
+                        wrapMode: Text.Wrap
+                        Layout.fillWidth: true
+                        Accessible.name: text
+                    }
                 }
-            }
-            Flow {
-                visible: page.timerState(page.day) !== "none"
-                spacing: 6
-                Layout.fillWidth: true
-                AppButton {
-                    visible: page.timerState(page.day) !== "working"
-                    text: qsTr("Start")
-                    enabled: !page.timerBusy
-                    Accessible.name: text
-                    onClicked: page.startTimer()
+                RowLayout {
+                    spacing: 8
+                    Layout.fillWidth: true
+                    ActionButton {
+                        visible: page.timerNow !== "working"
+                        text: page.timerNow === "break" ? qsTr("Resume") : qsTr("Start")
+                        subtext: page.pendingType !== "" ? page.pendingType : qsTr("work")
+                        fill: Api.workColor
+                        ink: Api.workFg
+                        enabled: !page.timerBusy
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                        onClicked: page.startTimer()
+                    }
+                    ActionButton {
+                        visible: page.timerNow === "working"
+                        text: qsTr("Pause")
+                        subtext: qsTr("break")
+                        fill: Api.breakColor
+                        ink: Api.breakFg
+                        enabled: !page.timerBusy
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                        onClicked: page.pauseTimer()
+                    }
+                    ActionButton {
+                        visible: page.timerNow !== "stopped"
+                        text: qsTr("Stop")
+                        subtext: qsTr("close block")
+                        fill: Api.idleColor
+                        ink: Api.card
+                        enabled: !page.timerBusy
+                        Layout.fillWidth: true
+                        Layout.preferredWidth: 1
+                        onClicked: page.stopTimer()
+                    }
                 }
-                AppButton {
-                    visible: page.timerState(page.day) === "working"
-                    text: qsTr("Pause")
-                    enabled: !page.timerBusy
-                    Accessible.name: text
-                    onClicked: page.pauseTimer()
-                }
-                AppButton {
-                    visible: page.timerState(page.day) !== "stopped"
-                    text: qsTr("Stop")
-                    enabled: !page.timerBusy
-                    Accessible.name: text
-                    onClicked: page.stopTimer()
-                }
-            }
-            Flow {
-                visible: page.chipTypes(page.day).length > 0
-                spacing: 6
-                Layout.fillWidth: true
-                Accessible.name: qsTr("Types")
-                Repeater {
+                ChipRow {
+                    id: typeChips
+                    readonly property var blk: page.wst.block ? page.wst.block : null
+                    visible: page.chipTypes(page.day).length > 0
+                    label: qsTr("Type")
                     model: page.chipTypes(page.day)
-                    delegate: AbstractButton {
-                        id: typeChip
-                        required property string modelData
-                        readonly property var blk: page.day && page.day.work && page.day.work.status ? page.day.work.status.block : null
-                        readonly property bool on: page.timerState(page.day) === "working" ? !!blk && blk.type === modelData
-                                                                                         : page.pendingType === modelData
-                        text: modelData
-                        implicitHeight: 32
-                        leftPadding: 12
-                        rightPadding: 12
-                        Accessible.role: Accessible.CheckBox
-                        Accessible.name: modelData
-                        Accessible.checkable: true
-                        Accessible.checked: on
-                        Accessible.onPressAction: typeChip.clicked()
-                        onClicked: page.pickType(modelData)
-                        contentItem: Label {
-                            text: typeChip.text
-                            color: typeChip.on ? Api.accentFg : Api.fg
-                            font.pixelSize: 13
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        background: Rectangle {
-                            radius: 16
-                            color: typeChip.on ? Api.accent : "transparent"
-                            border.color: typeChip.on ? "transparent" : Api.line
-                        }
+                    current: page.timerNow === "working" ? (blk && blk.type ? blk.type : "") : page.pendingType
+                    onPicked: value => page.pickType(value)
+                }
+            }
+        }
+
+        // ---- hours: today, what is left before the stop, the week ----
+        GridLayout {
+            visible: page.day !== null && page.view === "work"
+            columns: page.availableWidth >= 720 ? 3 : 2
+            columnSpacing: 12
+            rowSpacing: 12
+            Layout.fillWidth: true
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            StatTile {
+                caption: qsTr("Today")
+                value: page.work && page.work.today_h !== null && page.work.today_h !== undefined ? page.h2(page.work.today_h) : "–"
+                sub: page.expectedH > 0 ? qsTr("of %1").arg(page.h2(page.expectedH)) : ""
+                Rectangle {   // progress towards today's expected hours
+                    id: hoursBar
+                    implicitHeight: 6
+                    radius: 3
+                    color: Api.line2
+                    Layout.fillWidth: true
+                    Rectangle {
+                        width: page.expectedH > 0 && page.work && page.work.today_h !== null && page.work.today_h !== undefined
+                               ? hoursBar.width * Math.min(1, page.work.today_h / page.expectedH) : 0
+                        height: hoursBar.height
+                        radius: 3
+                        color: page.overStop ? Api.errorColor : Api.workColor
                     }
                 }
             }
-            Rectangle {
-                Layout.fillWidth: true
-                height: 8
-                radius: 4
-                color: Api.line2
-                Rectangle {
-                    width: workCard.expected > 0 && workCard.w && workCard.w.today_h !== null && workCard.w.today_h !== undefined
-                           ? parent.width * Math.min(1, workCard.w.today_h / workCard.expected) : 0
-                    height: parent.height
-                    radius: 4
-                    color: workCard.over ? Api.errorColor : Api.workColor
-                }
+            StatTile {
+                caption: page.overStop ? qsTr("Past stop") : qsTr("Before stop")
+                value: page.stopTile(page.day)
+                sub: page.stopNote(page.day)
+                ink: page.overStop ? Api.errorColor : Api.fg
             }
-            Label {
-                readonly property var w: workCard.w
-                text: !w ? "" : (w.today_h !== null && w.today_h !== undefined ? qsTr("Today %1").arg(page.h2(w.today_h)) + (workCard.expected ? qsTr(" of %1").arg(page.h2(workCard.expected)) : "") + " · " : "")
-                      + (workCard.over ? qsTr("past your %1 stop by %2").arg(w.hard_stop).arg(page.h2(workCard.st.past_stop_min / 60))
-                         : w.left_before_stop_h === null || w.left_before_stop_h === undefined ? qsTr("work calendar unknown, hours left not computed")
-                         : qsTr("about %1 left before the %2 stop").arg(page.h2(w.left_before_stop_h)).arg(w.hard_stop))
-                color: workCard.over ? Api.errorColor : Api.muted
-                font.pixelSize: 12
-                wrapMode: Text.Wrap
-                Layout.fillWidth: true
+            StatTile {
+                caption: qsTr("Week")
+                value: page.work ? page.h2(page.work.week_h) : "–"
+                sub: page.work && page.work.band ? qsTr("normal %1–%2 h").arg(page.work.band[0]).arg(page.work.band[1]) : ""
             }
-            Caption { text: qsTr("Top 3 tasks (Todoist)") }
+        }
+
+        Card {
+            title: qsTr("Top 3 tasks")
+            visible: page.day !== null && page.view === "work"
             Label {
-                visible: !!workCard.w && workCard.w.top3.length === 0
+                visible: !!page.work && page.work.top3.length === 0
                 text: qsTr("No work tasks due today.")
                 color: Api.muted
                 Layout.fillWidth: true
             }
             Repeater {
-                model: workCard.w ? workCard.w.top3 : []
+                model: page.work ? page.work.top3 : []
                 delegate: TaskRow { Layout.fillWidth: true }
             }
-            Caption { text: qsTr("Milestones") }
+        }
+
+        Card {
+            title: qsTr("Milestones")
+            visible: page.day !== null && page.view === "work"
             Label {
-                visible: !!workCard.w && workCard.w.milestones.length === 0
+                visible: !!page.work && page.work.milestones.length === 0
                 text: qsTr("No dated milestones (label them `milestone` in Todoist).")
                 color: Api.muted
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
             }
             Repeater {
-                model: workCard.w ? workCard.w.milestones : []
+                model: page.work ? page.work.milestones : []
                 delegate: RowLayout {
                     id: mrow
                     required property var modelData
@@ -962,16 +1082,38 @@ ScrollView {
             }
         }
 
+        // ================= Sync =================
+
         Card {
-            title: qsTr("Work calendar")
-            visible: page.day !== null
-            actions: Label {
-                text: page.day ? (page.day.mirror.last_import_end ? qsTr("covered to %1").arg(page.fmtDate(page.day.mirror.last_import_end)) : qsTr("no PDF imported yet")) : ""
+            title: qsTr("Snapshots")
+            visible: page.day !== null && page.view === "sync"
+            Label {
+                text: page.subLine(page.day)
                 color: Api.muted
                 font.pixelSize: 12
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
+            }
+            AppButton {
+                text: qsTr("Refresh")
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Ask the host sync to refresh the snapshots")
+                Accessible.name: text
+                onClicked: page.refreshSnapshots()
+            }
+        }
+
+        Card {
+            title: qsTr("Work calendar")
+            visible: page.day !== null && page.view === "sync"
+            Label {
+                text: page.day ? (page.day.mirror.last_import_end ? qsTr("covered to %1").arg(page.fmtDate(page.day.mirror.last_import_end)) : qsTr("no PDF imported yet")) : ""
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Label {
                 readonly property var m: page.day ? page.day.mirror : null
+                visible: text !== ""
                 text: !m ? "" : m.unknown ? qsTr("This day is past the last Outlook export: meetings unknown, free slots not to be trusted.")
                       : m.stale_days === null || m.stale_days === undefined ? ""
                       : qsTr("Last export %1. Meetings added since come from you or the PA.")
@@ -983,7 +1125,6 @@ ScrollView {
             }
             AppButton {
                 text: uploader.busy ? qsTr("Uploading…") : qsTr("Upload Outlook PDF")
-                flat: true
                 enabled: !uploader.busy
                 Accessible.name: qsTr("Upload an Outlook calendar PDF export")
                 onClicked: pdfDialog.open()
@@ -992,7 +1133,13 @@ ScrollView {
 
         Card {
             title: qsTr("Pending writes")
-            visible: !!page.day && page.day.queue.length > 0
+            visible: page.day !== null && page.view === "sync"
+            Label {
+                visible: !!page.day && page.day.queue.length === 0
+                text: qsTr("Nothing waiting.")
+                color: Api.muted
+                Layout.fillWidth: true
+            }
             Repeater {
                 model: page.day ? page.day.queue : []
                 delegate: ColumnLayout {
@@ -1010,23 +1157,23 @@ ScrollView {
                     }
                     RowLayout {
                         visible: qrow.modelData.status === "failed"
-                        Tiny { text: qsTr("Retry"); onClicked: page.post("/api/balance/queue/" + qrow.modelData.id + "/retry") }
-                        Tiny { text: qsTr("Dismiss"); onClicked: page.post("/api/balance/queue/" + qrow.modelData.id + "/dismiss") }
+                        spacing: 8
+                        AppButton {
+                            text: qsTr("Retry")
+                            Accessible.name: text
+                            onClicked: page.post("/api/balance/queue/" + qrow.modelData.id + "/retry")
+                        }
+                        AppButton {
+                            text: qsTr("Dismiss")
+                            flat: true
+                            Accessible.name: text
+                            onClicked: page.post("/api/balance/queue/" + qrow.modelData.id + "/dismiss")
+                        }
                     }
                 }
             }
         }
 
-        Label {
-            visible: page.day !== null
-            text: page.countsLine(page.day)
-            color: Api.muted
-            font.pixelSize: 12
-            wrapMode: Text.Wrap
-            Layout.leftMargin: 16
-            Layout.rightMargin: 16
-            Layout.fillWidth: true
-        }
         Item { implicitHeight: 12 }
     }
 

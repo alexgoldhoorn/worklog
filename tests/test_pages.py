@@ -72,22 +72,50 @@ def test_day_page_nav_marks_day(client):
     assert re.search(r'<a href="/" class="on"><svg[^>]*>.*?</svg>Day</a>', r.text)
 
 
+def _tabs(html):
+    """The links of the navigation itself, without the More list."""
+    return html.split("<nav>")[1].split("</nav>")[0].split('class="more-menu"')[0]
+
+
 def test_nav_has_the_app_order_and_names(client):
-    nav = client.get("/timer").text.split("<nav>")[1].split("</nav>")[0]
-    assert re.findall(r"</svg>([^<]+)</a>", nav) == ["Timer", "Week", "Pomodoro", "Day", "Reports", "Expected hours"]
+    html = client.get("/timer").text
+    assert html.count("<nav>") == 1                                       # one navigation, two layouts
+    tabs = _tabs(html)
+    assert re.findall(r"</svg>([^<]+)</a>", tabs) == ["Timer", "Day", "Week", "Pomodoro", "Reports", "Expected hours"]
+    # the bottom bar (narrow) has the first four and More; Reports and Expected hours are tabs only when wide
+    assert re.findall(r'<a href="[^"]+" class="wide-only[^"]*">(?:<svg.*?</svg>)([^<]+)</a>', tabs) == ["Reports", "Expected hours"]
+    # More is the app's three horizontal dots, inside the navigation
+    more = html.split("<nav>")[1].split("</nav>")[0].split('class="more-menu"')[1]
+    assert 'id="more-btn"' in more and "M5 12h.01 M12 12h.01 M19 12h.01" in more and "M12 5h.01" not in html
+    assert 'class="on wide-only' not in html and re.search(r'href="/reports" class="wide-only on"', client.get("/reports").text)
 
 
 def test_more_menu_holds_the_pages_the_tabs_do_not(client):
     html = client.get("/timer").text
     menu = html.split('id="more-list"')[1].split("</div>")[0]
     assert re.findall(r'href="([^"]+)"[^>]*>(?:<svg.*?</svg>)?([^<]+)</a>', menu) == [
+        ("/reports", "Reports"), ("/days", "Expected hours"),
         ("/find", "Add or find a date"), ("/move", "Move an event"), ("/workcal", "Work calendar"), ("/settings", "Settings")]
+    # Reports and Expected hours are in the list only for the bottom bar; a separator stands before Settings
+    assert re.findall(r'href="([^"]+)" class="narrow-only', menu) == ["/reports", "/days"]
+    assert menu.index("<hr") > menu.index("/workcal") and menu.index("<hr") < menu.index("/settings")
     assert 'id="more-btn"' in html and 'aria-haspopup="true"' in html and 'aria-expanded="false"' in html
-    # the tabs themselves are unchanged and come first
-    assert html.index("</nav>") < html.index('id="more-btn"')
+    # the tabs come first, More closes the navigation
+    assert html.index("Expected hours</a>") < html.index('id="more-btn"') < html.index("</nav>")
     for page in ("/find", "/move", "/workcal", "/settings"):
         assert re.search(r'id="more-btn" class="more-btn on"', client.get(page).text), page
-    assert 'class="more-btn on"' not in html
+    # on the bottom bar More is also the place of Reports and Expected hours
+    for page in ("/reports", "/days"):
+        assert re.search(r'id="more-btn" class="more-btn on-narrow"', client.get(page).text), page
+    assert 'class="more-btn on' not in html
+
+
+def test_bottom_bar_styles_and_no_scrolling_nav(client):
+    css = client.get("/static/style.css").text
+    assert "@media (max-width: 759.98px)" in css and "@media (min-width: 760px)" in css
+    assert "safe-area-inset-bottom" in css and ".more-btn.on-narrow" in css and "mask-image" not in css
+    js = client.get("/static/app.js").text
+    assert "initNav" not in js and "scrollLeft" not in js
 
 
 def test_settings_page_and_links_where_settings_used_to_be(client):
@@ -175,8 +203,8 @@ def test_move_and_find_pages_render(client):
     r = client.get("/find")
     assert r.status_code == 200 and 'id="find-root"' in r.text and "/static/find.js" in r.text
     assert client.get("/static/move.js").status_code == 200 and client.get("/static/find.js").status_code == 200
-    nav = client.get("/").text.split("<nav>")[1].split("</nav>")[0]
-    assert "/move" not in nav and "/find" not in nav                      # reached from the Day/Week pages, not the nav
+    nav = _tabs(client.get("/").text)
+    assert "/move" not in nav and "/find" not in nav                      # in the More list, not among the tabs
 
 
 def test_day_and_week_scripts_link_to_move_and_find(client):
@@ -190,8 +218,7 @@ def test_workcal_page_renders(client):
     for i in ("wc-banner", "wc-week", "wc-paste", "wc-preview", "wc-prep", "pdf-file"):
         assert f'id="{i}"' in r.text
     assert client.get("/static/workcal.js").status_code == 200
-    nav = client.get("/").text.split("<nav>")[1].split("</nav>")[0]
-    assert "/workcal" not in nav
+    assert "/workcal" not in _tabs(client.get("/").text)
 
 
 def test_day_page_links_to_the_work_calendar_page(client):
@@ -335,3 +362,25 @@ def test_qt_buttons_all_go_through_the_shared_components():
         if f.name in shared:
             continue
         assert not re.search(r"^\s*(Button|ToolButton|RoundButton)\s*\{", f.read_text(encoding="utf-8"), re.M), f.name
+
+
+def test_day_page_is_in_three_parts_like_week(client):
+    html = client.get("/").text
+    # the same tab strip as the Week page, switched by the one function in core.js
+    for page in (html, client.get("/week").text):
+        assert 'class="seg weekviews" id="views"' in page
+    for view in ("day", "work", "sync"):
+        assert f'data-view="{view}"' in html and f'data-pane="{view}"' in html
+    assert html.index('data-view="day"') < html.index('data-view="work"') < html.index('data-view="sync"')
+    assert 'id="view-sync"' in html and 'id="day-tiles"' in html and 'id="work-tiles"' in html and 'id="prep-dialog"' in html
+    # Refresh, the work calendar and the pending writes are in the Sync part; the counts line and its foot are gone
+    sync = html[html.index('data-pane="sync"'):]
+    assert 'id="day-refresh"' in sync and 'id="pdf-file"' in sync and 'id="queue"' in sync
+    assert "day-foot" not in html and 'id="counts"' not in html
+    core, week, day = (client.get(f"/static/{n}.js").text for n in ("core", "week", "day"))
+    assert "function showView(" in core and "data-pane" in core and "data-pane" not in week
+    assert "Sync: stale" in day and "Nothing waiting." in day and "window.prompt" not in day
+    # one wording with the Qt app
+    for text in ("waiting to sync", "I take it", "takes it", '"Whose?"', "Week blocks"):
+        assert text in day, text
+    assert "brings her" not in day and "h (normal" not in day   # "37 h 05 h"

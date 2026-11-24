@@ -274,11 +274,29 @@ TestCase {
         const w = newMain()
         compare(w.current, w.navTimer)
         verify(!w.goBack(), "on the Timer the system gets the key")
-        for (const nav of [w.navWeek, w.navPomodoro, w.navDay, w.navReports, w.navExpected, w.navFind, w.navSettings]) {
+        for (const nav of [w.navDay, w.navWeek, w.navPomodoro, w.navReports, w.navExpected, w.navFind, w.navSettings]) {
             w.current = nav
             verify(w.goBack(), "from screen " + nav)
             compare(w.current, w.navTimer)
         }
+    }
+
+    // the bottom bar has Timer, Day, Week and Pomodoro; More is selected on every other screen
+    function test_more_is_selected_on_the_screens_of_its_menu() {
+        const w = newMain()
+        compare([w.navTimer, w.navDay, w.navWeek, w.navPomodoro, w.navReports, w.navExpected, w.navFind, w.navSettings],
+                [0, 1, 2, 3, 4, 5, 6, 7])
+        compare(w.titles.length, 8)
+        compare(w.icons, ["timer", "day", "week", "pomodoro", "reports", "expected", "find", "settings"])
+        for (const nav of [w.navTimer, w.navDay, w.navWeek, w.navPomodoro]) {
+            w.current = nav
+            verify(!w.inMore, "screen " + nav + " has its own button")
+        }
+        for (const nav of [w.navReports, w.navExpected, w.navFind, w.navSettings]) {
+            w.current = nav
+            verify(w.inMore, "screen " + nav + " is in the More menu")
+        }
+        w.closeMore()   // harmless while the menu is closed
     }
 
     function test_back_key_is_left_to_an_open_popup() {

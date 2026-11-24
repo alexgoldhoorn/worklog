@@ -49,13 +49,6 @@ ScrollView {
         function onServerChanged() { if (page.visible) page.reload() }
     }
 
-    // "Yesterday", "3 days ago", "In 2 days": where the shown day lies from today
-    function relDay(iso, today) {
-        const n = Math.round((Api.parseDate(iso) - Api.parseDate(today)) / 86400000)
-        return n === 0 ? qsTr("Today") : n === -1 ? qsTr("Yesterday") : n === 1 ? qsTr("Tomorrow")
-             : n < 0 ? qsTr("%1 days ago").arg(-n) : qsTr("In %1 days").arg(n)
-    }
-
     component DayTile: Tile {
         id: dayTile
         property string value
@@ -115,7 +108,7 @@ ScrollView {
                         Layout.fillWidth: true
                     }
                     Label {
-                        text: page.relDay(page.date, Api.today())
+                        text: Api.relDay(page.date, Api.today())
                         color: Api.muted
                         font.pixelSize: 12
                         Layout.fillWidth: true

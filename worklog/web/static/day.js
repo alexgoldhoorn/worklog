@@ -3,7 +3,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const H0 = 6, H1 = 22, PX = 48;
-  const LANES = [["work", "Work"], ["personal", "Personal"], ["family", "Family"], ["child", "Child"], ["blocks", "Blocks"]];
+  const LANES = [["work", "Work"], ["personal", "Personal"], ["family", "Family"], ["child", "Child"], ["blocks", "Week blocks"]];
   const laneOf = (ev) => ev.layer === "work" ? "work" : ev.layer === "protected" ? "blocks" : ev.layer === "duty" ? "child"
     : (ev.classification === "child" || ev.lane === "child") ? "child" : ev.lane === "family" ? "family" : "personal";
   const laneOn = (id) => { try { return localStorage.getItem("day.lane." + id) !== "0"; } catch (e) { return true; } };
@@ -21,6 +21,17 @@
   const h2 = (x) => { const m = Math.round(x * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`; };
   const shift = (iso, days) => { const d = new Date(iso + "T00:00"); d.setDate(d.getDate() + days); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const notice = (text, cls = "") => { const p = el("p", cls, text); $("notices").replaceChildren(p); };
+  // "Yesterday", "3 days ago", "In 2 days": where the shown day lies from today (the Qt app's Api.relDay)
+  const relDay = (iso, today) => {
+    const at = (s) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+    const n = Math.round((at(iso) - at(today)) / 86400000);
+    return n === 0 ? "Today" : n === -1 ? "Yesterday" : n === 1 ? "Tomorrow" : n < 0 ? `${-n} days ago` : `In ${n} days`;
+  };
+  // why the work calendar cannot be trusted for this day ("" when it can)
+  const mirrorNote = (d) => d.mirror.unknown ? "Work calendar unknown for this day: the mirror's last import ends " + (d.mirror.last_import_end || "never") + ". Paste or import before trusting the free slots."
+    : d.mirror.stale_days != null && d.mirror.stale_days > 7 ? `Work calendar PDF is ${d.mirror.stale_days} days old.` : "";
+  // the Sync tab's label: what waits to be written, else that the work calendar is out of date
+  const syncLabel = (d) => d.queue.length ? `Sync: ${d.queue.length}` : mirrorNote(d) ? "Sync: stale" : "Sync";
 
   const call = wl.call;
   const nextLoad = wl.sequence();
@@ -61,8 +72,12 @@
   function render() {
     const d = data;
     $("day-title").textContent = fmtDate(d.date);
+    $("day-sub").textContent = relDay(d.date, localIso());
     const full = d.sync && (d.sync.full_ran || d.sync.ran);
-    $("day-sub").textContent = full ? `snapshots ${String(full).replace("T", " ").slice(0, 16)} · google ${d.sync.google || "?"}${d.is_today ? "" : " · not today: no timer"}` : "no snapshots yet";
+    $("sync-line").textContent = full ? `snapshots ${String(full).replace("T", " ").slice(0, 16)} · google ${d.sync.google || "?"}` : "no snapshots yet";
+    // the three parts (Day · Work · Sync, switched by core.js) show once there is a day to show
+    $("views").hidden = false; $("day-body").hidden = false;
+    $("view-sync").textContent = syncLabel(d);
     const brand = $("brand-dot"); if (brand) brand.className = "dot " + (d.capacity.colour || "");
 
     const cap = $("capacity");
@@ -77,14 +92,19 @@
     renderTraining(d);
     renderWork(d);
     renderQueue(d);
-    $("counts").textContent = `Tasks: ${d.counts.done} done, ${d.counts.todo} to do · meetings left: ${d.counts.meetings_left == null ? "unknown" : d.counts.meetings_left}` + (d.counts.unclassified ? ` · ${d.counts.unclassified} family event${d.counts.unclassified === 1 ? "" : "s"} to classify` : "");
+    // the day in three figures (they were the counts line at the foot)
+    const c = d.counts;
+    $("tile-meetings").textContent = c.meetings_left == null ? "–" : String(c.meetings_left);
+    $("tile-tasks").textContent = `${c.done} / ${c.done + c.todo}`;
+    const cn = $("classify-note");
+    cn.hidden = !c.unclassified;
+    cn.textContent = c.unclassified ? (c.unclassified === 1 ? "1 family event to classify" : `${c.unclassified} family events to classify`) : "";
   }
 
   function renderTimeline(d) {
     const note = $("mirror-note");
-    if (d.mirror.unknown) { note.hidden = false; note.textContent = "Work calendar unknown for this day: the mirror's last import ends " + (d.mirror.last_import_end || "never") + ". Paste or import before trusting the free slots."; }
-    else if (d.mirror.stale_days != null && d.mirror.stale_days > 7) { note.hidden = false; note.textContent = `Work calendar PDF is ${d.mirror.stale_days} days old.`; }
-    else note.hidden = true;
+    note.textContent = mirrorNote(d);
+    note.hidden = !note.textContent;
     const tl = $("timeline");
     tl.replaceChildren();
     const now = d.now;
@@ -92,7 +112,7 @@
     const on = LANES.filter(([id]) => laneOn(id));
     const hh = d.household || {};
     const laneName = (id, name) => id === "child" && hh.child ? hh.child : name;
-    const ln = $("lane-child-name"); if (ln && hh.child) ln.textContent = hh.child;
+    const ln = $("lane-child"); if (ln && hh.child) ln.textContent = hh.child;
     // Phone: the five lanes side by side are unreadable at 390 px (and stacking them orders events by lane,
     // not by time), so render one list sorted by start with a lane pill per event and a "now" marker.
     const phone = PHONE.matches;
@@ -141,10 +161,10 @@
         if (ev.layer === "personal" && ev.creator_name && ev.lane !== "personal") label += ` · by ${ev.creator_name}`;
         if (ev.layer === "work" && ev.source && ev.source !== "pdf" && !/\.pdf$/i.test(ev.source)) label += ` · added by ${ev.source}`;
         if (ev.layer === "protected") label += ` · ${ev.state}`;
-        if (ev.pending) label += " · pending";
+        if (ev.pending) label += " · waiting to sync";
         box.appendChild(el("span", "", label));
         if (ev.layer === "personal" && ev.lane === "family" && ev.classification !== "unclassified" && !ev.pending) {
-          const chg = el("button", "tiny", "Whose? Change"); chg.type = "button";
+          const chg = el("button", "tiny", "Whose?"); chg.type = "button"; chg.setAttribute("aria-label", `Change whose "${ev.title}" is`);
           chg.onclick = () => { ev.classification = "unclassified"; renderTimeline(d); };
           box.appendChild(chg);
         }
@@ -192,7 +212,7 @@
         if (ev.layer === "duty") {
           const hh = d.household || { me: "me", partner: "partner" };
           const mine = ev.owner === hh.me;
-          const flip = el("button", "tiny", mine ? `${hh.partner} brings her` : "I bring her"); flip.type = "button";
+          const flip = el("button", "tiny", mine ? `${hh.partner} takes it` : "I take it"); flip.type = "button";
           flip.onclick = () => act(() => call("POST", "/api/day/owner", { date: d.date, start: ev.at, title: ev.title, owner: mine ? hh.partner : hh.me }));
           box.appendChild(flip);
         }
@@ -213,6 +233,7 @@
   function renderFirst(d) {
     const list = $("first-list");
     list.replaceChildren();
+    if (!d.first_things.length) list.appendChild(el("p", "hint", "Nothing first up."));
     for (const x of d.first_things) {
       const row = el("div", "item");
       if (x.kind === "duty") {
@@ -242,12 +263,21 @@
     }
   }
 
+  // the prep note of a meeting: minutes (0–480) and what to prepare, as the Qt app's dialog. Cancel and Esc save nothing.
   function promptPrep(d, meeting) {
-    const minutes = window.prompt(`Prep minutes for "${meeting.title}" at ${meeting.start}:`, meeting.prep ? meeting.prep.minutes : 30);
-    if (minutes === null) return;
-    const text = window.prompt("What to prepare:", meeting.prep ? meeting.prep.text : "");
-    if (text === null) return;
-    act(() => call("POST", "/api/day/prep", { date: d.date, start: meeting.start, title: meeting.title, minutes: Number(minutes), text }));
+    const dlg = $("prep-dialog");
+    $("prep-title").textContent = `Prep for ${meeting.title}`;
+    $("prep-minutes").value = meeting.prep ? meeting.prep.minutes : 30;
+    $("prep-text").value = meeting.prep ? meeting.prep.text || "" : "";
+    $("prep-problem").hidden = true;
+    $("prep-cancel").onclick = () => dlg.close();
+    dlg.querySelector("form").onsubmit = (e) => {
+      const minutes = wl.parseNum($("prep-minutes").value);
+      if (!(minutes >= 0 && minutes <= 480)) { e.preventDefault(); $("prep-problem").hidden = false; return; }
+      const text = $("prep-text").value.trim();
+      act(() => call("POST", "/api/day/prep", { date: d.date, start: meeting.start, title: meeting.title, minutes: Math.round(minutes), text }));
+    };
+    dlg.showModal();
   }
 
   // Plain text of a Todoist task (its markdown links flattened), cut to 80 chars, used as the block's project.
@@ -305,23 +335,34 @@
 
   function renderWork(d) {
     const w = d.work, s = w.status || {};
-    $("week-line").textContent = `worked this week: ${h2(w.week_h)} h (normal ${w.band[0]}–${w.band[1]} h)`;
+    $("week-v").textContent = h2(w.week_h);
+    $("week-s").textContent = `normal ${w.band[0]}–${w.band[1]} h`;
     const state = w.status ? (s.state || "stopped") : "none";
-    document.querySelector(".timer-row").hidden = !w.status;
     $("timer-dot").className = "dot " + state;
     $("timer-line").textContent = state === "working" ? `Working${s.block && s.block.type ? " · " + s.block.type : ""}${s.block && s.block.project ? " · " + s.block.project : ""} · since ${s.since || ""}`
       : state === "break" ? `Break · since ${s.since || ""}` : "Not working";
     renderChips(d);
     $("day-start").hidden = state === "working";
+    $("day-start").textContent = state === "break" ? "Resume" : "Start";
     $("day-pause").hidden = state !== "working";
     $("day-stop").hidden = state === "stopped";
     const expected = (s.today && s.today.expected_h) || 0;
     const pct = expected && w.today_h != null ? Math.min(100, (w.today_h / expected) * 100) : 0;
     $("hours-bar").style.width = pct + "%";
     const over = s.state === "working" && s.past_stop_min > 0;
-    $("work").classList.toggle("over", over);
-    const left = over ? `past your ${w.hard_stop} stop by ${h2(s.past_stop_min / 60)}` : w.left_before_stop_h == null ? "work calendar unknown, hours left not computed" : `about ${h2(w.left_before_stop_h)} left before the ${w.hard_stop} stop`;
-    $("hours-line").textContent = (w.today_h != null ? `Today ${h2(w.today_h)}${expected ? ` of ${h2(expected)}` : ""} · ` : "") + left;
+    // the timer is the hero of the Work part, tinted by its state as on the Timer page; no status, no hero
+    const hero = $("work");
+    hero.hidden = !w.status;
+    hero.className = "hero " + (over ? "over" : state === "none" ? "stopped" : state);
+    // the tiles: today (also on the Day part), what is left before the stop, the week
+    const today = w.today_h != null ? h2(w.today_h) : "–", of = expected ? `of ${h2(expected)}` : "";
+    $("hours-today").textContent = today; $("hours-of").textContent = of;
+    $("tile-worked").textContent = today; $("tile-worked-of").textContent = of;
+    $("tile-worked").classList.toggle("over", over);
+    $("stop-tile").classList.toggle("over", over);
+    $("stop-k").textContent = over ? "Past stop" : "Before stop";
+    $("stop-v").textContent = over ? h2(s.past_stop_min / 60) : w.left_before_stop_h == null ? "–" : h2(w.left_before_stop_h);
+    $("stop-s").textContent = !over && w.left_before_stop_h == null ? "work calendar unknown" : `stop ${w.hard_stop}`;
     const top = $("top3"); top.replaceChildren();
     if (!w.top3.length) top.appendChild(el("p", "hint", "No work tasks due today."));
     for (const t of w.top3) top.appendChild(taskRow(t));
@@ -355,16 +396,16 @@
   }
 
   function renderQueue(d) {
-    const card = $("queue-card"), list = $("queue");
+    const list = $("queue");
     list.replaceChildren();
-    card.hidden = !d.queue.length;
+    if (!d.queue.length) list.appendChild(el("p", "hint", "Nothing waiting."));
     for (const q of d.queue) {
       const row = el("div", "item");
       row.appendChild(el("span", "grow", q.line));
       row.appendChild(el("span", "pill " + (q.status === "failed" ? "red" : ""), q.status === "failed" ? `failed: ${q.error}` : "waiting to sync"));
       if (q.status === "failed") {
         const r = el("button", "tiny", "Retry"); r.type = "button"; r.onclick = () => act(() => call("POST", `/api/balance/queue/${q.id}/retry`));
-        const x = el("button", "tiny", "Dismiss"); x.type = "button"; x.onclick = () => act(() => call("POST", `/api/balance/queue/${q.id}/dismiss`));
+        const x = el("button", "tiny ghost", "Dismiss"); x.type = "button"; x.onclick = () => act(() => call("POST", `/api/balance/queue/${q.id}/dismiss`));
         row.append(r, x);
       }
       list.appendChild(row);
@@ -387,7 +428,13 @@
       } catch (e) { notice("Upload failed: " + e.message, "error"); }
       $("pdf-file").value = "";
     };
-    for (const [id] of LANES) { const cb = $("lane-" + id); cb.checked = laneOn(id); cb.onchange = () => { setLane(id, cb.checked); if (data) renderTimeline(data); }; }
+    // the lane chips: each calendar can be switched off (kept on this device)
+    for (const [id] of LANES) {
+      const chip = $("lane-" + id);
+      const paint = () => { const on = laneOn(id); chip.classList.toggle("on", on); chip.setAttribute("aria-pressed", String(on)); };
+      paint();
+      chip.onclick = () => { setLane(id, !laneOn(id)); paint(); if (data) renderTimeline(data); };
+    }
     PHONE.onchange = () => { if (data) renderTimeline(data); };
     $("day-start").onclick = (e) => wl.locked(e.currentTarget, () => act(() => { const body = pendingType ? { type: pendingType } : {}; pendingType = null; return call("POST", "/api/start", body); }));
     $("day-pause").onclick = (e) => wl.locked(e.currentTarget, () => act(() => call("POST", "/api/pause", {})));

@@ -262,16 +262,4 @@
   };
   wl.ensureClock().then(load);
 })();
-
-// The page in three parts (Week · Goals · Load), as the Qt app's Week screen: one shows at a time.
-(function weekViews() {
-  const setup = () => {
-    const tabs = [...document.querySelectorAll("#views button")];
-    const show = (view) => {
-      for (const t of tabs) { const on = t.dataset.view === view; t.classList.toggle("on", on); t.setAttribute("aria-pressed", String(on)); }
-      for (const pane of document.querySelectorAll("[data-pane]")) pane.hidden = pane.dataset.pane !== view;
-    };
-    for (const t of tabs) t.addEventListener("click", () => show(t.dataset.view));
-  };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setup); else setup();
-})();
+// The three parts (Week · Goals · Load) are switched by core.js (wl.showView), as on the Day page.

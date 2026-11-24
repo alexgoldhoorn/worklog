@@ -50,17 +50,54 @@ h2 small { text-transform: none; letter-spacing: 0; font-weight: 400; color: var
 .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--stop); transition: background .2s; }
 .brand .dot.working { background: var(--work); box-shadow: 0 0 0 3px var(--work-bg); }
 .brand .dot.break { background: var(--break); box-shadow: 0 0 0 3px var(--break-bg); }
-.top nav { display: flex; gap: 2px; margin-left: auto; height: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-.top nav::-webkit-scrollbar { display: none; }
-.top nav a { display: flex; align-items: center; flex: 0 0 auto; white-space: nowrap; padding: 0 12px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; font-size: .95rem; }
-.top nav a svg { width: 16px; height: 16px; margin-right: 5px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.top nav a.on { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: 8px 8px 0 0; }
-/* six tabs no longer fit a phone (2026-11-03): the nav scrolls, the active tab is kept in view by app.js,
-   and a soft fade on the right shows there is more until the user reaches the end */
-@media (max-width: 480px) {
-  .top .bar { gap: 10px; }
-  .top nav a { padding: 0 7px; font-size: .88rem; }
-  .top nav.more { mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent); }
+/* One <nav>, two layouts (base.html): a row of tabs in the header from 760 px, the app's bottom bar below that.
+   Nothing here may clip: the More list is a child of the nav. */
+.top nav { display: flex; gap: 2px; margin-left: auto; height: 100%; }
+.top nav > a, .more-btn { display: flex; align-items: center; flex: 0 0 auto; white-space: nowrap; padding: 0 10px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; font-size: .95rem; }
+.top nav > a svg, .more-btn svg { width: 16px; height: 16px; margin-right: 5px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.more-btn svg { stroke-width: 3; }
+.top nav > a.on { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: 8px 8px 0 0; }
+.more-menu { position: relative; flex: 0 0 auto; height: 100%; display: flex; align-items: center; }
+.more-btn { height: 100%; min-height: 0; border-width: 0 0 2px; border-radius: 0; background: transparent; }
+.more-btn.on, .more-btn[aria-expanded="true"] { color: var(--fg); }
+.more-btn.on { border-bottom-color: var(--accent); font-weight: 600; }
+.more-list { position: absolute; right: 0; top: calc(100% + 2px); min-width: 13rem; max-width: calc(100vw - 16px); padding: 4px; z-index: 10;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.more-list[hidden] { display: none; }
+.more-list a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 44px; color: var(--fg); text-decoration: none; border-radius: var(--r-sm); }
+.more-list a:hover, .more-list a:focus-visible { background: var(--line2); outline-offset: -2px; }
+.more-list a svg { width: 20px; height: 20px; flex: 0 0 auto; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.more-list a.on { color: var(--accent); font-weight: 600; }
+.more-list a.on svg { stroke: currentColor; }
+.more-list hr { height: 1px; margin: 4px 0; border: 0; background: var(--line); }
+/* the tabs at the top: More is a word with a caret, and Reports and Expected hours are tabs, not entries of its list */
+@media (min-width: 760px) {
+  .top .bar { gap: 12px; }
+  .more-btn svg, .more-list a.narrow-only { display: none; }
+  .more-btn::after { content: "▾"; margin-left: 5px; font-size: .8em; }
+}
+/* seven tabs with icons need about 780 px: without them below that */
+@media (min-width: 760px) and (max-width: 859.98px) { .top nav > a svg { display: none; } }
+/* the bottom bar, as in the app: Timer, Day, Week, Pomodoro, More; the header keeps the brand and the state dot */
+@media (max-width: 759.98px) {
+  main { padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 24px); }
+  .top nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0;
+    height: calc(56px + env(safe-area-inset-bottom, 0px)); margin: 0; padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+    background: var(--card); border-top: 1px solid var(--line); }
+  .top nav > a.wide-only { display: none; }
+  .top nav > a, .more-btn { position: relative; flex-direction: column; justify-content: center; gap: 2px; width: 100%; height: 100%; min-width: 0; padding: 0 2px;
+    border: 0; border-radius: 0; background: none; font-size: 12px; line-height: 1.2; overflow: hidden; }
+  .top nav > a svg, .more-btn svg { width: 22px; height: 22px; margin: 0; }
+  .top nav > a.on, .more-btn.on, .more-btn.on-narrow { color: var(--accent); font-weight: 700; background: none; border-radius: 0; }
+  .top nav > a.on::before, .more-btn.on::before, .more-btn.on-narrow::before { content: ""; position: absolute; top: 0; left: 30%; width: 40%; height: 3px;
+    border-radius: 1.5px; background: var(--accent); }
+  .more-btn[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .more-menu { position: static; }   /* the list is placed against the bar, not the button */
+  .more-list { top: auto; bottom: calc(100% + 2px); right: 4px; max-height: calc(100vh - 56px - env(safe-area-inset-bottom, 0px) - 16px); overflow-y: auto; }
+}
+/* touch: the bar steps aside while a text field has the focus (the keyboard would push it over the field) */
+@media (pointer: coarse) and (max-width: 759.98px) {
+  body:has(:is(input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=file], [type=range], [type=color]), textarea):focus) .top nav { display: none; }
 }
 
 /* ---- cards / notices ----------------------------------------------------- */
@@ -106,8 +143,6 @@ button.primary { background: var(--accent); color: var(--accent-fg); border-colo
 .hero.stopped { background: var(--card); border-color: var(--line); box-shadow: var(--shadow); }
 .hero.over { background: var(--amber-bg); border-color: color-mix(in srgb, var(--amber) 35%, transparent); }
 .hero.over .hero-label { color: var(--amber); }
-.card.over { border-color: var(--amber); }
-.card.over #hours-line { color: var(--amber); }
 .hero-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .hero-today { text-align: right; }
 .hero-label { font-weight: 700; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
@@ -490,9 +525,38 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
 .capacity.red { background: var(--red-bg); color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, transparent); } .capacity.red .cdot { background: var(--red); }
 .capacity.amber { background: var(--amber-bg); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 35%, transparent); } .capacity.amber .cdot { background: var(--amber); }
 .day-cols { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
-.day-timeline { flex: 999 1 560px; min-width: 0; padding: 12px 14px; }
-.day-side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
-.day-side .card { padding: 12px 14px; }
+.day-main { flex: 999 1 560px; min-width: 0; }
+.day-side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+/* the page in three parts (Day · Work · Sync), each shaped like the Timer: a hero, tiles, cards under h2 headings */
+.day [hidden] { display: none !important; }
+.day section.card { padding: 12px 14px; }
+.day section.card > p { margin: 0 0 8px; }
+.day h2 { margin: 16px 0 8px; display: flex; align-items: center; gap: 8px; }
+.day h2 .pill { text-transform: none; letter-spacing: 0; }
+.day .day-side h2 { margin: 4px 0 -4px; }
+.day .pane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; min-height: 36px; }
+.day .pane-head h2 { margin: 0; }
+.day [data-pane="work"], .day [data-pane="sync"] { max-width: 760px; }
+.day .hero { margin-bottom: 0; }
+.day [data-pane="work"] .hero { margin-bottom: 12px; }
+.day .hero .list { margin-top: 10px; }
+.day .hero .actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); margin: 12px 0 0; }
+.day .hero .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); flex: none; }
+.day .hero .dot.working { background: var(--work); } .day .hero .dot.break { background: var(--break); }
+.day .hero #day-chips { margin: 10px 0 0; }
+.day .totals { grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+.day .totals .v.over, .day .totals .over .v { color: var(--red); }
+.day .totals .bar-bg { margin-top: 6px; }
+@media (max-width: 480px) { .day #work-tiles { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) { .day .day-side { order: -1; } }   /* phone: first up and the figures before the long timeline */
+.day .lanes-toggle { margin-bottom: 8px; }
+.day .chip { cursor: pointer; }
+.day .btn.ghost { border-color: transparent; color: var(--muted); }
+.day .btn.ghost:hover { background: var(--line2); color: var(--fg); }
+.day .tiny.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+.classify.prep label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); margin: 8px 0; }
+.classify.prep .hint.warn { color: var(--amber); }
+.classify.prep .row-wrap { justify-content: flex-end; margin-top: 10px; }
 .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .card-head h3 { margin: 0; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
 .day h4 { margin: 12px 0 6px; font-size: .75rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
@@ -508,12 +572,8 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
 .day .pill.red { background: var(--red-bg); color: var(--red); } .day .pill.amber { background: var(--amber-bg); color: var(--amber); }
 .day .tiny { min-height: 28px; padding: 0 8px; font-size: .75rem; border-radius: 6px; margin-top: 4px; }
 .day .btn { display: inline-flex; align-items: center; font-size: .85rem; font-weight: 600; text-decoration: none; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; color: var(--fg); }
-.timer-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.timer-row .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--faint); flex: none; }
-.timer-row .dot.working { background: var(--work); } .timer-row .dot.break { background: var(--amber); }
 .bar-bg { height: 8px; background: var(--line2); border-radius: 4px; overflow: hidden; }
 .bar-fg { height: 8px; background: var(--accent); width: 0; transition: width .3s; }
-.day-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; color: var(--muted); font-size: .9rem; }
 /* timeline */
 .tl { display: flex; flex-direction: column; }
 .tl-row { display: grid; grid-template-columns: 48px 1fr; min-height: 44px; border-top: 1px solid var(--line2); }
@@ -543,8 +603,6 @@ body[data-page="day"] main, body[data-page="day"] .top .bar { max-width: 1240px;
 
 /* ===== day timeline lanes + overflow fixes (2026-11-03 review) ===== */
 .day .task .grow, .day .item .grow, .day .ms .grow, .goals li, .goals .ms span { overflow-wrap: anywhere; min-width: 0; }
-.lanes-toggle label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; padding: 6px 2px; }
-.lanes-toggle input { width: 18px; height: 18px; margin: 0; }
 .legend .lg.family::before { background: var(--pers-bg); border: 1px solid var(--pers); opacity: .6; }
 .legend .lg.blocks::before { background: var(--amber-bg); border: 1px solid var(--amber); }
 .tl-head { display: grid; grid-template-columns: 48px repeat(auto-fit, minmax(0, 1fr)); gap: 0 4px; margin-bottom: 4px; }
@@ -637,7 +695,7 @@ button.help:hover, button.help:focus-visible { color: var(--fg); border-color: v
 .wc-row.cancelled .title { text-decoration: line-through; color: var(--muted); }
 .workcal .item.warn .title { color: var(--amber); }
 .workcal textarea.in { width: 100%; font: inherit; }
-.day .card-head h3 a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+.day h2 a, .day .card-head h3 a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
 
 /* Day page: type chips under the timer row */
 #day-chips { margin: 8px 0; }
@@ -662,25 +720,10 @@ dialog.split input.time { width: 5.2em; }
   max-width: calc(100vw - 24px); padding: 8px 12px; border-radius: var(--r-sm); background: var(--fg); color: var(--bg); font-size: .9rem; box-shadow: var(--shadow); }
 .undo-bar[hidden] { display: none; }
 .undo-bar button { border-color: transparent; }
+/* above the bottom bar (the navigation below 760 px) */
+@media (max-width: 759.98px) { .undo-bar { bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 12px); } }
 
 /* ===== review fixes ===== */
-/* More menu: Add or find a date, Move an event, Work calendar, Settings (a sibling of the scrolling nav, so it is never clipped) */
-.more-menu { position: relative; flex: 0 0 auto; height: 100%; display: flex; align-items: center; }
-.more-btn { display: flex; align-items: center; gap: 5px; height: 100%; min-height: 0; padding: 0 12px; border: 0; border-bottom: 2px solid transparent;
-  border-radius: 0; background: transparent; color: var(--muted); font-size: .95rem; }
-.more-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
-.more-btn.on, .more-btn[aria-expanded="true"] { color: var(--fg); }
-.more-btn.on { border-bottom-color: var(--accent); font-weight: 600; }
-.more-list { position: absolute; right: 0; top: calc(100% + 2px); min-width: 13rem; max-width: calc(100vw - 16px); padding: 4px; z-index: 10;
-  background: var(--card); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
-.more-list[hidden] { display: none; }
-.more-list a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; min-height: 44px; color: var(--fg); text-decoration: none; border-radius: var(--r-sm); }
-.more-list a:hover, .more-list a:focus-visible { background: var(--line2); outline-offset: -2px; }
-.more-list a svg { width: 20px; height: 20px; flex: 0 0 auto; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.more-list a.on { color: var(--accent); font-weight: 600; }
-.more-list a.on svg { stroke: currentColor; }
-@media (max-width: 480px) { .more-btn { padding: 0 8px; font-size: .88rem; } .more-btn svg { display: none; } }
-
 /* block cells are keyboard targets on the Timer */
 .grid td[data-field]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
 .grid td.bill[data-field] { cursor: pointer; }

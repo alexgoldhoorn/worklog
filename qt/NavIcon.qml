@@ -8,6 +8,7 @@ Item {
     property string name
     property color color: Api.fg
     property real size: 22
+    property real strokeWidth: 2   // "more" (three dots) uses 3
 
     readonly property var paths: ({
         "timer": "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7v5l3 2",
@@ -18,6 +19,7 @@ Item {
         "expected": "M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4 M9 15l2 2l4-4",
         "find": "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M16 16l4 4",
         "settings": "M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4",
+        "more": "M5 12h.01 M12 12h.01 M19 12h.01",
         "add": "M12 5v14 M5 12h14"
     })
 
@@ -32,7 +34,7 @@ Item {
         preferredRendererType: Shape.CurveRenderer
         ShapePath {
             strokeColor: icon.color
-            strokeWidth: 2
+            strokeWidth: icon.strokeWidth
             fillColor: "transparent"
             capStyle: ShapePath.RoundCap
             joinStyle: ShapePath.RoundJoin

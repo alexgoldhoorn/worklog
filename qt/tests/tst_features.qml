@@ -258,7 +258,7 @@ TestCase {
         p.show("")
         tryVerify(() => p.day.date === today, 5000)
         // the example household's school runs are on the timeline of a weekday
-        verify(p.countsLine(p.day).indexOf("Tasks:") === 0)
+        verify(/^\d+ \/ \d+$/.test(p.tasksTile(p.day)), p.tasksTile(p.day))
     }
 
     function test_planner_lane_rules() {
@@ -322,5 +322,64 @@ TestCase {
         compare(p.mirrorNote({ mirror: { unknown: false, stale_days: 3 } }), "")
         verify(p.mirrorNote({ mirror: { unknown: false, stale_days: 9 } }).indexOf("9 days") > 0)
         compare(p.subLine({ sync: {}, is_today: true }), "no snapshots yet")
+    }
+
+    // ---- the three parts (Day · Work · Sync) ------------------------------------------------------------
+
+    function test_planner_sync_label_says_what_waits() {
+        const p = loadPlanner()
+        const fresh = { unknown: false, stale_days: 1 }
+        compare(p.syncLabel(null), "Sync")
+        compare(p.syncLabel({ queue: [], mirror: fresh }), "Sync")
+        compare(p.syncLabel({ queue: [{ id: 1 }, { id: 2 }], mirror: fresh }), "Sync: 2")
+        compare(p.syncLabel({ queue: [], mirror: { unknown: false, stale_days: 9 } }), "Sync: stale")
+        compare(p.syncLabel({ queue: [], mirror: { unknown: true, last_import_end: null } }), "Sync: stale")
+        // what waits wins over an old export
+        compare(p.syncLabel({ queue: [{ id: 1 }], mirror: { unknown: true } }), "Sync: 1")
+    }
+
+    function test_planner_tiles_replace_the_counts_line() {
+        const p = loadPlanner()
+        compare(p.meetingsTile({ counts: { meetings_left: 3 } }), "3")
+        compare(p.meetingsTile({ counts: { meetings_left: null } }), "–")
+        compare(p.tasksTile({ counts: { done: 2, todo: 3 } }), "2 / 5")
+        compare(p.classifyLine({ counts: { unclassified: 0 } }), "")
+        compare(p.classifyLine({ counts: { unclassified: 1 } }), "1 family event to classify")
+        compare(p.classifyLine({ counts: { unclassified: 2 } }), "2 family events to classify")
+        const w = { hard_stop: "18:00", left_before_stop_h: 4.5, status: { state: "working", past_stop_min: 0 } }
+        compare(p.stopTile({ work: w }), "4 h 30")
+        compare(p.stopNote({ work: w }), "stop 18:00")
+        compare(p.stopTile({ work: { hard_stop: "18:00", left_before_stop_h: null } }), "–")
+        compare(p.stopNote({ work: { hard_stop: "18:00", left_before_stop_h: null } }), "work calendar unknown")
+        compare(p.stopTile({ work: { hard_stop: "18:00", left_before_stop_h: 0, status: { state: "working", past_stop_min: 20 } } }), "0 h 20")
+    }
+
+    // one part shows at a time; stepping a day keeps the part, and it starts on Day
+    function test_planner_view_gates_the_parts() {
+        const p = loadPlanner()
+        compare(p.view, "day")
+        const shown = (title) => {
+            const hits = []
+            const walk = (item) => {
+                if (item.title === title && item.visible)
+                    hits.push(item)
+                for (const c of item.children)
+                    walk(c)
+            }
+            walk(p.contentItem)
+            return hits.length > 0
+        }
+        verify(shown("Timeline") && shown("Training"))
+        verify(!shown("Top 3 tasks") && !shown("Milestones") && !shown("Pending writes"))
+        p.view = "work"
+        verify(shown("Top 3 tasks") && shown("Milestones"))
+        verify(!shown("Timeline") && !shown("Snapshots"))
+        p.view = "sync"
+        verify(shown("Snapshots") && shown("Work calendar") && shown("Pending writes"))
+        verify(!shown("Timeline") && !shown("Top 3 tasks"))
+        const today = p.day.date
+        p.step(1)
+        tryVerify(() => p.day.date === Api.addDays(today, 1), 5000)
+        compare(p.view, "sync")
     }
 }

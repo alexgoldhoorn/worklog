@@ -20,27 +20,33 @@
 <header class="top">
   <div class="bar">
     <a class="brand" href="/"><span class="dot" id="brand-dot"></span>worklog</a>
-    {# The first six tabs keep the names, order and icon paths of the Qt app's navigation (qt/Main.qml, qt/NavIcon.qml): do not rename or reorder them.
-       Qt shows Timer · Week · Pomodoro as bottom buttons and Reports · Expected hours · Add or find a date · Settings in its More menu, and has no Day page;
-       the web has Day as its own tab, and keeps Add or find a date, Move an event, Work calendar and Settings in the More menu after the tabs. #}
+    {# One navigation, two layouts (style.css). Names, order and icon paths are those of the Qt app (qt/Main.qml, qt/NavIcon.qml): change them in both.
+       Below 760 px it is the app's bottom bar: Timer · Day · Week · Pomodoro · More, and More opens upward with
+       Reports · Expected hours · Add or find a date · Move an event · Work calendar · Settings (the app's More menu has no Move an event or Work calendar).
+       From 760 px it is the row of tabs at the top: Timer · Day · Week · Pomodoro · Reports · Expected hours · More, and More holds the rest.
+       Reports and Expected hours are therefore there twice: as tabs (wide-only) and in the list (narrow-only). #}
+    {% set more_on = page in ("find", "move", "workcal", "settings") %}
+    {% set more_on_narrow = page in ("reports", "days") %}
     <nav>
       <a href="/timer" {% if page == "timer" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7v5l3 2"/></svg>Timer</a>
+      <a href="/" {% if page == "day" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8z M12 2v2 M12 20v2 M2 12h2 M20 12h2 M5 5l1.5 1.5 M17.5 17.5L19 19 M5 19l1.5-1.5 M17.5 6.5L19 5"/></svg>Day</a>
       <a href="/week" {% if page == "week" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4"/></svg>Week</a>
       <a href="/pomodoro" {% if page == "pomodoro" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M12 8c0-2 1-4 3-5 M8.5 5.5l3.5 2.5l3.5-2.5"/></svg>Pomodoro</a>
-      <a href="/" {% if page == "day" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8z M12 2v2 M12 20v2 M2 12h2 M20 12h2 M5 5l1.5 1.5 M17.5 17.5L19 19 M5 19l1.5-1.5 M17.5 6.5L19 5"/></svg>Day</a>
-      <a href="/reports" {% if page == "reports" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16 M7 20v-6 M12 20V6 M17 20v-9"/></svg>Reports</a>
-      <a href="/days" {% if page == "days" %}class="on"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4 M9 15l2 2l4-4"/></svg>Expected hours</a>
-    </nav>
-    {% set more_on = page in ("find", "move", "workcal", "settings") %}
-    <div class="more-menu">
-      <button type="button" id="more-btn" class="more-btn{% if more_on %} on{% endif %}" aria-haspopup="true" aria-expanded="false" aria-controls="more-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5h.01 M12 12h.01 M12 19h.01"/></svg>More</button>
-      <div id="more-list" class="more-list" role="menu" aria-label="More" hidden>
-        <a role="menuitem" href="/find" {% if page == "find" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M16 16l4 4"/></svg>Add or find a date</a>
-        <a role="menuitem" href="/move" {% if page == "move" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h14 M13 6l6 6l-6 6"/></svg>Move an event</a>
-        <a role="menuitem" href="/workcal" {% if page == "workcal" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4z M9 8V5h6v3 M4 13h16"/></svg>Work calendar</a>
-        <a role="menuitem" href="/settings" {% if page == "settings" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4"/></svg>Settings</a>
+      <a href="/reports" class="wide-only{% if page == "reports" %} on{% endif %}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16 M7 20v-6 M12 20V6 M17 20v-9"/></svg>Reports</a>
+      <a href="/days" class="wide-only{% if page == "days" %} on{% endif %}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4 M9 15l2 2l4-4"/></svg>Expected hours</a>
+      <div class="more-menu">
+        <button type="button" id="more-btn" class="more-btn{% if more_on %} on{% endif %}{% if more_on_narrow %} on-narrow{% endif %}" aria-haspopup="true" aria-expanded="false" aria-controls="more-list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01 M12 12h.01 M19 12h.01"/></svg>More</button>
+        <div id="more-list" class="more-list" role="menu" aria-label="More" hidden>
+          <a role="menuitem" href="/reports" class="narrow-only{% if page == "reports" %} on{% endif %}"{% if page == "reports" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16 M7 20v-6 M12 20V6 M17 20v-9"/></svg>Reports</a>
+          <a role="menuitem" href="/days" class="narrow-only{% if page == "days" %} on{% endif %}"{% if page == "days" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4z M4 10h16 M8 3v4 M16 3v4 M9 15l2 2l4-4"/></svg>Expected hours</a>
+          <a role="menuitem" href="/find" {% if page == "find" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14z M16 16l4 4"/></svg>Add or find a date</a>
+          <a role="menuitem" href="/move" {% if page == "move" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h14 M13 6l6 6l-6 6"/></svg>Move an event</a>
+          <a role="menuitem" href="/workcal" {% if page == "workcal" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v11H4z M9 8V5h6v3 M4 13h16"/></svg>Work calendar</a>
+          <hr role="separator">
+          <a role="menuitem" href="/settings" {% if page == "settings" %}class="on" aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10 M18 7h2 M4 17h2 M10 17h10 M16 5v4 M8 15v4"/></svg>Settings</a>
+        </div>
       </div>
-    </div>
+    </nav>
   </div>
 </header>
 <main>

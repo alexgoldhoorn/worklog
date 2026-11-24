@@ -35,8 +35,9 @@ ApplicationWindow {
         }
     }
     // ---- the Back key (Android) ---------------------------------------------------------------
-    // Qt 6.12 delivers Back to QML as Key_Back and does not call onClosing for it. From Week, Pomodoro or a
-    // screen of the More menu it leads to the Timer; on the Timer the system gets it (home screen).
+    // Qt 6.12 delivers Back to QML as Key_Back and does not call onClosing for it. From any other screen
+    // (Day, Week, Pomodoro or one of the More menu) it leads to the Timer; on the Timer the system gets it
+    // (home screen). The open More menu holds the focus and closes itself on Back.
     // True when it moved somewhere. The tests call it.
     function goBack() {
         if (window.current === window.navTimer)
@@ -128,12 +129,12 @@ ApplicationWindow {
     onHeightChanged: revealTimer.restart()
 
     // ---- navigation -----------------------------------------------------------
-    // Positions in the StackLayout below. The first three have a button at the bottom; the rest are
-    // reached through the header's More menu and get a back arrow. Update these when a page is inserted.
+    // Positions in the StackLayout below. The first four have a button in the bottom bar; the rest are
+    // reached through the bar's fifth button, More, which opens a menu. Update these when a page is inserted.
     readonly property int navTimer: 0
-    readonly property int navWeek: 1
-    readonly property int navPomodoro: 2
-    readonly property int navDay: 3
+    readonly property int navDay: 1
+    readonly property int navWeek: 2
+    readonly property int navPomodoro: 3
     readonly property int navReports: 4
     readonly property int navExpected: 5
     readonly property int navFind: 6
@@ -141,9 +142,18 @@ ApplicationWindow {
     property int current: navTimer
     readonly property bool inMore: current > navPomodoro
     // the same names, in the same order, as the web's navigation
-    readonly property var titles: [qsTr("Timer"), qsTr("Week"), qsTr("Pomodoro"), qsTr("Day"), qsTr("Reports"),
+    readonly property var titles: [qsTr("Timer"), qsTr("Day"), qsTr("Week"), qsTr("Pomodoro"), qsTr("Reports"),
                                    qsTr("Expected hours"), qsTr("Add or find a date"), qsTr("Settings")]
-    readonly property var icons: ["timer", "week", "pomodoro", "day", "reports", "expected", "find", "settings"]
+    readonly property var icons: ["timer", "day", "week", "pomodoro", "reports", "expected", "find", "settings"]
+
+    // the More menu never stays open over the keyboard, the lock screen or a hidden window
+    function closeMore() { moreMenu.close() }
+    onKeyboardUpChanged: if (keyboardUp) closeMore()
+    onVisibleChanged: if (!visible) closeMore()
+    Connections {
+        target: Api
+        function onLockedChanged() { if (Api.locked) window.closeMore() }
+    }
 
     header: Rectangle {
         color: Api.card
@@ -158,15 +168,9 @@ ApplicationWindow {
             anchors.rightMargin: window.safe.right + 4
             spacing: 0
 
+            // the Timer screen: step a day, or tap the date for the calendar
             AppIconButton {
-                visible: window.inMore
-                text: "‹"
-                focusPolicy: window.tapFocus
-                name: qsTr("Back to the Timer")
-                onClicked: window.current = window.navTimer
-            }
-            // the Today screen: step a day, or tap the date for the calendar
-            AppIconButton {
+                id: prevDay
                 visible: window.current === window.navTimer
                 text: "‹"
                 focusPolicy: window.tapFocus
@@ -193,6 +197,7 @@ ApplicationWindow {
                 name: qsTr("Next day")
                 onClicked: todayScreen.step(1)
             }
+            // every other screen: its title (no back arrow: the bottom bar and the Back key lead away)
             Label {
                 visible: window.current !== window.navTimer
                 text: window.titles[window.current] || ""
@@ -200,55 +205,31 @@ ApplicationWindow {
                 font.weight: Font.DemiBold
                 color: Api.fg
                 elide: Text.ElideRight
-                leftPadding: window.inMore ? 4 : 12
+                verticalAlignment: Text.AlignVCenter
+                leftPadding: 12
+                rightPadding: 12
                 Layout.fillWidth: true
-            }
-            AppIconButton {
-                text: "⋮"
-                focusPolicy: window.tapFocus
-                name: qsTr("More screens")
-                tipSuppressed: moreMenu.visible
-                onClicked: moreMenu.open()
-                Menu {
-                    id: moreMenu
-                    y: parent.height
-                    // an opaque themed panel (the default one let the page show through) and rows of one height
-                    background: Rectangle {
-                        implicitWidth: 240
-                        color: Api.card
-                        border.color: Api.line
-                        radius: 6
-                    }
-                    MoreItem { text: window.titles[window.navDay]; iconName: window.icons[window.navDay]; onTriggered: window.current = window.navDay }
-                    MoreItem { text: window.titles[window.navReports]; iconName: window.icons[window.navReports]; onTriggered: window.current = window.navReports }
-                    MoreItem { text: window.titles[window.navExpected]; iconName: window.icons[window.navExpected]; onTriggered: window.current = window.navExpected }
-                    MoreItem { text: window.titles[window.navFind]; iconName: window.icons[window.navFind]; onTriggered: window.current = window.navFind }
-                    MenuSeparator {
-                        padding: 0
-                        topPadding: 4
-                        bottomPadding: 4
-                        contentItem: Rectangle { implicitHeight: 1; color: Api.line }
-                    }
-                    MoreItem { text: window.titles[window.navSettings]; iconName: window.icons[window.navSettings]; onTriggered: window.current = window.navSettings }
-                }
+                Layout.preferredHeight: prevDay.implicitHeight   // the header is as tall as on the Timer
             }
         }
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Api.line }
     }
 
+    // The bottom bar: Timer · Day · Week · Pomodoro · More. On a wide window it stays at the bottom, its
+    // five buttons centred and no wider than 560 px.
     footer: Rectangle {
+        id: footerBar
         color: Api.card
         visible: !window.keyboardUp
         implicitHeight: window.keyboardUp ? 0 : navRow.implicitHeight + window.safe.bottom
+        readonly property real room: width - window.safe.left - window.safe.right
 
         Rectangle { width: parent.width; height: 1; color: Api.line }
         RowLayout {
             id: navRow
             anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.leftMargin: window.safe.left
-            anchors.rightMargin: window.safe.right
+            width: Math.min(footerBar.room, 560)
+            x: window.safe.left + (footerBar.room - width) / 2
             spacing: 0
             NavButton {
                 text: window.titles[window.navTimer]
@@ -257,6 +238,16 @@ ApplicationWindow {
                 onClicked: {
                     todayScreen.show("")   // a second tap comes back from another day
                     window.current = window.navTimer
+                }
+            }
+            NavButton {
+                text: window.titles[window.navDay]
+                iconName: window.icons[window.navDay]
+                active: window.current === window.navDay
+                onClicked: {
+                    if (window.current === window.navDay)
+                        plannerScreen.show("")   // a second tap comes back to today
+                    window.current = window.navDay
                 }
             }
             NavButton {
@@ -271,13 +262,60 @@ ApplicationWindow {
                 active: window.current === window.navPomodoro
                 onClicked: window.current = window.navPomodoro
             }
+            // More: the screens without a button of their own. Selected while one of them shows; a tap
+            // opens the menu (again, on such a screen), a tap while it is open only closes it.
+            NavButton {
+                id: moreButton
+                text: qsTr("More")
+                iconName: "more"
+                iconStroke: 3
+                active: window.inMore
+                held: moreMenu.visible
+                focusPolicy: window.tapFocus
+                Accessible.name: qsTr("More screens")
+                Accessible.role: Accessible.ButtonMenu
+                // the press that lands on the button while the menu is open closes the menu (a press
+                // outside it); the click that follows must not open it again
+                property bool wasOpen: false
+                onPressed: wasOpen = moreMenu.visible || justClosed.running
+                onClicked: {
+                    if (!wasOpen)
+                        moreMenu.open()
+                }
+                Timer { id: justClosed; interval: 300 }
+                Menu {
+                    id: moreMenu
+                    // rises above the button, its right edge on the button's (the bar's) right edge
+                    x: moreButton.width - width
+                    y: -height - 4
+                    onAboutToHide: justClosed.restart()
+                    // an opaque themed panel (the default one let the page show through) and rows of one height
+                    background: Rectangle {
+                        implicitWidth: 240
+                        color: Api.card
+                        border.color: Api.line
+                        radius: 6
+                    }
+                    MoreItem { text: window.titles[window.navReports]; iconName: window.icons[window.navReports]; current: window.current === window.navReports; onTriggered: window.current = window.navReports }
+                    MoreItem { text: window.titles[window.navExpected]; iconName: window.icons[window.navExpected]; current: window.current === window.navExpected; onTriggered: window.current = window.navExpected }
+                    MoreItem { text: window.titles[window.navFind]; iconName: window.icons[window.navFind]; current: window.current === window.navFind; onTriggered: window.current = window.navFind }
+                    MenuSeparator {
+                        padding: 0
+                        topPadding: 4
+                        bottomPadding: 4
+                        contentItem: Rectangle { implicitHeight: 1; color: Api.line }
+                    }
+                    MoreItem { text: window.titles[window.navSettings]; iconName: window.icons[window.navSettings]; current: window.current === window.navSettings; onTriggered: window.current = window.navSettings }
+                }
+            }
         }
     }
 
-    // an entry of the More menu, with its icon
+    // an entry of the More menu, with its icon; `current` marks the screen that is showing
     component MoreItem: MenuItem {
         id: more
         property string iconName
+        property bool current: false
         implicitHeight: 48
         topPadding: 0
         bottomPadding: 0
@@ -285,8 +323,13 @@ ApplicationWindow {
         rightPadding: 16
         contentItem: RowLayout {
             spacing: 12
-            NavIcon { name: more.iconName; color: Api.muted; size: 20 }
-            Label { text: more.text; color: Api.fg; Layout.fillWidth: true }
+            NavIcon { name: more.iconName; color: more.current ? Api.accent : Api.muted; size: 20 }
+            Label {
+                text: more.text
+                color: more.current ? Api.accent : Api.fg
+                font.weight: more.current ? Font.DemiBold : Font.Normal
+                Layout.fillWidth: true
+            }
         }
     }
 
@@ -294,7 +337,9 @@ ApplicationWindow {
     component NavButton: AbstractButton {
         id: nav
         property bool active: false
+        property bool held: false          // shows the pressed tint (More, while its menu is open)
         property string iconName
+        property real iconStroke: 2
         implicitHeight: 56
         Layout.fillWidth: true
         Layout.preferredWidth: 1
@@ -307,20 +352,25 @@ ApplicationWindow {
                 spacing: 2
                 NavIcon {
                     name: nav.iconName
+                    strokeWidth: nav.iconStroke
                     color: nav.active ? Api.accent : Api.muted
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
                 Label {
                     text: nav.text
                     color: nav.active ? Api.accent : Api.muted
-                    font.pixelSize: 12
+                    // five columns of 64 dp on a 320 dp screen: "Pomodoro" needs the smaller size
+                    // (a column under 72 px is a window under 360 px)
+                    font.pixelSize: nav.width < 72 ? 11 : 12
                     font.weight: nav.active ? Font.Bold : Font.Normal
+                    elide: Text.ElideRight
+                    width: Math.min(implicitWidth, Math.max(0, nav.width - 4))
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
             }
         }
         background: Rectangle {
-            color: nav.down ? Qt.alpha(Api.accent, 0.14) : nav.hovered ? Qt.alpha(Api.accent, 0.06) : "transparent"
+            color: nav.down || nav.held ? Qt.alpha(Api.accent, 0.14) : nav.hovered ? Qt.alpha(Api.accent, 0.06) : "transparent"
             Rectangle {
                 visible: nav.active
                 anchors.top: parent.top
@@ -429,6 +479,17 @@ ApplicationWindow {
             // a hidden page's text field keeps the focus and would swallow the next page's shortcuts
             onCurrentIndexChanged: stack.forceActiveFocus()
             TodayPage { id: todayScreen }
+            PlannerPage {
+                id: plannerScreen
+                onAddRequested: {
+                    findPage.mode = "add"
+                    window.current = window.navFind
+                }
+                onFindRequested: {
+                    findPage.mode = "find"
+                    window.current = window.navFind
+                }
+            }
             WeekPage {
                 onAddToCalendar: {
                     findPage.mode = "add"
@@ -439,16 +500,6 @@ ApplicationWindow {
                 onAttention: {
                     window.current = window.navPomodoro
                     window.alert(0)   // flash the taskbar entry until the window is activated
-                }
-            }
-            PlannerPage {
-                onAddRequested: {
-                    findPage.mode = "add"
-                    window.current = window.navFind
-                }
-                onFindRequested: {
-                    findPage.mode = "find"
-                    window.current = window.navFind
                 }
             }
             ReportsPage {}

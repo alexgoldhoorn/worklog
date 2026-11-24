@@ -244,11 +244,23 @@
     };
   })();
 
+  // ---- a page in parts ---------------------------------------------------------------
+  // Week (Week · Goals · Load) and Day (Day · Work · Sync), as the Qt app's screens: the buttons of `#views` carry
+  // `data-view`, the parts `data-pane`, and one part shows at a time. The choice is not remembered.
+  function showView(view) {
+    for (const t of document.querySelectorAll("#views button")) { const on = t.dataset.view === view; t.classList.toggle("on", on); t.setAttribute("aria-pressed", String(on)); }
+    for (const pane of document.querySelectorAll("[data-pane]")) pane.hidden = pane.dataset.pane !== view;
+  }
+  function bindViews() {
+    for (const t of document.querySelectorAll("#views button")) t.addEventListener("click", () => showView(t.dataset.view));
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindViews); else bindViews();
+
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => { /* no worker: online only */ }); });
   }
   document.addEventListener("DOMContentLoaded", () => { if (queue.waiting()) queue.flush(); });
 
   window.wl = { call, pad, isoDate, serverNow, serverAt, atString, syncClock, ensureClock, today, nowHHMM, minutesSince, addDays, dayLabel, TIME_MSG, normTime, isTime, parseNum, bindTimes, sequence, esc, locked, store,
-    currency, setCurrency, loadCurrency, cachedStatus, cacheStatus, net, renderOffline, queue, newId };
+    currency, setCurrency, loadCurrency, cachedStatus, cacheStatus, net, renderOffline, queue, newId, showView };
 })();
