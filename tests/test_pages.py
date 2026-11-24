@@ -11,7 +11,7 @@ import pytest
                    "rate", "rate-unit", "rate-hint", "basis", "basis-seg", "basis-hint", "pref-shortcuts", "currency",
                    "clients-list", "client-form", "client-new", "client-new-bill", "client-add", "clients-msg",
                    "breaks-list", "break-form", "break-new", "break-add", "breaks-msg", "pref-idle", "pref-idle-min"]),
-    ("/", ["day-chips", "day-start", "timeline", "top3", "day-add", "day-find", "find-dialog", "find-form", "find-close", "f-date"]),
+    ("/day", ["day-chips", "day-start", "timeline", "top3", "day-add", "day-find", "find-dialog", "find-form", "find-close", "f-date"]),
     ("/find", ["find-form", "f-what", "f-date", "f-start", "f-end", "find-submit", "options", "put-btn", "find-notices"]),
     ("/week", ["propose", "outlook", "add", "add-cal"]),
     ("/reports", ["group", "start", "end", "invoice", "charts", "reports-notices", "import-form", "import-result"]),
@@ -32,12 +32,12 @@ def test_static_served(client):
 
 def test_static_urls_are_versioned_and_revalidated(client):
     from worklog.web.pages import STATIC_VERSION
-    html = client.get("/").text
+    html = client.get("/day").text
     assert f'href="/static/style.css?v={STATIC_VERSION}"' in html
     assert f'src="/static/app.js?v={STATIC_VERSION}"' in html and f'src="/static/day.js?v={STATIC_VERSION}"' in html
     assert len(STATIC_VERSION) == 10
     assert client.get("/static/style.css").headers["cache-control"] == "no-cache"
-    assert client.get("/").headers["cache-control"] == "no-cache"
+    assert client.get("/day").headers["cache-control"] == "no-cache"
     assert "cache-control" not in client.get("/healthz").headers
 
 
@@ -52,12 +52,12 @@ def test_day_table_has_billable_column(client):
 
 def test_pomodoro_script_only_on_pomodoro_page(client):
     assert "/static/pomodoro.js" in client.get("/pomodoro").text
-    assert "/static/pomodoro.js" not in client.get("/").text
+    assert "/static/pomodoro.js" not in client.get("/day").text
     assert client.get("/static/pomodoro.js").status_code == 200
 
 
 def test_root_is_day_page(client):
-    r = client.get("/")
+    r = client.get("/day")
     assert r.status_code == 200 and 'id="day-root"' in r.text and 'id="blocks"' not in r.text
     assert '/static/day.js' in r.text
 
@@ -68,8 +68,8 @@ def test_timer_page_is_old_index(client):
 
 
 def test_day_page_nav_marks_day(client):
-    r = client.get("/")
-    assert re.search(r'<a href="/" class="on"><svg[^>]*>.*?</svg>Day</a>', r.text)
+    r = client.get("/day")
+    assert re.search(r'<a href="/day" class="on"><svg[^>]*>.*?</svg>Day</a>', r.text)
 
 
 def _tabs(html):
@@ -126,12 +126,14 @@ def test_settings_page_and_links_where_settings_used_to_be(client):
     assert "basisSelect" not in js and "/settings#week-basis" in js
 
 
-def test_root_opens_the_day_planner_only_when_it_is_configured(app, client):
-    assert client.get("/", follow_redirects=False).status_code == 200
-    app.state.settings.balance_db_path = None
+def test_root_opens_the_timer_and_the_day_planner_only_when_it_is_configured(app, client):
     r = client.get("/", follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/timer"   # the site opens on the Timer
+    assert client.get("/day", follow_redirects=False).status_code == 200
+    app.state.settings.balance_db_path = None
+    r = client.get("/day", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/timer"
-    assert client.get("/").status_code == 200 and 'id="blocks"' in client.get("/").text   # followed: the Timer, no error page
+    assert client.get("/day").status_code == 200 and 'id="blocks"' in client.get("/day").text   # followed: the Timer, no error page
 
 
 def test_core_script_loads_first_and_is_served(client):
@@ -177,7 +179,7 @@ def test_timer_navigation_stays_on_timer(client):
 
 
 def test_day_page_has_calendar_lane_toggles_and_markdown_helper(client):
-    r = client.get("/").text
+    r = client.get("/day").text
     for lane in ("work", "personal", "family", "child", "blocks"):
         assert f'id="lane-{lane}"' in r
     assert "protected" not in r.lower()
@@ -203,12 +205,12 @@ def test_move_and_find_pages_render(client):
     r = client.get("/find")
     assert r.status_code == 200 and 'id="find-root"' in r.text and "/static/find.js" in r.text
     assert client.get("/static/move.js").status_code == 200 and client.get("/static/find.js").status_code == 200
-    nav = _tabs(client.get("/").text)
+    nav = _tabs(client.get("/day").text)
     assert "/move" not in nav and "/find" not in nav                      # in the More list, not among the tabs
 
 
 def test_day_and_week_scripts_link_to_move_and_find(client):
-    assert 'href="/find"' in client.get("/").text and "/move?" in client.get("/static/day.js").text
+    assert 'href="/find"' in client.get("/day").text and "/move?" in client.get("/static/day.js").text
     assert "/move?" in client.get("/static/week.js").text
 
 
@@ -218,11 +220,11 @@ def test_workcal_page_renders(client):
     for i in ("wc-banner", "wc-week", "wc-paste", "wc-preview", "wc-prep", "pdf-file"):
         assert f'id="{i}"' in r.text
     assert client.get("/static/workcal.js").status_code == 200
-    assert "/workcal" not in _tabs(client.get("/").text)
+    assert "/workcal" not in _tabs(client.get("/day").text)
 
 
 def test_day_page_links_to_the_work_calendar_page(client):
-    assert 'href="/workcal"' in client.get("/").text
+    assert 'href="/workcal"' in client.get("/day").text
 
 
 def test_week_grid_css_does_not_restyle_tables(client):
@@ -248,7 +250,7 @@ def test_timer_shortcuts_are_wired(client):
 
 def test_manifest_and_icons(client):
     from worklog.web.pages import STATIC_VERSION
-    html = client.get("/").text
+    html = client.get("/day").text
     assert f'<link rel="manifest" href="/static/manifest.webmanifest?v={STATIC_VERSION}" crossorigin="use-credentials">' in html
     assert '<link rel="apple-touch-icon" href="/static/icon-192.png">' in html
     assert '<meta name="apple-mobile-web-app-capable" content="yes">' in html
@@ -322,7 +324,7 @@ def _web(name):
 
 def test_time_fields_are_text_inputs_bound_by_the_shared_helper(client):
     # no browser time widget anywhere: every time field is `input.time`, normalised by wl.bindTimes (core.js)
-    for path in ("/find", "/week", "/settings", "/"):
+    for path in ("/find", "/week", "/settings", "/day"):
         assert 'type="time"' not in client.get(path).text, path
     for f in ("find", "week", "settings"):
         assert 'class="time"' in client.get(f"/{f}").text
@@ -365,7 +367,7 @@ def test_qt_buttons_all_go_through_the_shared_components():
 
 
 def test_day_page_is_in_three_parts_like_week(client):
-    html = client.get("/").text
+    html = client.get("/day").text
     # the same tab strip as the Week page, switched by the one function in core.js
     for page in (html, client.get("/week").text):
         assert 'class="seg weekviews" id="views"' in page

@@ -299,6 +299,12 @@ TestCase {
         w.closeMore()   // harmless while the menu is closed
     }
 
+    function test_wide_bar_threshold() {
+        const w = newMain()
+        verify(!w.wideBarFor(480) && !w.wideBarFor(899))
+        verify(w.wideBarFor(900) && w.wideBarFor(1920))
+    }
+
     function test_back_key_is_left_to_an_open_popup() {
         const w = newMain()
         verify(!w.inOverlay(null))

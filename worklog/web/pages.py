@@ -43,10 +43,16 @@ def _page(request: Request, name: str, page: str) -> HTMLResponse:
     return templates.TemplateResponse(request, name, {"page": page})
 
 
-@router.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    """The Day planner needs the balance store; a server without one has nothing to show there, so `/` (also the
-    address bar and old bookmarks) opens the Timer instead of an error page."""
+@router.get("/")
+def index():
+    """The site opens on the Timer, as the app does."""
+    return RedirectResponse("/timer", status_code=302)
+
+
+@router.get("/day", response_class=HTMLResponse)
+def day(request: Request):
+    """The Day planner needs the balance store; a server without one has nothing to show there, so it opens the
+    Timer instead of an error page."""
     if not request.app.state.settings.balance_db_path:
         return RedirectResponse("/timer", status_code=302)
     return _page(request, "day.html", "day")

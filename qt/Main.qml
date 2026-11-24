@@ -146,6 +146,11 @@ ApplicationWindow {
                                    qsTr("Expected hours"), qsTr("Add or find a date"), qsTr("Settings")]
     readonly property var icons: ["timer", "day", "week", "pomodoro", "reports", "expected", "find", "settings"]
 
+    // Quit is offered on the desktop only (Android apps are left, not quit)
+    readonly property bool canQuit: Qt.platform.os !== "android" && Qt.platform.os !== "ios"
+    // room for nine buttons with their labels ("Add or find a date" is the longest): every screen gets one
+    function wideBarFor(room) { return room >= 900 }
+
     // the More menu never stays open over the keyboard, the lock screen or a hidden window
     function closeMore() { moreMenu.close() }
     onKeyboardUpChanged: if (keyboardUp) closeMore()
@@ -215,20 +220,23 @@ ApplicationWindow {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Api.line }
     }
 
-    // The bottom bar: Timer · Day · Week · Pomodoro · More. On a wide window it stays at the bottom, its
-    // five buttons centred and no wider than 560 px.
+    // The bottom bar: Timer · Day · Week · Pomodoro · More, centred and no wider than 560 px. A window
+    // with room for it (a maximised desktop window: `wideBar`) shows every screen as a button of its own
+    // instead of More, and Quit at the end. On the desktop More ends with Quit too.
     footer: Rectangle {
         id: footerBar
         color: Api.card
         visible: !window.keyboardUp
         implicitHeight: window.keyboardUp ? 0 : navRow.implicitHeight + window.safe.bottom
         readonly property real room: width - window.safe.left - window.safe.right
+        readonly property bool wideBar: window.wideBarFor(room)
+        onWideBarChanged: window.closeMore()
 
         Rectangle { width: parent.width; height: 1; color: Api.line }
         RowLayout {
             id: navRow
             anchors.top: parent.top
-            width: Math.min(footerBar.room, 560)
+            width: Math.min(footerBar.room, footerBar.wideBar ? 1100 : 560)
             x: window.safe.left + (footerBar.room - width) / 2
             spacing: 0
             NavButton {
@@ -262,10 +270,46 @@ ApplicationWindow {
                 active: window.current === window.navPomodoro
                 onClicked: window.current = window.navPomodoro
             }
+            // a wide bar: the screens that are otherwise under More, then Quit
+            NavButton {
+                visible: footerBar.wideBar
+                text: window.titles[window.navReports]
+                iconName: window.icons[window.navReports]
+                active: window.current === window.navReports
+                onClicked: window.current = window.navReports
+            }
+            NavButton {
+                visible: footerBar.wideBar
+                text: window.titles[window.navExpected]
+                iconName: window.icons[window.navExpected]
+                active: window.current === window.navExpected
+                onClicked: window.current = window.navExpected
+            }
+            NavButton {
+                visible: footerBar.wideBar
+                text: window.titles[window.navFind]
+                iconName: window.icons[window.navFind]
+                active: window.current === window.navFind
+                onClicked: window.current = window.navFind
+            }
+            NavButton {
+                visible: footerBar.wideBar
+                text: window.titles[window.navSettings]
+                iconName: window.icons[window.navSettings]
+                active: window.current === window.navSettings
+                onClicked: window.current = window.navSettings
+            }
+            NavButton {
+                visible: footerBar.wideBar && window.canQuit
+                text: qsTr("Quit")
+                iconName: "quit"
+                onClicked: Qt.quit()
+            }
             // More: the screens without a button of their own. Selected while one of them shows; a tap
             // opens the menu (again, on such a screen), a tap while it is open only closes it.
             NavButton {
                 id: moreButton
+                visible: !footerBar.wideBar
                 text: qsTr("More")
                 iconName: "more"
                 iconStroke: 3
@@ -306,6 +350,21 @@ ApplicationWindow {
                         contentItem: Rectangle { implicitHeight: 1; color: Api.line }
                     }
                     MoreItem { text: window.titles[window.navSettings]; iconName: window.icons[window.navSettings]; current: window.current === window.navSettings; onTriggered: window.current = window.navSettings }
+                    MenuSeparator {
+                        visible: window.canQuit
+                        padding: 0
+                        topPadding: 4
+                        bottomPadding: 4
+                        contentItem: Rectangle { implicitHeight: 1; color: Api.line }
+                    }
+                    MoreItem {
+                        // really quits, also when closing the window only hides it to the tray
+                        visible: window.canQuit
+                        height: visible ? implicitHeight : 0
+                        text: qsTr("Quit")
+                        iconName: "quit"
+                        onTriggered: Qt.quit()
+                    }
                 }
             }
         }

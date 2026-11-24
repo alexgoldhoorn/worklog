@@ -141,7 +141,7 @@
       notice(`Moved ${item.title} to ${chosen.start}. ${bits.join(", ")}.`, "ok");
       if (out.paste) { $("paste").hidden = false; $("paste").textContent = out.paste; }
       $("confirm").disabled = true;
-      setTimeout(() => { location.href = "/?date=" + chosen.date; }, out.paste ? 6000 : 1500);
+      setTimeout(() => { location.href = "/day?date=" + chosen.date; }, out.paste ? 6000 : 1500);
     } catch (e) { notice("Move failed: " + e.message, "error"); $("confirm").disabled = false; }
   }
 
@@ -150,7 +150,7 @@
       $("move-sub").textContent = "Nothing selected yet.";
       const p = el("p", "hint", "Open Move from an event or block on the Day page, or from a block on the Week page: that picks what to move, and this page lists where it fits.");
       const links = el("p", "row-wrap");
-      for (const [href, text] of [["/", "Day page"], ["/week", "Week page"]]) { const a = el("a", "small btn", text); a.href = href; links.appendChild(a); }
+      for (const [href, text] of [["/day", "Day page"], ["/week", "Week page"]]) { const a = el("a", "small btn", text); a.href = href; links.appendChild(a); }
       $("slots").replaceChildren(p, links);
       return;
     }
@@ -161,7 +161,7 @@
       item = resolveItem(day);
       $("move-title").textContent = `Move: ${item.title}, ${item.minutes} min`;
       $("move-sub").textContent = `${fmtDate(day.date)} · now at ${item.ref.start}`;
-      $("move-back").href = "/?date=" + day.date;
+      $("move-back").href = "/day?date=" + day.date;
       renderPreview(null);
       const to = item.ref.kind === "run" ? date : addDays(date, 6);
       slotsData = await call("POST", "/api/day/slots", { item: { title: item.title, minutes: item.minutes, kind: item.kind, ref: item.ref }, from: date, to });
