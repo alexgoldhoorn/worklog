@@ -44,6 +44,7 @@ set(WL_QML_FILES
     AppDialog.qml
     ScrollBody.qml
     TimeField.qml
+    SuggestField.qml
     AppSwitch.qml
     AppRoundButton.qml
     AppIconButton.qml

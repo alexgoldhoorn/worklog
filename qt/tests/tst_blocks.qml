@@ -80,6 +80,49 @@ TestCase {
         dlg.close()
     }
 
+    // Return saves from the Type, Project and Client fields too, and they complete from their lists
+    function test_dialog_enter_saves_and_fields_complete() {
+        const dlg = makeDialog()
+        dlg.typeSuggestions = ["dev", "child", "Child", ""]
+        dlg.blocks = [{ id: 1, start: "08:00", end: "09:00", type: "dev", project: "alpha", client: "acme" }]
+        let saves = 0
+        dlg.accepted.connect(() => saves++)
+        dlg.editBlock(sample)                                // nothing changed: accepting sends nothing
+        tryVerify(() => dlg.opened, 2000)
+        compare(dlg.typeField.count, 2, "no empty or repeated suggestion")
+        compare(dlg.typeField.text, "dev")
+        compare(dlg.projectField.text, "p", "a new list does not replace the block's own text")
+        compare(dlg.clientField.text, "c")
+        verify(dlg.projectField.find("alpha") >= 0)
+        verify(dlg.clientField.find("acme") >= 0)
+        // the box itself (reached by forceActiveFocus) and its text (a click, Tab)
+        for (const f of [dlg.typeField, dlg.projectField, dlg.clientField,
+                         dlg.typeField.contentItem, dlg.projectField.contentItem, dlg.clientField.contentItem]) {
+            dlg.open()
+            tryVerify(() => dlg.opened, 2000)
+            f.forceActiveFocus()
+            tryVerify(() => f.activeFocus, 2000)
+            const before = saves
+            keyClick(Qt.Key_Return)
+            compare(saves, before + 1, "Return saves")
+            tryVerify(() => !dlg.visible, 2000)
+        }
+        dlg.open()
+        tryVerify(() => dlg.opened, 2000)
+        dlg.typeField.contentItem.forceActiveFocus()
+        tryVerify(() => dlg.typeField.contentItem.activeFocus, 2000)
+        dlg.typeField.contentItem.selectAll()
+        keyClick(Qt.Key_C)
+        keyClick(Qt.Key_H)
+        compare(dlg.typeField.text, "child", "typing completes from the list")
+        dlg.typeField.text = "   "                           // an invalid form is not saved
+        const n = saves
+        keyClick(Qt.Key_Return)
+        compare(saves, n)
+        verify(dlg.visible)
+        dlg.close()
+    }
+
     function test_dialog_other_day_new_block_needs_an_end() {
         const dlg = makeDialog()
         dlg.newBlock(Api.addDays(Api.today(), -3))

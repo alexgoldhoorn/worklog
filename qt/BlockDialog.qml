@@ -10,6 +10,18 @@ AppDialog {
     property string date: ""
     property var typeSuggestions: []
     property var blocks: []        // the day's blocks, to offer moving a neighbour's edge along
+    property var clientNames: []   // the server's clients, fetched when the dialog opens
+    // what the Project and Client fields complete from: the day's own first, then the recent projects / the clients
+    readonly property var projectSuggestions: blocks.map(b => b.project).concat(Api.status && Api.status.chips ? Api.status.chips.projects : [])
+    readonly property var clientSuggestions: blocks.map(b => b.client).concat(clientNames)
+
+    function loadClients() {
+        Api.request("GET", "/api/clients", undefined, function (l) {
+            if (dlg && Array.isArray(l))
+                dlg.clientNames = l.map(c => c.name)
+        }, function () {})
+    }
+    onAboutToShow: loadClients()
     property string error: ""
     signal offer(string text, var action)
     // a neighbour was trimmed so the edited block does not overlap it; `undo` puts its time back
@@ -310,7 +322,7 @@ AppDialog {
             width: scroller.width
             spacing: 4
             // TextFields ignore Return after emitting editingFinished (which normalises the time),
-            // so the key reaches here; an open ComboBox popup takes it first
+            // so the key reaches here; a SuggestField keeps the key and says enterPressed instead
             Keys.onReturnPressed: dlg.saveIfValid()
             Keys.onEnterPressed: dlg.saveIfValid()
 
@@ -387,30 +399,32 @@ AppDialog {
             }
 
             Caption { text: qsTr("Type"); Layout.topMargin: 4 }
-            ComboBox {
+            SuggestField {
                 id: typeField
-                editable: true
-                model: dlg.typeSuggestions
+                suggestions: dlg.typeSuggestions
                 Accessible.name: qsTr("Type")
                 onActiveFocusChanged: if (activeFocus) dlg.reveal(typeField)
+                onEnterPressed: dlg.saveIfValid()
                 Layout.fillWidth: true
             }
 
             Caption { text: qsTr("Project"); Layout.topMargin: 4 }
-            TextField {
+            SuggestField {
                 id: projectField
-                placeholderText: qsTr("Project")
+                suggestions: dlg.projectSuggestions
                 Accessible.name: qsTr("Project")
                 onActiveFocusChanged: if (activeFocus) dlg.reveal(projectField)
+                onEnterPressed: dlg.saveIfValid()
                 Layout.fillWidth: true
             }
 
-            Caption { text: qsTr("Client"); Layout.topMargin: 4 }
-            TextField {
+            Caption { text: dlg.block ? qsTr("Client") : qsTr("Client (empty = default)"); Layout.topMargin: 4 }
+            SuggestField {
                 id: clientField
-                placeholderText: qsTr("empty = default")
+                suggestions: dlg.clientSuggestions
                 Accessible.name: qsTr("Client")
                 onActiveFocusChanged: if (activeFocus) dlg.reveal(clientField)
+                onEnterPressed: dlg.saveIfValid()
                 Layout.fillWidth: true
             }
 
