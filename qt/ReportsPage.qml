@@ -15,6 +15,30 @@ ScrollView {
     // until the user steps to another one
     property string todayIso: Api.today()
     property bool invoiceChosen: false
+    // the part that shows: "summary" (filters, table, weekly stats), "charts" (filters, charts) or
+    // "invoice", as the web's Reports tabs; not remembered
+    property string view: "summary"
+
+    // the invoice month's day counts: workable = Mon-Fri and not a public holiday, expected = workable
+    // with hours expected, worked = any work logged, offDays = worked on a day that is not workable
+    function invoiceCounts(rows) {
+        return {
+            days: rows.length,
+            workable: rows.filter(r => r.workable).length,
+            expected: rows.filter(r => r.workable && r.expected_h > 0).length,
+            worked: rows.filter(r => r.worked).length,
+            offDays: rows.filter(r => r.worked && !r.workable).length
+        }
+    }
+    function countsLine(c) {
+        return qsTr("%1 days · %2 workable · %3 expected · %4 worked").arg(c.days).arg(c.workable).arg(c.expected).arg(c.worked)
+               + (c.offDays > 0 ? qsTr(" (%1 on non-workable days)").arg(c.offDays) : "")
+    }
+    // the server's per-day mark: ✓ worked, ✗ a past workday missed, ⛱ a holiday or day off
+    function markCell(mark) {
+        return mark === "worked" ? { t: "✓", c: Api.workColor } : mark === "missed" ? { t: "✗", c: Api.errorColor }
+             : mark === "holiday" ? { t: "⛱", c: Api.muted } : { t: "" }
+    }
     property string invoiceMonth: Api.today().slice(0, 7)
     property string rangeError: ""
     property var invoice: []
@@ -245,10 +269,36 @@ ScrollView {
         width: page.availableWidth
         spacing: 12
 
-        // filters
-        Card {
-            title: qsTr("Summary")
+        // the parts of the page, as the Week screen's tabs
+        RowLayout {
+            Layout.fillWidth: true
             Layout.topMargin: 12
+            Layout.leftMargin: 12
+            Layout.rightMargin: 12
+            Repeater {
+                model: [
+                    { key: "summary", label: qsTr("Summary") },
+                    { key: "charts", label: qsTr("Charts") },
+                    { key: "invoice", label: qsTr("Invoice") }
+                ]
+                delegate: AppButton {
+                    id: viewTab
+                    required property var modelData
+                    text: modelData.label
+                    primary: page.view === modelData.key
+                    Layout.fillWidth: true
+                    Layout.preferredWidth: 1
+                    Accessible.name: modelData.label
+                    Accessible.role: Accessible.PageTab
+                    onClicked: page.view = viewTab.modelData.key
+                }
+            }
+        }
+
+        // filters: the charts use the same group and range
+        Card {
+            visible: page.view !== "invoice"
+            title: qsTr("Summary")
             actions: ExportButtons {
                 start: page.start
                 end: page.end
@@ -349,6 +399,7 @@ ScrollView {
 
         // charts
         GridLayout {
+            visible: page.view === "charts"
             columns: page.wide ? 2 : 1
             columnSpacing: 12
             rowSpacing: 12
@@ -434,6 +485,7 @@ ScrollView {
 
         // summary table
         Card {
+            visible: page.view === "summary"
             title: qsTr("Per %1").arg(page.group)
             DataTable {
                 columns: [{ title: qsTr("Period"), w: 90 }, { title: qsTr("Worked"), w: 76, num: true },
@@ -466,7 +518,7 @@ ScrollView {
 
         // weekly stats
         Card {
-            visible: !!page.summary && !!page.summary.stats
+            visible: page.view === "summary" && !!page.summary && !!page.summary.stats
             title: qsTr("Extra hours per week")
             DataTable {
                 readonly property var s: page.summary && page.summary.stats ? page.summary.stats : null
@@ -491,6 +543,7 @@ ScrollView {
 
         // invoice
         Card {
+            visible: page.view === "invoice"
             title: qsTr("Invoice")
             actions: RowLayout {
                 AppIconButton {
@@ -511,17 +564,20 @@ ScrollView {
 
             DataTable {
                 readonly property bool invPriced: page.invoice.some(r => r.amount !== null)
-                readonly property real worked: page.invoice.reduce((a, r) => a + r.worked_h, 0)
-                readonly property real expected: page.invoice.reduce((a, r) => a + r.expected_h, 0)
+                // the hours count up to today: future days would only make the month look short
+                readonly property var past: page.invoice.filter(r => !r.future)
+                readonly property real worked: past.reduce((a, r) => a + r.worked_h, 0)
+                readonly property real expected: past.reduce((a, r) => a + r.expected_h, 0)
                 readonly property int daysWorked: page.invoice.filter(r => r.worked).length
                 columns: [{ title: qsTr("Date"), w: 70 }, { title: qsTr("Worked"), w: 76, num: true },
                           { title: qsTr("Expected"), w: 80, num: true }, { title: qsTr("Reason"), w: 120 },
                           { title: "✓", w: 30, num: true }].concat(invPriced ? [{ title: Api.currency, w: 80, num: true }] : [])
                 rows: page.invoice.map(r => ({
                     tint: [0, 6].indexOf(Api.parseDate(r.date).getDay()) >= 0 ? Api.line2 : undefined,
-                    cells: [r.weekday + " " + Number(r.date.slice(8)), r.worked_h > 0 ? Api.fmtH(r.worked_h) : "",
+                    cells: [{ t: r.weekday + " " + Number(r.date.slice(8)), c: r.future ? Api.muted : undefined },
+                            r.worked_h > 0 ? Api.fmtH(r.worked_h) : "",
                             { t: r.expected_h > 0 ? Api.fmtH(r.expected_h) : "", c: Api.muted },
-                            { t: r.reason || "", c: Api.muted }, { t: r.worked ? "✓" : "", c: Api.workColor }]
+                            { t: r.reason || "", c: Api.muted }, page.markCell(r.mark)]
                            .concat(invPriced ? [r.billable_h > 0 ? Api.fmtEur(r.amount) : ""] : [])
                 }))
                 footer: page.invoice.length ? {
@@ -529,6 +585,13 @@ ScrollView {
                             { t: Api.shortOrExtra(worked - expected), c: Api.signColor(worked - expected) }, ""]
                            .concat(invPriced ? [{ t: Api.fmtEur(page.invoice.reduce((a, r) => a + (r.amount || 0), 0)), b: true }] : [])
                 } : null
+            }
+            Label {
+                visible: page.invoice.length > 0
+                text: page.countsLine(page.invoiceCounts(page.invoice))
+                color: Api.muted
+                wrapMode: Text.Wrap
+                Layout.fillWidth: true
             }
             Label {
                 visible: page.invoice.length === 0

@@ -249,7 +249,8 @@
   // `data-view`, the parts `data-pane`, and one part shows at a time. The choice is not remembered.
   function showView(view) {
     for (const t of document.querySelectorAll("#views button")) { const on = t.dataset.view === view; t.classList.toggle("on", on); t.setAttribute("aria-pressed", String(on)); }
-    for (const pane of document.querySelectorAll("[data-pane]")) pane.hidden = pane.dataset.pane !== view;
+    // a pane may belong to several parts: data-pane="summary charts"
+    for (const pane of document.querySelectorAll("[data-pane]")) pane.hidden = !pane.dataset.pane.split(" ").includes(view);
   }
   function bindViews() {
     for (const t of document.querySelectorAll("#views button")) t.addEventListener("click", () => showView(t.dataset.view));
