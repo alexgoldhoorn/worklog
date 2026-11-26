@@ -443,7 +443,7 @@ ApplicationWindow {
     }
 
     // no login yet (first start): go straight to Settings
-    Component.onCompleted: if (Api.username === "") window.current = window.navSettings
+    Component.onCompleted: if (Api.username === "" || Api.baseUrl === "") window.current = window.navSettings
     Connections {
         target: Api
         function onSettingsRequested() { window.current = window.navSettings }

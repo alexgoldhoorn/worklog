@@ -56,6 +56,7 @@ cmake -S qt -B <builddir> -G Ninja && cmake --build <builddir> && cmake --build 
 - The Linux binary is `worklog` (`OUTPUT_NAME`). `qt/release-linux.sh [prefix]` builds Release, installs it with `linux/net.goldhoorn.worklog.desktop` (Exec rewritten to the full path) and the icons into `~/.local`, plus a trusted copy on the desktop (pass `-` to skip the install), and packs `../worklog-release/WorkLog-<version>-linux-<arch>.tar.gz`. The tarball doesn't bundle Qt.
 - The many "qml plugin ... link target ... does not exist" CMake warnings come from Debian's Qt packaging and are harmless. The PipeWire `spaVisitChoice` lines at startup come from Qt Multimedia.
 - qmllint 6.10 is stricter than 6.12 in places (e.g. `use-proper-function` on calling a `var` property).
+- Qt 6.10 has no byte-array overload of `Qt.btoa()`: it encodes the array's text (`"97,98,…"`). `Api.base64()` encodes the Basic auth header in plain JS instead.
 
 Android APK. Use `android_x86_64` and `-DCMAKE_BUILD_TYPE=Debug` for the emulator, because a debug APK is signed and installs with `adb install -r`:
 
@@ -158,9 +159,9 @@ Screenshots can still be taken with a mock server:
 
 - Run a throwaway Python `http.server` mock on `127.0.0.1:8503` that returns fixture JSON for `/api/status`, `/api/day/*`, `/api/summary`, `/api/heatmap`, `/api/invoice`, `/api/days` and `/api/settings`. Use `ThreadingHTTPServer`, because the app sends several requests at once on startup.
 - Build a scratch copy whose `main.cpp` uses a different organisation name, so it doesn't overwrite the real saved URL and login, and calls `grabWindow()` per tab.
-- Delete the scratch registry key afterwards.
+- Delete the scratch registry key afterwards (Linux: `~/.config/<org>/`).
 - `QT_QPA_PLATFORM=offscreen` allows windows taller than the screen, but renders no fonts.
-- The real server on a throwaway database (as `run_tests.py` starts it, plus seeded `gate.json`, `goals.json`, `personal.json` in `BALANCE_STATE_DIR`) shows more than a mock. Run the scratch app with `QSG_RENDER_LOOP=basic`: with the default threaded loop a window that is not in front redraws late, and `grabWindow()` misses popups (menus, dialogs, the Snackbar). Open each popup in its own run, because an Escape sent to an inactive window does not close it. Scratch cleanup: `HKCU\Software\<org>` and `cmdkey /delete:<org>/password`.
+- The real server on a throwaway database (as `run_tests.py` starts it, plus seeded `gate.json`, `goals.json`, `personal.json` in `BALANCE_STATE_DIR`) shows more than a mock. Run the scratch app with `QSG_RENDER_LOOP=basic`: with the default threaded loop a window that is not in front redraws late, and `grabWindow()` misses popups (menus, dialogs, the Snackbar). Open each popup in its own run, because an Escape sent to an inactive window does not close it. Scratch cleanup: `HKCU\Software\<org>` and `cmdkey /delete:<org>/password` (Linux: `~/.config/<org>/` and `secret-tool clear key <org>/password`).
 
 ### Android specifics
 

@@ -117,7 +117,7 @@ QtObject {
     signal settingsRequested()
 
     // the error for a 401; a NoticeBanner showing it links to Settings
-    readonly property string loginMessage: qsTr("Login required: set user and password in Settings")
+    readonly property string loginMessage: qsTr("Login required: set the server, user and password in Settings")
 
     // after Biometric confirmed: read the login and let the pages load
     function unlock() {
@@ -387,8 +387,7 @@ QtObject {
             api.inflight = api.inflight.concat([entry])
             xhr.open("GET", base + "/api/status?brief=1")
             if (user !== "") {
-                const utf8 = unescape(encodeURIComponent(user + ":" + pass))
-                xhr.setRequestHeader("Authorization", "Basic " + Qt.btoa(Array.from(utf8, c => c.charCodeAt(0))))
+                xhr.setRequestHeader("Authorization", "Basic " + api.base64(unescape(encodeURIComponent(user + ":" + pass))))
             }
             xhr.send()
         } catch (e) {
@@ -527,10 +526,22 @@ QtObject {
     function authHeader() {
         if (api.username === "")
             return ""
-        // Qt.btoa(string) is deprecated; the byte-array overload takes the login's UTF-8 bytes
-        // (what the server decodes) and returns an ArrayBuffer holding the base64 text
-        const utf8 = unescape(encodeURIComponent(api.username + ":" + api.password))
-        return "Basic " + Qt.btoa(Array.from(utf8, c => c.charCodeAt(0)))
+        return "Basic " + base64(unescape(encodeURIComponent(api.username + ":" + api.password)))
+    }
+
+    // base64 of a byte string (one char per byte: the login's UTF-8, what the server decodes).
+    // Not Qt.btoa(): its string overload is deprecated, and Qt 6.10 has no byte-array overload
+    // (it encodes the array's text "97,98,…", so every login fails on Linux's system Qt).
+    function base64(bytes) {
+        const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        let out = ""
+        for (let i = 0; i < bytes.length; i += 3) {
+            const n = bytes.charCodeAt(i) << 16 | (i + 1 < bytes.length ? bytes.charCodeAt(i + 1) << 8 : 0)
+                    | (i + 2 < bytes.length ? bytes.charCodeAt(i + 2) : 0)
+            out += abc[n >> 18 & 63] + abc[n >> 12 & 63]
+                 + (i + 1 < bytes.length ? abc[n >> 6 & 63] : "=") + (i + 2 < bytes.length ? abc[n & 63] : "=")
+        }
+        return out
     }
 
     // "start=…&end=…" with the empty values left out
