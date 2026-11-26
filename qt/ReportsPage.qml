@@ -30,6 +30,12 @@ ScrollView {
             offDays: rows.filter(r => r.worked && !r.workable).length
         }
     }
+    // the footer: hours and amount up to today (future days would only make the month look short), as the web
+    function invoiceTotals(rows) {
+        const past = rows.filter(r => !r.future)
+        return { worked: past.reduce((a, r) => a + r.worked_h, 0), expected: past.reduce((a, r) => a + r.expected_h, 0),
+                 amount: past.reduce((a, r) => a + (r.amount || 0), 0) }
+    }
     function countsLine(c) {
         return qsTr("%1 days · %2 workable · %3 expected · %4 worked").arg(c.days).arg(c.workable).arg(c.expected).arg(c.worked)
                + (c.offDays > 0 ? qsTr(" (%1 on non-workable days)").arg(c.offDays) : "")
@@ -564,10 +570,9 @@ ScrollView {
 
             DataTable {
                 readonly property bool invPriced: page.invoice.some(r => r.amount !== null)
-                // the hours count up to today: future days would only make the month look short
-                readonly property var past: page.invoice.filter(r => !r.future)
-                readonly property real worked: past.reduce((a, r) => a + r.worked_h, 0)
-                readonly property real expected: past.reduce((a, r) => a + r.expected_h, 0)
+                readonly property var totals: page.invoiceTotals(page.invoice)
+                readonly property real worked: totals.worked
+                readonly property real expected: totals.expected
                 readonly property int daysWorked: page.invoice.filter(r => r.worked).length
                 columns: [{ title: qsTr("Date"), w: 70 }, { title: qsTr("Worked"), w: 76, num: true },
                           { title: qsTr("Expected"), w: 80, num: true }, { title: qsTr("Reason"), w: 120 },
@@ -583,7 +588,7 @@ ScrollView {
                 footer: page.invoice.length ? {
                     cells: [{ t: qsTr("%n day(s)", "", daysWorked), b: true }, { t: Api.fmtH(worked), b: true }, Api.fmtH(expected),
                             { t: Api.shortOrExtra(worked - expected), c: Api.signColor(worked - expected) }, ""]
-                           .concat(invPriced ? [{ t: Api.fmtEur(page.invoice.reduce((a, r) => a + (r.amount || 0), 0)), b: true }] : [])
+                           .concat(invPriced ? [{ t: Api.fmtEur(totals.amount), b: true }] : [])
                 } : null
             }
             Label {

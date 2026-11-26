@@ -31,7 +31,16 @@ TestCase {
                 "30 days · 21 workable · 20 expected · 17 worked")
     }
 
-    function test_tabs_default_to_summary() {
+    function test_invoice_totals_count_up_to_today() {
+        const p = createTemporaryObject(reportsPage, this)
+        const t = p.invoiceTotals([
+            { worked_h: 8, expected_h: 7, amount: 400, future: false },
+            { worked_h: 2, expected_h: 7, amount: 100, future: true }
+        ])
+        compare(t, { worked: 8, expected: 7, amount: 400 })
+    }
+
+        function test_tabs_default_to_summary() {
         const p = createTemporaryObject(reportsPage, this)
         compare(p.view, "summary")
         p.view = "invoice"

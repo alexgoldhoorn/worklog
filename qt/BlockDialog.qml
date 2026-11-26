@@ -172,7 +172,8 @@ AppDialog {
 
     // the fields of the edited block that differ from it (only those are sent, like the web: an
     // untouched billable flag stays as it is, a date is sent only when the block moves)
-    function changedFields() {
+    // `confirming` false leaves out the end an auto-closed block always sends (step() only looks)
+    function changedFields(confirming) {
         const b = block, f = formValues()
         const cur = { date: b.date, start: b.start, end: b.end || null, type: b.type,
                       project: b.project || "", client: b.client || "" }
@@ -184,7 +185,7 @@ AppDialog {
             changes.billable = billableBox.checked
         // A block the server closed by itself stays "to review" until its end is saved again. Saving it
         // as it is must count as that, so the end goes along even unchanged (the server clears the flag).
-        if (needsConfirm && changes.end === undefined && f.end)
+        if (confirming !== false && needsConfirm && changes.end === undefined && f.end)
             changes.end = f.end
         return changes
     }
@@ -197,6 +198,7 @@ AppDialog {
                                                : qsTr("New block")
 
     function editBlock(b) {
+        pendingStep = null
         splitOf = null
         block = b
         date = b.date
@@ -214,6 +216,7 @@ AppDialog {
     // Today: a new row starts where the day's last block ended (or now) and is left open, empty end =
     // running. Another day: the end is required and "now" means nothing there, so only the last end is offered.
     function newBlock(d) {
+        pendingStep = null
         splitOf = null
         block = null
         date = d
@@ -278,7 +281,7 @@ AppDialog {
     function step(dir) {
         if (!block || pendingStep)
             return
-        if (Object.keys(changedFields()).length === 0) {
+        if (Object.keys(changedFields(false)).length === 0) {   // looking at an auto-closed block does not confirm it
             const n = neighbourOf(blocks, block.id, dir)
             if (n)
                 editBlock(n)
@@ -305,9 +308,12 @@ AppDialog {
 
     // Enter/Return in any field saves (when the form is valid); Esc still cancels (closePolicy)
     function saveIfValid() {
-        if (valid)
+        if (valid && pendingStep === null)
             accept()
     }
+
+    // a step's save never closes the dialog, so a close means it was cancelled: no reopening later
+    onClosed: pendingStep = null
 
     function fail(msg) {
         pendingStep = null
@@ -342,7 +348,7 @@ AppDialog {
         }
         AppButton {
             text: dlg.needsConfirm ? qsTr("Confirm") : qsTr("Save")
-            enabled: dlg.valid
+            enabled: dlg.valid && dlg.pendingStep === null
             primary: true
             DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
         }

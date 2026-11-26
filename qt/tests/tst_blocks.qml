@@ -107,6 +107,41 @@ TestCase {
         compare(dlg.pendingStep, null)
     }
 
+    function test_closing_mid_step_does_not_reopen() {
+        const dlg = makeDialog()
+        dlg.blocks = three
+        dlg.editBlock(three[1])
+        dlg.pendingStep = { id: 1, dir: 1, saved: true }
+        dlg.close()
+        tryVerify(() => !dlg.visible)
+        compare(dlg.pendingStep, null)
+        dlg.blocks = three.slice()                // the page's reload arrives later
+        verify(!dlg.visible)
+    }
+
+    function test_edit_or_save_during_a_step() {
+        const dlg = makeDialog()
+        dlg.blocks = three
+        dlg.editBlock(three[1])
+        dlg.pendingStep = { id: 1, dir: 1, saved: false }
+        dlg.startField.text = "08:05"
+        dlg.saveIfValid()                         // Return while the step's save is out: nothing happens
+        verify(dlg.visible)
+        dlg.editBlock(three[2])                   // opening another block drops the pending step
+        compare(dlg.pendingStep, null)
+    }
+
+    function test_stepping_past_an_auto_closed_block_does_not_confirm_it() {
+        const dlg = makeDialog()
+        const list = three.map(b => b.id === 1 ? Object.assign({}, b, { auto_closed: true }) : b)
+        dlg.blocks = list
+        dlg.editBlock(list[1])                    // the auto-closed 08:00 block
+        verify(dlg.needsConfirm)
+        dlg.step(1)                               // only looking: no save, just the next block
+        compare(dlg.pendingStep, null)
+        compare(dlg.block.id, 2)
+    }
+
     function test_step_saves_then_follows_the_new_order() {
         const day = "2026-03-09"
         const made = []
