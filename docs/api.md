@@ -46,7 +46,7 @@ time anything reads the timer. Such blocks are flagged `auto_closed` and listed 
 |---|---|
 | `GET /api/summary?group=week\|month\|quarter\|year&start=&end=` | Worked, expected and extra hours per group; weekly stats for `week`. A range longer than 3660 days (about ten years) is refused with HTTP 400; `/api/heatmap` and `/api/days` have the same limit. |
 | `GET /api/heatmap?start=&end=` | Hours per day for the heat map. |
-| `GET /api/invoice?month=YYYY-MM` | Billable days and amounts for one month (needs a `rate`). |
+| `GET /api/invoice?month=YYYY-MM` | One row per day of the month, future days included: worked and expected hours, reason, billable hours and amount (needs a `rate`), plus `future`, `workable` (Mon–Fri, not a public holiday), `holiday` and `mark` (`worked`, `missed` = a past workday expected and not worked, `holiday` = a public holiday or a day off, or `""`). |
 | `GET /api/days?start=&end=` | Expected and sick hours per day. |
 | `PUT /api/days/{date}` | Body: `expected_h`, optional `sick_h`, `reason`. |
 | `DELETE /api/days/{date}` | Back to the default (holiday, weekday or weekend). |

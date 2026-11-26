@@ -171,15 +171,33 @@ def net_balance(conn, holidays, today: _date, use_cache: bool = True) -> dict:
 
 def invoice_days(conn, month_key: str, holidays, today: _date) -> list[dict]:
     y, m = map(int, month_key.split("-"))
-    last = min(_date(y, m, calendar.monthrange(y, m)[1]), today)
-    first = _date(y, m, 1)
-    if last < first:
-        return []
-    return day_rows(conn, first.isoformat(), last.isoformat(), holidays)
+    first, last = _date(y, m, 1), _date(y, m, calendar.monthrange(y, m)[1])
+    return day_rows(conn, first.isoformat(), last.isoformat(), holidays, today)
 
 
-def day_rows(conn, s: str, e: str, holidays) -> list[dict]:
-    """One row per day in [s, e]: worked, expected, reason, source, worked flag."""
+# where an expectation comes from when nobody set it: these never make a day off
+_UNSET_SOURCES = ("default", "before-first", "holiday")
+
+
+def _mark(row: dict, sick_h: float, today: str) -> str:
+    """The invoice marker: worked, missed (a past workday expected and not worked), holiday (a public
+    holiday or a day off set on a workday; a sick day is not one) or nothing."""
+    if row["worked"]:
+        return "worked"
+    if row["future"]:
+        return ""
+    if row["holiday"]:
+        return "holiday"
+    if row["workable"] and row["expected_h"] == 0 and sick_h == 0 and row["source"] not in _UNSET_SOURCES:
+        return "holiday"
+    if row["workable"] and row["expected_h"] > 0 and row["date"] < today:
+        return "missed"
+    return ""
+
+
+def day_rows(conn, s: str, e: str, holidays, today: _date | None = None) -> list[dict]:
+    """One row per day in [s, e]: worked, expected, reason, source, worked flag. With `today` (the
+    invoice) also future, workable (Mon-Fri, not a public holiday), holiday and mark."""
     btypes = db.break_types(conn)
     rate = rate_per_h(conn)
     exps = expect.expected_between(conn, s, e, holidays, expect.first_logged_day(conn))
@@ -194,6 +212,12 @@ def day_rows(conn, s: str, e: str, holidays) -> list[dict]:
                     "worked_h": w, "expected_h": x.expected_h, "reason": x.reason,
                     "source": x.source, "worked": w > 0,
                     "billable_h": t["billable_h"], "amount": amount(t["billable_h"], rate)})
+        if today is not None:
+            row = out[-1]
+            row["future"] = key > today.isoformat()
+            row["holiday"] = key in holidays
+            row["workable"] = model.is_workday(key) and not row["holiday"]
+            row["mark"] = _mark(row, x.sick_h, today.isoformat())
     return out
 
 

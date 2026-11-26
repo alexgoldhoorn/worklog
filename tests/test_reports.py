@@ -67,5 +67,25 @@ def test_invoice_days_lists_worked_and_off(conn):
     assert by["2026-10-12"]["reason"] == "Festa Nacional" and by["2026-10-12"]["source"] == "before-first"
     assert by["2026-10-13"]["worked"] and by["2026-10-13"]["worked_h"] == 8.0
     assert by["2026-10-14"] == {**by["2026-10-14"], "worked": False, "expected_h": 0, "reason": "vacation"}
-    assert days[-1]["date"] == "2026-10-20"
+    assert days[-1]["date"] == "2026-10-31"
     assert by["2026-10-13"]["weekday"] == "Tue"
+
+
+def test_invoice_days_whole_month_and_marks(conn):
+    _add(conn, "2026-10-13", "09:00", "17:00")
+    db.set_expectation(conn, db.DayExpectation("2026-10-14", 0, 0, "vacation", "manual"))
+    db.set_expectation(conn, db.DayExpectation("2026-10-15", 0, 8, "sick", "manual"))
+    days = reports.invoice_days(conn, "2026-10", {"2026-10-12": "Holiday"}, date(2026, 10, 20))
+    by = {d["date"]: d for d in days}
+    mark = {k: v["mark"] for k, v in by.items()}
+    assert len(days) == 31 and days[-1]["date"] == "2026-10-31"
+    assert by["2026-10-31"]["future"] is True and mark["2026-10-31"] == ""
+    assert by["2026-10-12"]["holiday"] is True and by["2026-10-12"]["workable"] is False and mark["2026-10-12"] == "holiday"
+    assert mark["2026-10-13"] == "worked"
+    assert mark["2026-10-14"] == "holiday"     # a day off
+    assert mark["2026-10-15"] == ""            # sick: the reason says it
+    assert mark["2026-10-16"] == "missed"      # Friday, expected, not worked
+    assert mark["2026-10-20"] == ""            # today, not over yet
+    assert by["2026-10-17"]["workable"] is False and mark["2026-10-17"] == ""
+    assert mark["2026-10-09"] == ""            # before the first logged day: nothing was expected
+    assert by["2026-10-20"]["future"] is False
