@@ -254,6 +254,7 @@ table.grid { border-collapse: separate; border-spacing: 0; width: 100%; backgrou
 .grid tr.sep td { background: var(--bg); color: var(--muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .05em; font-weight: 600; padding: 5px 9px; }
 .grid tr.wknd td { color: var(--faint); }
 .grid tr.wknd td input { color: var(--faint); }
+.grid tr.future td { color: var(--faint); }
 .grid tr.flag td { background: var(--flag-bg); }
 .grid tr.auto td { background: var(--auto-bg); }
 .grid tr.cur td { background: var(--accent-bg); }

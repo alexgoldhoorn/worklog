@@ -181,16 +181,14 @@ _UNSET_SOURCES = ("default", "before-first", "holiday")
 
 def _mark(row: dict, sick_h: float, today: str) -> str:
     """The invoice marker: worked, missed (a past workday expected and not worked), holiday (a public
-    holiday or a day off set on a workday; a sick day is not one) or nothing."""
+    holiday or a day off set on a workday, also ahead; a sick day is not one) or nothing."""
     if row["worked"]:
         return "worked"
-    if row["future"]:
-        return ""
     if row["holiday"]:
         return "holiday"
     if row["workable"] and row["expected_h"] == 0 and sick_h == 0 and row["source"] not in _UNSET_SOURCES:
         return "holiday"
-    if row["workable"] and row["expected_h"] > 0 and row["date"] < today:
+    if row["workable"] and row["expected_h"] > 0 and row["date"] < today:   # today and later are not over
         return "missed"
     return ""
 

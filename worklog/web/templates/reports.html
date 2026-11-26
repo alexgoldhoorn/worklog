@@ -7,6 +7,12 @@
   </div>
 </div>
 <div id="reports-notices" class="notices" role="status"></div>
+<div class="seg weekviews" id="views">
+  <button type="button" data-view="summary" class="on" aria-pressed="true">Summary</button>
+  <button type="button" data-view="charts" aria-pressed="false">Charts</button>
+  <button type="button" data-view="invoice" aria-pressed="false">Invoice</button>
+</div>
+<div data-pane="summary">
 <div class="row-head">
   <h2>Summary</h2>
   <div class="toolbar">
@@ -32,12 +38,18 @@
   <label>From <input type="date" id="start"></label>
   <label>To <input type="date" id="end"></label>
 </div>
+</div>
+<div data-pane="charts" hidden>
 <div id="charts" class="charts" aria-label="Charts"></div>
+</div>
+<div data-pane="summary">
 <div class="scroll"><table id="summary" class="grid"></table></div>
 <p class="hint" id="summary-legend"></p>
 <p class="hint phone-note">Expected, the alternative basis and day counts are hidden on a narrow screen: turn the phone sideways to see every column.</p>
 <div id="stats" class="stats"></div>
+</div>
 
+<div data-pane="invoice" hidden>
 <div class="row-head">
   <h2>Invoice</h2>
   <div class="filters" style="margin:0">
@@ -45,6 +57,8 @@
   </div>
 </div>
 <div class="scroll"><table id="invoice-table" class="grid"></table></div>
+<p class="hint" id="invoice-counts"></p>
+</div>
 
 <details class="card" id="import-details">
   <summary>Import <small>· XLSX or CSV in the Excel layout</small></summary>

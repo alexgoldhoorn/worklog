@@ -14,7 +14,7 @@ import pytest
     ("/day", ["day-chips", "day-start", "timeline", "top3", "day-add", "day-find", "find-dialog", "find-form", "find-close", "f-date"]),
     ("/find", ["find-form", "f-what", "f-date", "f-start", "f-end", "find-submit", "options", "put-btn", "find-notices"]),
     ("/week", ["propose", "outlook", "add", "add-cal"]),
-    ("/reports", ["group", "start", "end", "invoice", "charts", "reports-notices", "import-form", "import-result"]),
+    ("/reports", ["views", "invoice-counts", "group", "start", "end", "invoice", "charts", "reports-notices", "import-form", "import-result"]),
     ("/days", ["days"]),
     ("/pomodoro", ["pomo-clock", "pomo-phase", "pomo-bar", "pomo-start", "pomo-pause", "pomo-plus", "pomo-reset", "pomo-log",
                    "pomo-card", "pomo-work", "pomo-break", "pomo-long", "pomo-rounds", "pomo-presets", "pomo-beep", "pomo-notices"])])

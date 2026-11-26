@@ -1730,8 +1730,27 @@ const invoiceCols = [
   ["worked", "Worked", (r) => (r.worked_h > 0 ? fmtH(r.worked_h) : "")],
   ["expected", "Expected", (r) => (r.expected_h > 0 ? fmtH(r.expected_h) : "")],
   ["reason", "Reason", (r) => r.reason || ""],
-  ["ok", "✓", (r) => (r.worked ? "✓" : "")],
+  ["ok", "✓", (r) => MARKS[r.mark] || ""],
 ];
+// the invoice marker per day (the server's `mark`): worked, a past workday missed, a holiday or day off
+const MARKS = { worked: "✓", missed: "✗", holiday: "⛱" };
+const MARK_CLASS = { worked: "pos", missed: "neg", holiday: "muted" };
+
+// the month's day counts: workable = Mon-Fri and not a public holiday, expected = workable with hours
+// expected, worked = any work logged, offDays = worked on a day that is not workable
+function invoiceCounts(rows) {
+  return {
+    days: rows.length,
+    workable: rows.filter((r) => r.workable).length,
+    expected: rows.filter((r) => r.workable && r.expected_h > 0).length,
+    worked: rows.filter((r) => r.worked).length,
+    offDays: rows.filter((r) => r.worked && !r.workable).length,
+  };
+}
+function countsLine(c) {
+  return `${c.days} days · ${c.workable} workable · ${c.expected} expected · ${c.worked} worked`
+    + (c.offDays > 0 ? ` (${c.offDays} on non-workable days)` : "");
+}
 
 async function loadInvoice() {
   const month = $("invoice").value;
@@ -1744,21 +1763,23 @@ async function loadInvoice() {
     const priced = rows.some((r) => r.amount != null);
     const cols = priced ? [...invoiceCols, ["amount", wl.currency(), null]] : invoiceCols;
     const head = el("tr", {}, ...cols.map(([k, label]) => el("th", { class: k === "date" || k === "reason" ? "" : "num", text: label })));
-    const body = rows.map((r) => el("tr", { class: isWeekend(r.date) ? "wknd" : "" },
+    const body = rows.map((r) => el("tr", { class: [isWeekend(r.date) ? "wknd" : "", r.future ? "future" : ""].join(" ").trim() },
       el("td", {}, el("span", { class: "wd", text: r.weekday }), r.date.slice(8)),
       el("td", { class: "num", text: r.worked_h > 0 ? fmtH(r.worked_h) : "" }),
       el("td", { class: "num muted", text: r.expected_h > 0 ? fmtH(r.expected_h) : "" }),
       el("td", { class: "muted ell", text: r.reason || "" }),
-      el("td", { class: `num ${r.worked ? "pos" : ""}`, text: r.worked ? "✓" : "" }),
+      el("td", { class: `num ${MARK_CLASS[r.mark] || ""}`, text: MARKS[r.mark] || "", title: r.mark || "" }),
       priced ? el("td", { class: "num", text: r.billable_h > 0 ? fmtEur(r.amount) : "" }) : null));
-    const sum = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0);
+    // the hours count up to today: future days would only make the month look short
+    const sum = (k) => rows.filter((r) => !r.future).reduce((a, r) => a + (r[k] || 0), 0);
     const days = rows.filter((r) => r.worked).length;
-    const foot = el("tr", {}, el("td", {}, el("b", { text: `${days} day${days === 1 ? "" : "s"} worked` }), ` · ${rows.length - days} off`),
+    const foot = el("tr", {}, el("td", {}, el("b", { text: `${days} day${days === 1 ? "" : "s"} worked` })),
       el("td", { class: "num" }, el("b", { text: fmtH(sum("worked_h")) })),
       el("td", { class: "num", text: fmtH(sum("expected_h")) }),
       el("td", { class: `num ${signClass(sum("worked_h") - sum("expected_h"))}`, title: "Worked minus expected this month", text: shortOrExtra(sum("worked_h") - sum("expected_h")) }), el("td", { class: "num muted", text: priced ? `${fmtH(sum("billable_h"))} bill.` : "" }),
       priced ? el("td", { class: "num" }, el("b", { text: fmtEur(sum("amount")) })) : null);
     $("invoice-table").replaceChildren(el("thead", {}, head), el("tbody", {}, body), el("tfoot", {}, foot));
+    $("invoice-counts").textContent = rows.length ? countsLine(invoiceCounts(rows)) : "";
   } catch (err) { if (current()) reportNotice("invoice", err.message); }
 }
 
