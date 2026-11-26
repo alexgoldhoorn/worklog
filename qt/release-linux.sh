@@ -15,6 +15,11 @@ PREFIX=${1:-$HOME/.local}
 VERSION=$(sed -n 's/^project(WorkLogApp VERSION \([0-9.]*\).*/\1/p' "$SRC/CMakeLists.txt")
 NAME=WorkLog-$VERSION-linux-$(uname -m)
 
+# a build directory configured from another checkout (a removed worktree) is started over
+if [ -f "$BUILD/CMakeCache.txt" ] && ! grep -qx "CMAKE_HOME_DIRECTORY:INTERNAL=$SRC" "$BUILD/CMakeCache.txt"; then
+    rm -rf "$BUILD"
+fi
+
 GEN=()
 command -v ninja >/dev/null && GEN=(-G Ninja)
 cmake -S "$SRC" -B "$BUILD" "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release
