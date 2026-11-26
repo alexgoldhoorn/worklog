@@ -1,3 +1,8 @@
+#if defined(WORKLOG_LIBSECRET)
+// glib before any Qt header: glib uses `signals` as an identifier, which Qt defines as a macro
+#include <libsecret/secret.h>
+#endif
+
 #include "secretstore.h"
 
 #include <QCoreApplication>
@@ -103,26 +108,104 @@ void SecretStore::remove(const QString &key)
 
 #else
 
-SecretStore::SecretStore(QObject *parent) : QObject(parent) {}
-
-QString SecretStore::get(const QString &key)
+// Plain-text fallback (QSettings): the only store without libsecret, and the backup with it
+static QString plainGet(const QString &key)
 {
     return QSettings().value("secrets/" + key).toString();
 }
 
-bool SecretStore::set(const QString &key, const QString &value)
+static void plainSet(const QString &key, const QString &value)
 {
     QSettings s;
     if (value.isEmpty())
         s.remove("secrets/" + key);
     else
         s.setValue("secrets/" + key, value);
+}
+
+SecretStore::SecretStore(QObject *parent) : QObject(parent) {}
+
+#if defined(WORKLOG_LIBSECRET)
+// Linux: the Secret Service (GNOME Keyring, KWallet). Without a running service (headless,
+// a bare window manager) libsecret fails and the value goes to QSettings instead.
+#include <QDebug>
+
+static const SecretSchema *schema()
+{
+    static const SecretSchema s = {
+        "net.goldhoorn.worklog", SECRET_SCHEMA_NONE,
+        {{"key", SECRET_SCHEMA_ATTRIBUTE_STRING}, {nullptr, SECRET_SCHEMA_ATTRIBUTE_STRING}},
+        0, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    return &s;
+}
+
+// The "key" attribute: the bare key for the real app (organisation "worklog"), "<org>/<key>" for
+// tests and WORKLOG_ORG scratch copies, so they never read or overwrite the real password.
+static QByteArray attr(const QString &key)
+{
+    const QString org = QCoreApplication::organizationName();
+    if (org.isEmpty() || org == QLatin1String("worklog"))
+        return key.toUtf8();
+    return (org + QLatin1Char('/') + key).toUtf8();
+}
+
+QString SecretStore::get(const QString &key)
+{
+    GError *err = nullptr;
+    const QByteArray k = attr(key);
+    gchar *pw = secret_password_lookup_sync(schema(), nullptr, &err, "key", k.constData(), nullptr);
+    if (err)
+        g_error_free(err);
+    if (!pw)
+        return plainGet(key);
+    const QString v = QString::fromUtf8(pw);
+    secret_password_free(pw);
+    return v;
+}
+
+bool SecretStore::set(const QString &key, const QString &value)
+{
+    if (value.isEmpty()) {
+        remove(key);
+        return true;
+    }
+    GError *err = nullptr;
+    const QByteArray k = attr(key), v = value.toUtf8();
+    const QByteArray label = "WorkLog " + k;
+    const bool ok = secret_password_store_sync(schema(), SECRET_COLLECTION_DEFAULT, label.constData(),
+                                               v.constData(), nullptr, &err, "key", k.constData(), nullptr);
+    if (err) {
+        qWarning() << "SecretStore: no keyring, keeping" << key << "in plain settings:" << err->message;
+        g_error_free(err);
+    }
+    plainSet(key, ok ? QString() : value);
     return true;
 }
 
 void SecretStore::remove(const QString &key)
 {
-    QSettings().remove("secrets/" + key);
+    const QByteArray k = attr(key);
+    secret_password_clear_sync(schema(), nullptr, nullptr, "key", k.constData(), nullptr);
+    plainSet(key, QString());
 }
 
+#else
+
+QString SecretStore::get(const QString &key)
+{
+    return plainGet(key);
+}
+
+bool SecretStore::set(const QString &key, const QString &value)
+{
+    plainSet(key, value);
+    return true;
+}
+
+void SecretStore::remove(const QString &key)
+{
+    plainSet(key, QString());
+}
+
+#endif
 #endif

@@ -6,7 +6,8 @@
 
 // Keeps small secrets (the login password) out of the plain-text settings store:
 // Windows: Credential Manager. Android: an AES-GCM key in the Android Keystore encrypts the value
-// (android/src/.../SecretStore.java). Elsewhere: QSettings (plain text, same as before).
+// (android/src/.../SecretStore.java). Linux: the Secret Service through libsecret, when built with it.
+// Elsewhere, or without a keyring: QSettings (plain text).
 class SecretStore : public QObject
 {
     Q_OBJECT

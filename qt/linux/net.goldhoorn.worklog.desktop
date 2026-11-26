@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=WorkLog
+GenericName=Work timer
+Comment=Work/break timer and reports
+Exec=worklog
+Icon=net.goldhoorn.worklog
+Terminal=false
+Categories=Office;ProjectManagement;
+Keywords=timer;pomodoro;time;tracking;
+StartupWMClass=worklog

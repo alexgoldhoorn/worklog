@@ -44,6 +44,8 @@ int main(int argc, char *argv[])
 
     QQuickStyle::setStyle("Material");
     QGuiApplication::setWindowIcon(QIcon(":/qt/qml/WorkLogApp/icons/worklog-256.png"));
+    // Linux/Wayland: ties the window to linux/net.goldhoorn.worklog.desktop (its icon and name)
+    QGuiApplication::setDesktopFileName("net.goldhoorn.worklog");
 
     QQmlApplicationEngine engine;
     QObject::connect(

@@ -152,6 +152,26 @@ if (WIN32)
     target_link_libraries(appWorkLogApp PRIVATE Advapi32 User32 Qt6::Widgets)   # Credential Manager (secretstore.cpp), RegisterHotKey (globalhotkey.cpp)
 endif()
 
+set(WORKLOG_LINUX FALSE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
+    set(WORKLOG_LINUX TRUE)
+endif()
+
+if (WORKLOG_LINUX)
+    set_target_properties(appWorkLogApp PROPERTIES OUTPUT_NAME worklog)
+    # the password goes to the Secret Service (GNOME Keyring / KWallet); without libsecret, plain QSettings
+    find_package(PkgConfig QUIET)
+    if (PkgConfig_FOUND)
+        pkg_check_modules(LIBSECRET IMPORTED_TARGET libsecret-1)
+    endif()
+    if (LIBSECRET_FOUND)
+        target_link_libraries(appWorkLogApp PRIVATE PkgConfig::LIBSECRET)
+        target_compile_definitions(appWorkLogApp PRIVATE WORKLOG_LIBSECRET)
+    else()
+        message(WARNING "No libsecret-1 (libsecret-1-dev): the password is stored in plain text")
+    endif()
+endif()
+
 install(TARGETS appWorkLogApp
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -161,4 +181,13 @@ install(TARGETS appWorkLogApp
 if (WORKLOG_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if (WORKLOG_LINUX)
+    # app menu entry and icon (freedesktop); the .desktop name matches setDesktopFileName() in main.cpp
+    install(FILES linux/net.goldhoorn.worklog.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+    install(FILES icons/worklog-256.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+            RENAME net.goldhoorn.worklog.png)
+    install(FILES icons/worklog.svg DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+            RENAME net.goldhoorn.worklog.svg)
 endif()

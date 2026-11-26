@@ -46,8 +46,9 @@ Popup {
             flat: true
             flatInk: Material.color(Material.Green, Material.Shade300)
             onClicked: {
+                const fn = bar.undoFn   // a local, so qmllint doesn't read it as a method call
                 bar.close()
-                bar.undoFn()
+                fn()
             }
         }
     }
