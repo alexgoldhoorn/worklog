@@ -69,6 +69,71 @@ TestCase {
     readonly property var sample: ({ id: 7, date: "2026-03-02", start: "09:00", end: "10:00", type: "dev",
                                      project: "p", client: "c", billable: true })
 
+    // ---- ‹ › between the day's blocks ----------------------------------------------
+    readonly property var three: [
+        { id: 2, date: "2026-03-02", start: "09:00", end: "10:00", type: "dev", project: "", client: "" },
+        { id: 1, date: "2026-03-02", start: "08:00", end: "09:00", type: "dev", project: "", client: "" },
+        { id: 3, date: "2026-03-02", start: "10:00", end: "11:00", type: "eat", project: "", client: "" }
+    ]
+
+    function test_neighbour_of() {
+        const dlg = makeDialog()
+        compare(dlg.neighbourOf(three, 1, 1).id, 2)
+        compare(dlg.neighbourOf(three, 1, -1), null)
+        compare(dlg.neighbourOf(three, 2, -1).id, 1)
+        compare(dlg.neighbourOf(three, 3, 1), null)
+        compare(dlg.neighbourOf(three, 99, 1), null)
+    }
+
+    function test_step_without_changes_opens_the_neighbour() {
+        const dlg = makeDialog()
+        dlg.blocks = three
+        dlg.editBlock(three[1])
+        dlg.step(1)
+        compare(dlg.block.id, 2)
+        compare(dlg.startField.text, "09:00")
+        verify(dlg.visible)
+        dlg.step(-1)
+        compare(dlg.block.id, 1)
+    }
+
+    function test_step_with_an_invalid_change_stays() {
+        const dlg = makeDialog()
+        dlg.blocks = three
+        dlg.editBlock(three[1])
+        dlg.endField.text = "07:00"            // before the start
+        dlg.step(1)
+        compare(dlg.block.id, 1)
+        compare(dlg.pendingStep, null)
+    }
+
+    function test_step_saves_then_follows_the_new_order() {
+        const day = "2026-03-09"
+        const made = []
+        for (const t of [["08:00", "09:00"], ["09:00", "10:00"], ["10:00", "11:00"]]) {
+            const r = { done: false, data: null }
+            Api.request("POST", "/api/blocks", { date: day, start: t[0], end: t[1], type: "dev" },
+                        d => { r.done = true; r.data = d }, () => { r.done = true })
+            tryVerify(() => r.done, 5000)
+            verify(r.data, "block created")
+            made.push(r.data)
+        }
+        const dlg = makeDialog()
+        const reload = () => Api.request("GET", "/api/day/" + day, undefined, d => dlg.blocks = d.blocks, () => {})
+        Api.changed.connect(reload)     // as the pages do: reload on Api.changed()
+        dlg.blocks = made
+        dlg.editBlock(made[0])
+        dlg.startField.text = "11:00"            // the first block moves to the end of the day
+        dlg.endField.text = "12:00"
+        dlg.step(1)                               // saved, and there is nothing after it now
+        tryVerify(() => dlg.pendingStep === null, 5000)
+        compare(dlg.block.id, made[0].id)
+        compare(dlg.block.start, "11:00")
+        dlg.step(-1)                              // the block before it is now the 10:00 one
+        compare(dlg.block.id, made[2].id)
+        Api.changed.disconnect(reload)
+    }
+
     function test_dialog_today_new_block_may_stay_open() {
         const dlg = makeDialog()
         dlg.typeSuggestions = ["dev"]

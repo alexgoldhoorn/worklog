@@ -229,7 +229,10 @@ AppDialog {
         open()
     }
 
-    onAccepted: {
+    onAccepted: save(null)
+
+    // Saves the form (PUT for an edit, POST for a new block); `onSaved` runs after a successful save
+    function save(onSaved) {
         const f = formValues()
         if (dlg.block) {
             const b = dlg.block
@@ -240,11 +243,13 @@ AppDialog {
                 changes.require_open = true  // a stale snapshot gets a 409 instead of reopening a closed block
             const sameDay = changes.date === undefined
             Api.request("PUT", "/api/blocks/" + b.id, changes, function () {
-                if (!sameDay)
-                    return
-                dlg.settleNeighbour(b, "start", b.start, f.start)
-                if (b.end)
-                    dlg.settleNeighbour(b, "end", b.end, f.end || "")
+                if (sameDay) {
+                    dlg.settleNeighbour(b, "start", b.start, f.start)
+                    if (b.end)
+                        dlg.settleNeighbour(b, "end", b.end, f.end || "")
+                }
+                if (onSaved)
+                    onSaved()
             }, fail)
         } else {
             const body = { date: f.date, start: f.start, end: f.end, type: f.type, project: f.project }
@@ -252,8 +257,50 @@ AppDialog {
                 body.client = f.client  // left out, the server applies the default client
             if (f.end)
                 body.cut = true         // a block it lies inside is split, one it reaches into is trimmed
-            Api.request("POST", "/api/blocks", body, null, fail)
+            Api.request("POST", "/api/blocks", body, onSaved, fail)
         }
+    }
+
+    // ---- ‹ › : the previous / next block of the day --------------------------------------------
+    // the block before (dir -1) or after (+1) block `id` in start order, null at the ends or when it is gone
+    function neighbourOf(list, id, dir) {
+        const sorted = list.slice().sort((a, b) => a.start < b.start ? -1 : a.start > b.start ? 1 : a.id - b.id)
+        const i = sorted.findIndex(b => b.id === id)
+        if (i < 0)
+            return null
+        return sorted[i + dir] || null
+    }
+    // set while an arrow's save waits for the page to reload the day: { id, dir, saved }
+    property var pendingStep: null
+    // Without changes the arrow opens the neighbour. With changes it saves first, as Save does, and
+    // steps once the reloaded day arrives (onBlocksChanged), from where the block is now; an invalid
+    // form stays put with its error.
+    function step(dir) {
+        if (!block || pendingStep)
+            return
+        if (Object.keys(changedFields()).length === 0) {
+            const n = neighbourOf(blocks, block.id, dir)
+            if (n)
+                editBlock(n)
+            return
+        }
+        if (!valid)
+            return
+        const ps = { id: block.id, dir: dir, saved: false }
+        pendingStep = ps
+        save(() => ps.saved = true)
+    }
+    onBlocksChanged: {
+        const ps = pendingStep
+        if (!ps || !ps.saved)
+            return
+        pendingStep = null
+        const self = blocks.find(b => b.id === ps.id)
+        if (!self) {       // moved to another day: nothing left to step through here
+            close()
+            return
+        }
+        editBlock(neighbourOf(blocks, ps.id, ps.dir) || self)
     }
 
     // Enter/Return in any field saves (when the form is valid); Esc still cancels (closePolicy)
@@ -263,6 +310,7 @@ AppDialog {
     }
 
     function fail(msg) {
+        pendingStep = null
         error = msg
         open()  // keep the user's input on screen
     }
@@ -348,6 +396,18 @@ AppDialog {
                     }
                 }
                 Item { Layout.fillWidth: true }
+                AppIconButton {
+                    text: "‹"
+                    name: qsTr("Previous block")
+                    enabled: !!dlg.block && dlg.pendingStep === null && dlg.neighbourOf(dlg.blocks, dlg.block.id, -1) !== null
+                    onClicked: dlg.step(-1)
+                }
+                AppIconButton {
+                    text: "›"
+                    name: qsTr("Next block")
+                    enabled: !!dlg.block && dlg.pendingStep === null && dlg.neighbourOf(dlg.blocks, dlg.block.id, 1) !== null
+                    onClicked: dlg.step(1)
+                }
             }
             Label {
                 visible: dlg.splitOf !== null
