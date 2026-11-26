@@ -24,7 +24,7 @@ def _mirror(tmp_path):
     c = sqlite3.connect(p)
     c.executescript(MIRROR_SCHEMA)
     c.executemany("INSERT INTO events(date,start,end,title,organizer,status,note,source,updated_at) VALUES (?,?,?,?,?,?,?,?,?)", [
-        ("2026-11-03", "09:30", "10:00", "Astrid v1 stand-up", "", "confirmed", "", "outlook-2026-10-28.pdf", "2026-10-28 10:00:00"),
+        ("2026-11-03", "09:30", "10:00", "Orion v1 stand-up", "", "confirmed", "", "outlook-2026-10-28.pdf", "2026-10-28 10:00:00"),
         ("2026-11-03", "11:00", "12:00", "Model review", "", "confirmed", "", "dashboard", "2026-11-02 18:00:00"),
         ("2026-11-04", "13:00", "13:30", "Vendor demo", "", "cancelled", "moved", "outlook-2026-10-28.pdf", "2026-10-28 10:00:00"),
         ("2026-12-01", "09:00", "10:00", "Far away", "", "confirmed", "", "outlook-2026-10-28.pdf", None),
@@ -42,7 +42,7 @@ def _mirror(tmp_path):
 def test_mirror_snapshot_shape_and_window(tmp_path):
     snap = snapshots.mirror_snapshot(_mirror(tmp_path), date(2026, 11, 1), date(2026, 11, 30))
     titles = [e["title"] for e in snap["events"]]
-    assert titles == ["Astrid v1 stand-up", "Model review", "Vendor demo"]      # window applied, cancelled kept
+    assert titles == ["Orion v1 stand-up", "Model review", "Vendor demo"]      # window applied, cancelled kept
     ev = snap["events"][0]
     assert set(ev) == {"id", "date", "start", "end", "title", "organizer", "status", "note", "source", "updated_at"}
     assert snap["events"][2]["status"] == "cancelled"

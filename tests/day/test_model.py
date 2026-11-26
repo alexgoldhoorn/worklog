@@ -14,7 +14,7 @@ def _titles(day, layer=None):
 def test_timeline_merges_every_layer(ctx):
     day = model.build_day(ctx)
     assert day["date"] == "2026-11-05" and day["now"] == "09:00"
-    assert _titles(day, "work") == ["Early sync", "Astrid v1 stand-up", "Model review", "Vendor demo"]
+    assert _titles(day, "work") == ["Early sync", "Orion v1 stand-up", "Model review", "Vendor demo"]
     assert _titles(day, "protected") == ["Easy Run", "Hard stop"]
     assert _titles(day, "duty") == ["School drop-off", "School pick-up"]
     assert "Dinner" in _titles(day, "personal") and "Haircut" in _titles(day, "personal")

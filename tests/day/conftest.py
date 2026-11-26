@@ -20,7 +20,7 @@ def write_state(d, *, colour="red", coverage_end="2026-11-14"):
     (d / "goals.json").write_text(json.dumps({
         "project": "Acme", "open": 12,
         "milestones": [{"id": "m1", "content": "Code freeze", "due": "2026-11-14", "priority": 4},
-                       {"id": "m2", "content": "Astrid v1 release", "due": "2026-11-28", "priority": 4}],
+                       {"id": "m2", "content": "Orion v1 release", "due": "2026-11-28", "priority": 4}],
         "top3": [{"id": "t1", "content": "Sign-off checklist for QA", "due": "2026-11-05", "priority": 4, "labels": []},
                  {"id": "t2", "content": "Fix retrieval regression", "due": "2026-11-05", "priority": 3, "labels": []},
                  {"id": "t3", "content": "Release notes draft", "due": "2026-11-04", "priority": 2, "labels": ["doubt"]}],
@@ -33,7 +33,7 @@ def write_state(d, *, colour="red", coverage_end="2026-11-14"):
     ]}))
     (d / "mirror.json").write_text(json.dumps({"events": [
         {"id": 1, "date": "2026-11-05", "start": "08:30", "end": "09:00", "title": "Early sync", "organizer": "", "status": "confirmed", "note": "", "source": "outlook-2026-10-28.pdf", "updated_at": ""},
-        {"id": 2, "date": "2026-11-05", "start": "09:30", "end": "10:00", "title": "Astrid v1 stand-up", "organizer": "", "status": "confirmed", "note": "", "source": "outlook-2026-10-28.pdf", "updated_at": ""},
+        {"id": 2, "date": "2026-11-05", "start": "09:30", "end": "10:00", "title": "Orion v1 stand-up", "organizer": "", "status": "confirmed", "note": "", "source": "outlook-2026-10-28.pdf", "updated_at": ""},
         {"id": 3, "date": "2026-11-05", "start": "11:00", "end": "12:00", "title": "Model review", "organizer": "", "status": "confirmed", "note": "", "source": "dashboard", "updated_at": ""},
         {"id": 4, "date": "2026-11-05", "start": "13:00", "end": "13:30", "title": "Vendor demo", "organizer": "", "status": "cancelled", "note": "", "source": "outlook-2026-10-28.pdf", "updated_at": ""},
     ], "coverage": {"last_import_end": coverage_end, "last_import_at": "2026-10-28 10:00:00", "last_import_source": "outlook-2026-10-28.pdf"}}))
