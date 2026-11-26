@@ -767,6 +767,29 @@ def test_brief_resume_lookback_is_bounded(client):
     assert client.get("/api/status?brief=1").json()["resume"] is None
 
 
+def _meeting(client, d, start, end, title):
+    r = client.post("/api/calendar/add", json={"date": d, "start": start, "end": end, "title": title})
+    assert r.status_code == 200 and r.json()["source"] == "calendar"
+
+
+def test_brief_resume_skips_a_calendar_meeting_today(client, app):
+    client.post("/api/blocks", json={"date": "2026-10-20", "start": "07:00", "end": "08:00", "type": "dev", "project": "acme"})
+    _meeting(client, "2026-10-20", "08:00", "08:30", "Weekly team meeting")
+    assert client.get("/api/status?brief=1").json()["resume"] == {"type": "dev", "project": "acme"}
+
+
+def test_brief_resume_skips_yesterdays_calendar_meeting(client, app):
+    client.post("/api/blocks", json={"date": "2026-10-19", "start": "09:00", "end": "11:00", "type": "dev", "project": "acme"})
+    _meeting(client, "2026-10-19", "12:00", "13:00", "Weekly team meeting")
+    assert client.get("/api/status?brief=1").json()["resume"] == {"type": "dev", "project": "acme"}
+
+
+def test_brief_resume_none_with_only_calendar_meetings(client, app):
+    _meeting(client, "2026-10-19", "12:00", "13:00", "Weekly team meeting")
+    _meeting(client, "2026-10-20", "08:00", "08:30", "Standup")
+    assert client.get("/api/status?brief=1").json()["resume"] is None
+
+
 def test_timer_actions_accept_a_queued_time(client, app):
     """A client that was offline replays start/pause/stop with the time they were tapped."""
     assert client.post("/api/start", json={"project": "x", "at": "2026-10-20T08:30"}).status_code == 200

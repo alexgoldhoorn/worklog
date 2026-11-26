@@ -68,14 +68,16 @@ _RESUME_LOOKBACK_DAYS = 14
 
 def last_work_block(conn, now: datetime, bt) -> Block | None:
     """The latest work block today, else the latest one of the previous days (bounded look-back),
-    so a Start after a night's rest continues the last project."""
+    so a Start after a night's rest continues the last project. Meetings added from the work calendar
+    (source "calendar") never count: their project is the meeting title, as the web and Qt chips skip them."""
+    def resumable(b):
+        return b.source != "calendar" and model.work_type(b.type, bt) == "work"
     t = now.date()
-    work = [b for b in db.blocks_on(conn, t.isoformat()) if model.work_type(b.type, bt) == "work"]
+    work = [b for b in db.blocks_on(conn, t.isoformat()) if resumable(b)]
     if work:
         return max(work, key=lambda b: b.start)
     since = (t - timedelta(days=_RESUME_LOOKBACK_DAYS)).isoformat()
-    prev = [b for b in db.blocks_between(conn, since, (t - timedelta(days=1)).isoformat())
-            if model.work_type(b.type, bt) == "work"]
+    prev = [b for b in db.blocks_between(conn, since, (t - timedelta(days=1)).isoformat()) if resumable(b)]
     return max(prev, key=lambda b: (b.date, b.start), default=None)
 
 

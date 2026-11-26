@@ -25,7 +25,7 @@ Conventions:
 | Route | Does |
 |---|---|
 | `GET /healthz` | `{"ok": true}`. Never needs a login. |
-| `GET /api/status` | `currency`, state (`working`, `break`, `stopped`), the open block, today's, this week's and this month's totals, net balance, chips (break types with `default_break_type` first), `resume` (the last work block's type and project), notices. |
+| `GET /api/status` | `currency`, state (`working`, `break`, `stopped`), the open block, today's, this week's and this month's totals, net balance, chips (break types with `default_break_type` first), `resume` (the last work block's type and project; meetings added from the work calendar are skipped), notices. |
 | `POST /api/start` | Body (all optional): `type`, `project`, `client`. Closes the open block and opens a work block. A break type is refused (use pause). Starting the same work again is a no-op. |
 | `POST /api/pause` | Body (optional): `type`, a break type such as `eat`. |
 | `POST /api/stop` | Closes the open block. A block of zero minutes is deleted. |
