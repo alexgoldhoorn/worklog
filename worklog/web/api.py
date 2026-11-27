@@ -303,7 +303,7 @@ def get_day(date: str, c: Ctx = Depends(ctx)):
     blocks = db.blocks_on(c.conn, date)
     fl = model.flags(blocks, c.tz)
     items = [{**model.with_derived(b, bt, c.tz), "flags": fl[b.id]} for b in blocks]
-    meetings, warn = wcal.meetings(c.settings.calendar_db_path, date, blocks)  # the open block counts too
+    meetings, warn = wcal.meetings(c.settings.calendar_db_path, date, blocks, c.settings.balance_db_path)  # the open block counts too
     dismissed = db.dismissed_on(c.conn, date)
     for m in meetings:
         m["dismissed"] = not m["logged"] and (m["start"], m["title"] or "") in dismissed
@@ -535,7 +535,7 @@ def _auto_add_meetings(c: Ctx) -> None:
     while True:
         with _LOCK:   # look and write in one step, so two requests never add the same meeting
             blocks = db.blocks_on(c.conn, date)
-            found, _ = wcal.meetings(c.settings.calendar_db_path, date, blocks)
+            found, _ = wcal.meetings(c.settings.calendar_db_path, date, blocks, c.settings.balance_db_path)
             dismissed = db.dismissed_on(c.conn, date)
             due = next((m for m in found
                         if not m["logged"] and m["end"] <= hhmm and (m["start"], m["title"] or "") not in dismissed

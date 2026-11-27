@@ -76,3 +76,22 @@ def test_dismissed_meeting_stays_listed_as_dismissed(tmp_path):
     day = _day(c)
     assert day["proposals"] == []
     assert day["meetings"] == [{"start": "10:00", "end": "10:30", "title": "review", "logged": False, "dismissed": True}]
+
+
+def test_meeting_queued_from_the_day_page_shows_at_once(tmp_path):
+    from balance import db as bdb
+    c_ = cal(tmp_path, [(DAY, "09:00", "09:30", "standup", "confirmed"), (DAY, "15:00", "15:30", "retro", "confirmed")])
+    bpath = str(tmp_path / "b.db")
+    conn = bdb.connect(bpath)
+    bdb.enqueue(conn, "mirror_add", {"date": DAY, "start": "12:00", "end": "12:30", "title": "lunch talk"}, "Work: lunch talk")
+    bdb.enqueue(conn, "mirror_add", {"date": "2026-10-21", "start": "12:00", "end": "12:30", "title": "tomorrow"}, "other day")
+    bdb.enqueue(conn, "mirror_annotate", {"date": DAY, "start": "15:00", "title": "retro", "status": "cancelled"}, "cancel")
+    conn.close()
+    app = create_app(Settings(db_path=str(tmp_path / "t.db"), calendar_db_path=c_, holidays_path=None, balance_db_path=bpath))
+    app.state.clock = lambda: datetime(2026, 10, 20, 13, 0)
+    c = TestClient(app)
+    assert _day(c)["meetings"] == [
+        {"start": "09:00", "end": "09:30", "title": "standup", "logged": False, "dismissed": False},
+        {"start": "12:00", "end": "12:30", "title": "lunch talk", "logged": False, "dismissed": False, "pending": True}]
+    assert _add(c, "12:00", "12:30", "lunch talk").status_code == 200
+    assert [m["logged"] for m in _day(c)["meetings"]] == [False, True]

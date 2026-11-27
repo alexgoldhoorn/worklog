@@ -69,7 +69,7 @@ def get_day(request: Request, date: str | None = None, c: Ctx = Depends(worklog_
     finally:
         conn.close()
     iso = d.isoformat()
-    props, _ = wcal.proposals(c.settings.calendar_db_path, iso, wdb.blocks_on(c.conn, iso))
+    props, _ = wcal.proposals(c.settings.calendar_db_path, iso, wdb.blocks_on(c.conn, iso), c.settings.balance_db_path)
     dismissed = wdb.dismissed_on(c.conn, iso)
     out["work"]["proposals"] = [p for p in props if (p["start"], p["title"] or "") not in dismissed]
     return out
