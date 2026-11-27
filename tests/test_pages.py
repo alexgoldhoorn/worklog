@@ -4,7 +4,7 @@ import pytest
 
 
 @pytest.mark.parametrize("path,ids", [
-    ("/timer", ["btn-start", "btn-pause", "btn-stop", "blocks", "proposals", "totals",
+    ("/timer", ["btn-start", "btn-pause", "btn-stop", "blocks", "totals",
            "state", "state-counters", "today-clock", "today-label", "project", "chips-types", "chips-projects", "chips-breaks", "day", "notices", "kbd-hint",
            "queue-strip", "idle-card"]),
     ("/settings", ["settings-notices", "defaults", "def-type", "def-client", "def-break", "def-close", "def-autoadd", "def-save", "def-msg",
@@ -159,10 +159,8 @@ def test_server_clock_not_device_clock(client):
 
 
 def test_wording_shared_with_the_qt_app(client):
-    html = client.get("/timer").text
-    assert "Work calendar <small>· the day's meetings</small>" in html
-    js = client.get("/static/app.js").text
-    assert '"Add as meeting"' in js and '"Dismiss"' in js
+    js = client.get("/static/app.js").text   # the meetings' ghost rows, as Qt's BlockList
+    assert '"+ Add"' in js and '"not synced yet"' in js and '"Dismiss for today"' in js
     find = client.get("/find").text
     assert "Length (min)" in find and "Travel each way (min)" in find and "Fill in the form and press Find." in find
     assert "Defaults are greyed; edited days are marked and can be reset" in client.get("/days").text

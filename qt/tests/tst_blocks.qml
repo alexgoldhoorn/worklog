@@ -23,20 +23,21 @@ TestCase {
         Api.username = ""
     }
 
-    // ---- ProposalCard: which meetings it lists ----------------------------------
-    Component { id: proposalComp; ProposalCard {} }
-    function test_proposalCard_rows() {
-        const all = [{ start: "09:00", end: "09:30", title: "open" },
-                     { start: "10:00", end: "10:30", title: "done", logged: true, dismissed: false },
-                     { start: "11:00", end: "11:30", title: "no", logged: false, dismissed: true }]
-        const card = createTemporaryObject(proposalComp, tc, { meetings: all })
-        compare(card.rows.map(m => m.title), ["open", "done", "no"])   // Timer and Log alike: everything, marked
-        verify(card.visible)
-        card.showAll = false                               // only what still needs an answer
-        compare(card.rows.map(m => m.title), ["open"])
-        card.meetings = all.slice(1)
-        verify(!card.visible)
-        compare(card.title, "Work calendar · the day's meetings")
+    // ---- BlockList: the day's meetings as grey rows among the blocks -----------------
+    Component { id: blockListComp; BlockList {} }
+    function test_blockList_meetingGhosts() {
+        const blocks = [{ id: 1, start: "09:00", end: "11:00", type: "dev", work_type: "work" },
+                        { id: 2, start: "13:00", end: "14:00", type: "dev", work_type: "work" }]
+        const meetings = [{ start: "10:00", end: "10:30", title: "inside" },
+                          { start: "12:00", end: "12:30", title: "in the gap", pending: true },
+                          { start: "13:00", end: "13:30", title: "done", logged: true },
+                          { start: "15:00", end: "15:30", title: "later", dismissed: true }]
+        const list = createTemporaryObject(blockListComp, tc, { blocks: blocks, meetings: meetings, date: "2026-10-20" })
+        compare(list.items.map(r => r.ghost ? "ghost " + r.meeting.title : r.gap ? "gap" : "block " + r.id),
+                ["block 1", "ghost inside", "gap", "ghost in the gap", "block 2", "ghost later"])   // a logged one is a block already
+        verify(!list.notStarted(meetings[0]))   // a past day: every meeting has started
+        list.date = "2999-01-01"
+        verify(list.notStarted(meetings[0]))
     }
 
     // ---- Api.normTime ----------------------------------------------------------

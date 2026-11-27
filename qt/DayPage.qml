@@ -4,7 +4,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// Browse and edit the blocks of any day, and add calendar proposals.
+// Browse and edit the blocks of any day, and add its calendar meetings (grey rows in the block list).
 ScrollView {
     id: page
     property string date: Api.today()
@@ -154,13 +154,6 @@ ScrollView {
             DayTile { caption: qsTr("Billable"); value: page.day ? Api.fmtHM(page.day.totals.billable_h) : "–" }
         }
 
-        // ---- calendar proposals -----------------------------------------------
-        ProposalCard {
-            date: page.date
-            showAll: true
-            meetings: page.day ? page.day.meetings || page.day.proposals : []
-            onFailed: e => page.error = e
-        }
         // ---- blocks -----------------------------------------------------------
         Card {
             title: qsTr("Blocks")
@@ -177,6 +170,12 @@ ScrollView {
             BlockList {
                 loading: !page.day && !page.error
                 blocks: page.day ? page.day.blocks : []
+                meetings: page.day ? page.day.meetings || page.day.proposals || [] : []
+                date: page.date
+                onMeetingAddRequested: m => Api.request("POST", "/api/calendar/add",
+                                                        { date: page.date, start: m.start, end: m.end, title: m.title }, null, e => page.error = e)
+                onMeetingDismissRequested: m => Api.request("POST", "/api/calendar/dismiss",
+                                                            { date: page.date, start: m.start, title: m.title }, null, e => page.error = e)
                 onEditRequested: b => blockDialog.editBlock(b)
                 onBillableToggled: (b, next) => Api.request("PUT", "/api/blocks/" + b.id, { billable: next }, null, e => page.error = e)
                 onMergeRequested: b => Api.request("POST", "/api/blocks/" + b.id + "/merge-next", {}, null, e => page.error = e)

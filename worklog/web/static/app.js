@@ -504,19 +504,25 @@ function renderBlocks() {
     ? el("th", { class: c || "", title: tip || t }, el("span", { class: "th-long", text: t }), el("span", { class: "th-short", text: short }))
     : el("th", { class: c || "", text: t, title: tip || null }))));
   const blocks = timer.day.blocks;
-  const rows = [];
+  const keyed = []; // [sort time, row]: a ghost goes after every row that starts at or before it
   const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
   let covered = null; // latest end seen so far, so an overlapping block never fakes a gap
   let last = null; // the block that ends at `covered`
   let above = null; // the block in the row above
   for (const b of sorted) {
-    if (covered && covered < b.start) rows.push(gapRow(covered, b.start, last, b));
+    if (covered && covered < b.start) keyed.push([covered, gapRow(covered, b.start, last, b)]);
     if (!b.end || !covered || b.end > covered) last = b;
     if (!b.end) covered = "24:00";
     else if (!covered || b.end > covered) covered = b.end;
-    rows.push(blockRow(b, above));
+    keyed.push([b.start, blockRow(b, above)]);
     above = b;
   }
+  // the work calendar's meetings that no meeting block covers yet: grey rows among the blocks
+  for (const m of (timer.day.meetings || []).filter((x) => !x.logged)) {
+    const i = keyed.findIndex(([t]) => t > m.start);
+    keyed.splice(i < 0 ? keyed.length : i, 0, [m.start, ghostRow(m)]);
+  }
+  const rows = keyed.map(([, r]) => r);
   if (!rows.length) rows.push(el("tr", {}, el("td", { colspan: 8, class: "muted", text: "No blocks on this day." })));
   $("blocks").replaceChildren(el("thead", {}, head), el("tbody", {}, rows));
   if (timer.refocus) { // a cell editor just closed with Enter or Esc: give the keyboard back to its cell
@@ -533,20 +539,23 @@ function renderBlocks() {
     el("span", { class: "muted", text: `${blocks.length} block${blocks.length === 1 ? "" : "s"}` }));
 }
 
-function renderProposals() {
-  const ul = $("proposals");
-  // every meeting of the day: one without a block can be added (the server cuts it out of what was
-  // logged there) or dismissed; logged and dismissed ones stay listed, dimmed
-  const props = timer.day.meetings || timer.day.proposals || [];
-  $("proposals-sec").classList.toggle("has", props.length > 0);
-  ul.replaceChildren(...props.map((p) => el("li", { class: p.logged ? "done" : p.dismissed ? "off" : "" },
-    el("span", {}, el("span", { class: "t", text: `${p.start}–${p.end}` }), p.title || ""),
-    p.logged ? el("span", { class: "mark", text: "✓ logged" }) : el("span", { class: "btns" },
-      el("button", { type: "button", class: p.dismissed ? "small ghost" : "small", text: "Add as meeting",
-        title: "Add as a meeting block; work logged at that time makes room for it", onclick: (e) => wl.locked(e.currentTarget, () => addProposal(p)) }),
-      p.dismissed ? el("span", { class: "mark", text: "dismissed" })
-        : el("button", { type: "button", class: "small ghost", text: "Dismiss", title: "Dismiss for today",
-          onclick: (e) => wl.locked(e.currentTarget, () => dismissProposal(p)) })))));
+// A work-calendar meeting not logged yet (Day page adds still waiting for the sync say "not synced yet"):
+// Add logs it as a meeting block (the server cuts it out of what was logged there), Dismiss hides it for the day.
+function ghostRow(m) {
+  const label = `${m.start}–${m.end} ${m.title || "meeting"}`;
+  const future = timer.date > todayIso() || (timer.date === todayIso() && m.start > wl.nowHHMM());
+  const tip = m.dismissed ? "Dismissed: Add still logs it" : m.pending ? "Added on the Day page; the work calendar has not synced it yet" : "In the work calendar, not logged";
+  return el("tr", { class: `ghost${m.dismissed ? " off" : ""}`, title: tip },
+    el("td", { text: m.start }), el("td", { text: m.end }), el("td", { class: "type" }, el("span", { text: "meet" })),
+    el("td", { class: "ell" }, m.title || "", m.pending ? el("span", { class: "tag", text: "not synced yet" }) : null,
+      m.dismissed ? el("span", { class: "tag", text: "dismissed" }) : null),
+    el("td", { colspan: 3 }),
+    el("td", { class: "num" },
+      el("button", { type: "button", class: "small ghost fill", text: "+ Add", disabled: future || null,
+        title: future ? "Can be added once it has started" : "Add as a meeting block; work logged at that time makes room for it",
+        "aria-label": `Add ${label} as a meeting`, onclick: (e) => wl.locked(e.currentTarget, () => addProposal(m)) }),
+      m.dismissed ? null : el("button", { type: "button", class: "ghost x", text: "×", title: "Dismiss for today",
+        "aria-label": `Dismiss ${label}`, onclick: (e) => wl.locked(e.currentTarget, () => dismissProposal(m)) })));
 }
 
 function dismissProposal(p) {
@@ -662,9 +671,8 @@ async function loadDay() {
   }
   if (!current()) return;
   timer.day = day;
-  if (timer.editing) { timer.dirty = true; renderProposals(); return; } // never rebuild the table under an open editor
+  if (timer.editing) { timer.dirty = true; return; } // never rebuild the table under an open editor
   renderBlocks();
-  renderProposals();
 }
 
 async function refreshAll() {

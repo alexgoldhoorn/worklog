@@ -54,7 +54,6 @@ set(WL_QML_FILES
     BlockList.qml
     BlockDialog.qml
     NavIcon.qml
-    ProposalCard.qml
     DatePicker.qml
     QueueState.qml
     ChipRow.qml

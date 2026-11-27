@@ -4,10 +4,14 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 
-// The blocks of one day with the gaps between them; tapping a row asks to edit it.
+// The blocks of one day with the gaps between them; tapping a row asks to edit it. The day's
+// work-calendar meetings that no meeting block covers yet are grey rows among them (as the web's
+// Timer table): + Add logs one (the server cuts it out of what was logged there), × dismisses it.
 ColumnLayout {
     id: root
     property var blocks: []
+    property var meetings: []     // the day's `meetings` from /api/day/{date}
+    property string date          // the day shown: a meeting can be added once it has started
     property bool loading: false
     property int runningId: -1
     property int liveSec: 0       // elapsed seconds of the running block, ticked by the page
@@ -18,6 +22,8 @@ ColumnLayout {
     signal stretchRequested(var block, var fields)
     // join `block` with the one that starts where it ends (POST /api/blocks/{id}/merge-next)
     signal mergeRequested(var block)
+    signal meetingAddRequested(var meeting)
+    signal meetingDismissRequested(var meeting)
 
     // two blocks that touch and say the same thing: one block cut in two by a stop and a start
     function mergeable(a, b) {
@@ -42,7 +48,25 @@ ColumnLayout {
             covered = !b.end ? "24:00" : (!covered || b.end > covered ? b.end : covered)
             out.push(b)
         }
+        return root.withMeetings(out, root.meetings)
+    }
+
+    // `rows` with a {ghost, meeting} row for every meeting not logged yet, placed after every row
+    // that starts at or before it (a seam row sits with the block below it)
+    function withMeetings(rows, list) {
+        const out = rows.slice()
+        const at = r => r.seam ? r.next.start : r.start
+        for (const m of (list || []).filter(x => !x.logged)) {
+            const i = out.findIndex(r => at(r) > m.start)
+            out.splice(i < 0 ? out.length : i, 0, { ghost: true, start: m.start, meeting: m })
+        }
         return out
+    }
+
+    // a meeting that has not started yet cannot be logged
+    function notStarted(m) {
+        const today = Api.today()
+        return root.date > today || (root.date === today && m.start > Api.nowHHMM())
     }
     function minutes(a, b) {
         const p = a.split(":").map(Number), q = b.split(":").map(Number)
@@ -98,6 +122,8 @@ ColumnLayout {
             required property int index
             readonly property bool gap: !!row.modelData.gap
             readonly property bool seam: !!row.modelData.seam
+            readonly property bool ghost: !!row.modelData.ghost
+            readonly property var meeting: row.modelData.meeting || ({})
             readonly property bool isBreak: row.modelData.work_type !== "work"
             readonly property bool running: row.modelData.id === root.runningId
             readonly property bool flagged: !!row.modelData.flags
@@ -107,6 +133,7 @@ ColumnLayout {
 
             Rectangle {
                 visible: row.index > 0 && !row.gap && !row.seam
+                opacity: row.ghost ? 0.5 : 1
                 implicitHeight: 1
                 color: Api.line
                 Layout.fillWidth: true
@@ -173,8 +200,74 @@ ColumnLayout {
                 }
             }
 
+            RowLayout {   // a meeting from the work calendar, not logged yet: grey
+                visible: row.ghost
+                spacing: 12
+                opacity: row.meeting.dismissed ? 0.5 : 0.75
+                Layout.fillWidth: true
+                Layout.leftMargin: 8
+                Layout.rightMargin: 4
+                implicitHeight: 52
+                Rectangle {
+                    implicitWidth: 6
+                    Layout.fillHeight: true
+                    Layout.topMargin: 6
+                    Layout.bottomMargin: 6
+                    radius: 3
+                    color: "transparent"
+                    border.color: Api.muted
+                    border.width: 1
+                }
+                Label {
+                    text: row.ghost ? row.meeting.start + "–" + row.meeting.end : ""
+                    color: Api.muted
+                    font.pixelSize: 14
+                    font.features: { "tnum": 1 }
+                    Layout.preferredWidth: 96
+                }
+                ColumnLayout {
+                    spacing: 0
+                    Layout.fillWidth: true
+                    Label {
+                        text: row.ghost ? row.meeting.title || qsTr("(no title)") : ""
+                        color: Api.muted
+                        font.italic: true
+                        font.pixelSize: 14
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Label {
+                        text: !row.ghost ? "" : [qsTr("meet"), row.meeting.pending ? qsTr("not synced yet") : "",
+                                                 row.meeting.dismissed ? qsTr("dismissed") : ""].filter(x => !!x).join(" · ")
+                        color: Api.muted
+                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+                AppButton {
+                    id: addMeeting
+                    text: qsTr("+ Add")
+                    flat: true
+                    enabled: row.ghost && !root.notStarted(row.meeting)
+                    Accessible.name: qsTr("Add %1 as a meeting").arg(row.meeting.title || "")
+                    ToolTip.visible: hovered
+                    ToolTip.text: addMeeting.enabled ? qsTr("Add as a meeting block; work logged at that time makes room for it")
+                                                     : qsTr("Can be added once it has started")
+                    onClicked: root.meetingAddRequested(row.meeting)
+                }
+                AppIconButton {
+                    visible: !row.meeting.dismissed
+                    text: "×"
+                    font.pixelSize: 18
+                    ink: Api.muted
+                    name: qsTr("Dismiss for today")
+                    onClicked: root.meetingDismissRequested(row.meeting)
+                }
+            }
+
             ItemDelegate {
-                visible: !row.gap && !row.seam
+                visible: !row.gap && !row.seam && !row.ghost
                 implicitHeight: 56
                 leftPadding: 8
                 rightPadding: 8

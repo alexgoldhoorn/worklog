@@ -763,14 +763,6 @@ ScrollView {
             }
         }
 
-        // ---- calendar proposals (today's meetings without a block), as on the web's Timer page
-        ProposalCard {
-            visible: rows.length > 0 && !page.stale
-            date: page.day ? page.day.date : ""
-            meetings: page.day ? page.day.meetings || page.day.proposals : []
-            onFailed: e => page.error = e
-        }
-
         // ---- today ------------------------------------------------------------
         Card {
             title: qsTr("Today")
@@ -787,6 +779,12 @@ ScrollView {
             BlockList {
                 loading: !page.day && !page.error
                 blocks: page.day ? page.day.blocks : []
+                meetings: page.day && !page.stale ? page.day.meetings || page.day.proposals || [] : []
+                date: page.day ? page.day.date : ""
+                onMeetingAddRequested: m => Api.request("POST", "/api/calendar/add",
+                                                        { date: page.day.date, start: m.start, end: m.end, title: m.title }, null, e => page.error = e)
+                onMeetingDismissRequested: m => Api.request("POST", "/api/calendar/dismiss",
+                                                            { date: page.day.date, start: m.start, title: m.title }, null, e => page.error = e)
                 runningId: page.runningBlock ? page.runningBlock.id : -1
                 liveSec: page.liveSec
                 onEditRequested: b => blockDialog.editBlock(b)
